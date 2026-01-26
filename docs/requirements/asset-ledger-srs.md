@@ -3,6 +3,16 @@
 版本：v1.0（冻结）  
 日期：2026-01-26
 
+## 文档简介
+
+本文档用于定义“资产台账系统”的**需求边界**与**可验收条款**（FR/NFR）。它回答“系统必须做什么/不做什么/做到什么程度”，避免与实现细节混写。
+
+- 适用读者：产品、研发、测试、运维、评审人员。
+- 使用方式：优先以 FR 的验收标准为准；发生歧义时，以本文术语表与约束/假设为准。
+- 关联文档：
+  - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`（实体/关系/关键约束）
+  - 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`（插件契约与选型建议）
+
 ## 1. 概述
 
 ### 1.1 背景
@@ -83,6 +93,9 @@
 - Given 管理员在创建 Source 时缺少必填项  
   When 保存  
   Then 系统阻止保存并提示缺失字段。
+- Given 管理员创建 Source  
+  When 保存  
+  Then 必须包含 `schedule` 与 `schedule_timezone`。
 - Given 管理员创建 Source 成功  
   When 在列表查看  
   Then 可看到 Source 基本信息（名称、类型、启用状态、最近一次 Run 状态/时间）。
@@ -104,6 +117,9 @@
 - Given 管理员手动触发某 Source 采集  
   When 触发成功  
   Then 生成 Run 并可在 Run 列表看到状态变化与日志/错误摘要。
+- Given 管理员查看 Run 列表  
+  When 展示  
+  Then 必须展示 Run 的 `mode`（collect/detect/healthcheck）。
 - Given 同一 Source 已存在一个 Running 的 Run  
   When 再次触发同一 Source（定时或手动）  
   Then 系统必须避免并发冲突（允许返回“已在运行/已排队”之一，但行为需一致并可解释）。
@@ -121,6 +137,9 @@
 - Given Source 创建后执行 healthcheck  
   When 凭证/权限不足  
   Then healthcheck 失败并给出可读错误（需脱敏）。
+- Given 执行 healthcheck  
+  When 完成  
+  Then 生成 Run 且 `mode=healthcheck`，并持久化结构化错误到 `run.errors`。
 - Given 执行一次 Run  
   When 插件完成 detect  
   Then Run 记录中必须保存探测到的目标版本/能力摘要与最终选用的 driver 标识（例如 pve@v8-driver）。
@@ -199,6 +218,105 @@
   When 后续再次命中同一对候选  
   Then 系统应按既定策略避免反复提示（至少支持永久忽略）。
 
+#### FR-07.A 固定规则说明（dup-rules-v1）
+
+> 目标：仅生成“疑似重复候选”，不做自动合并；规则固定但**可解释**（命中原因 + 证据 + 分数）。
+
+##### 候选生成时机与数据口径
+
+- 触发时机：在**每个 Source 的 Run 成功结束后**生成候选（可异步任务）。
+- 数据口径：仅基于**成功 Run**产生的快照（`source_record.normalized` 等）计算；失败/取消的 Run **不得**推进去重候选与缺失/下线语义。
+
+##### 候选范围（Candidate Scope）
+
+默认约束：
+
+- 排除：任一方 `asset.status=merged` 的资产不参与候选。
+- 可包含：`vm` / `host`（`cluster` 默认不生成候选，除非后续明确需要）。
+
+**决策点 D-01：候选时间窗（用于降噪与成本控制）**
+
+- 已决策：方案 B（在管 + 最近 N 天内离线）
+- 参数：`N = 7`（天；作为常量固化，不提供 UI 配置）
+
+- 方案 A（最简单/最省）：仅比较“当前在管（in_service）”资产
+  - 优点：噪音低、计算量小；缺点：容易漏掉“迁移后新旧资产一在管一离线”的重复。
+- 方案 B（已选）：在管 + 最近 N 天内出现过（last_seen_at within N days）的离线资产
+  - 优点：覆盖迁移场景、噪音可控；缺点：需要一个可配置 N（尽管规则固定，N 仍是常量）。
+- 方案 C（最全/最贵）：全量历史资产参与
+  - 优点：不漏；缺点：计算与人工处理成本极高，且历史噪音大。
+
+##### 评分与阈值（Score）
+
+- 分数：`score ∈ [0,100]`，由规则命中累加（上限 100）。
+- 候选创建阈值：`score >= 70` 创建候选；`score < 70` 不创建。
+- 置信度标签（UI 展示建议）：
+  - `90-100`：高（High）
+  - `70-89`：中（Medium）
+
+**决策点 D-02：阈值是否调整**
+
+- 已决策：方案 A（固定 70/90）
+
+- 方案 A（已选）：固定为 70/90（如上）
+- 方案 B：提高创建阈值（例如 80）以减少噪音，但可能漏报
+- 方案 C：降低创建阈值（例如 60）以提高召回，但会显著增加人工工作量
+
+##### 规则列表（Rule Set）
+
+> 说明：规则使用 `source_record.normalized` 中的“候选键（candidate keys）”。键不存在时视为不命中；不强制所有来源都提供全部键。
+
+| rule_code                | 适用对象 | 分值 | 命中条件（摘要）                                            | 解释要点                               |
+| ------------------------ | -------- | ---- | ----------------------------------------------------------- | -------------------------------------- |
+| `vm.machine_uuid_match`  | vm       | 100  | `machine_uuid` 存在且完全相同（SMBIOS/BIOS UUID 等）        | 强信号：同一虚拟机跨平台迁移仍可能保留 |
+| `vm.mac_overlap`         | vm       | 90   | `mac_addresses` 交集 ≥ 1                                    | 强信号：需注意 MAC 复用/漂移           |
+| `vm.hostname_ip_overlap` | vm       | 70   | `hostname` 相同且 `ip_addresses` 交集 ≥ 1（取最近一次快照） | 中信号：DHCP/重装会带来误报            |
+| `host.serial_match`      | host     | 100  | `serial_number` 存在且完全相同                              | 强信号：物理机/设备序列号              |
+| `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                 |
+
+**决策点 D-03：候选键的最小集合**
+
+- 已决策：方案 B（增加辅助键）
+
+- 方案 A（最小/易落地）：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`management_ip`
+- 方案 B（已选/更稳）：在 A 基础上增加以下辅助键（用于对比解释与人工研判；是否纳入评分可后续迭代）：
+  - `os_fingerprint`（如 OS family + version）
+  - `resource_profile`（如 vCPU/内存/磁盘等规格摘要）
+  - `cloud_native_id`（如 cloud instanceId/资源 ARN 等，来源内强标识）
+
+##### 可解释性：原因与证据（reasons JSON）
+
+为满足“可解释”，候选需持久化命中原因与证据（示例结构）：
+
+```json
+{
+  "version": "dup-rules-v1",
+  "matched_rules": [
+    {
+      "code": "vm.machine_uuid_match",
+      "weight": 100,
+      "evidence": {
+        "field": "normalized.identity.machine_uuid",
+        "a": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "b": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      }
+    }
+  ]
+}
+```
+
+##### 降噪与抑制策略（Ignored Handling）
+
+基础要求：支持“永久忽略”（见 FR-07 验收）。
+
+**决策点 D-04：ignored 后再次命中如何处理**
+
+- 已决策：方案 A（永久忽略，记录 last_observed，可手工 reopen）
+
+- 方案 A（已选）：保持 `status=ignored` 不变，仅更新 `last_observed_at`，UI 默认不再提示；允许管理员手工 reopen
+- 方案 B：ignored 设置 TTL（例如 90 天）到期后自动 reopen（更灵活但更易扰民）
+- 方案 C：不记录 last_observed，仅永久压制（最安静但丢失“再次命中”的信号）
+
 ### FR-08 人工合并（Merge）与审计
 
 **描述**
@@ -245,7 +363,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 
 - Given 资产经过多次 Run  
   When 查看资产历史  
-  Then 能按时间/Run 查看历史记录（至少包含每次 Run 的采集时间与关键字段变化）。
+  Then 能按时间/Run 查看历史记录（至少包含每次 Run 的采集时间、关键字段变化与关系变化摘要）。
 - Given 用户查看某条来源明细  
   When 打开 raw  
   Then 可查看或下载该次采集的 raw payload（需脱敏敏感字段如凭证）。
@@ -266,6 +384,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 ### NFR-03 可靠性与可恢复
 
 - Run 失败需记录可读错误与失败原因分类（认证失败/网络失败/解析失败等）。
+- 失败原因分类需结构化落库（`run.errors`），非致命问题落库为 `run.warnings`。
 - 对同一 Source 的并发触发应有一致策略（拒绝/排队），避免写入竞态。
 
 ### NFR-04 可扩展性
@@ -283,3 +402,11 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - 阿里云来源不映射 Cluster（Cluster 为空）；通常无法获取宿主 Host（runs_on 允许为空）。
 - 采集频率为每天一次；不要求实时一致性。
 - 疑似重复规则固定，不提供 UI 配置。
+- `schedule_timezone` 使用 IANA TZ 格式（例如 `Asia/Shanghai`）。
+
+## 待决策（Decision Log）
+
+- D-01：B（在管 + 最近 N 天离线；`N=7`）
+- D-02：A（固定 70/90）
+- D-03：B（增加辅助键：os_fingerprint/resource_profile/cloud_native_id）
+- D-04：A（永久 ignored，更新 last_observed，允许手工 reopen）

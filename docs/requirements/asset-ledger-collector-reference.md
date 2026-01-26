@@ -3,6 +3,16 @@
 版本：v1.0（冻结）  
 日期：2026-01-26
 
+## 文档简介
+
+本文档用于定义“采集插件（Collector）”的**接口契约**与**开源组件选型参考**，指导你以最低维护成本接入不同来源。
+
+- 适用读者：采集插件开发者、平台研发、运维。
+- 不包含：台账核心域逻辑的实现细节（入账、去重候选、合并、审计等由核心负责）。
+- 关联文档：
+  - SRS：`docs/requirements/asset-ledger-srs.md`
+  - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`
+
 > 目标：台账“本体”自研（入库、关系、疑似重复、人工合并、审计、自定义字段等），采集插件尽量基于成熟开源组件/官方 SDK/CLI，插件只做“薄适配层”，避免重复造轮子。
 
 ## 1. 设计原则
@@ -64,7 +74,8 @@
       "raw_payload": {}
     }
   ],
-  "stats": { "assets": 0, "relations": 0, "warnings": [] }
+  "stats": { "assets": 0, "relations": 0, "warnings": [] },
+  "errors": []
 }
 ```
 
@@ -72,7 +83,77 @@
 
 - `external_id` 必须在“同一 Source 内稳定”，用于持续追踪（asset_source_link 的 `(source_id, external_kind, external_id)` 唯一）。
 - `raw_payload` 永久保留；可压缩；可附 `raw_hash`（由核心计算也可）。
+- `relations[].raw_payload` 永久保留，核心落到 `relation_record`。
 - 阿里云不映射 Cluster：`cluster` 资产可不输出；`runs_on/member_of` 关系可为空。
+
+**errors 与 warnings 的落库口径**
+
+- `errors[]` 持久化到 `run.errors`
+- `stats.warnings[]` 持久化到 `run.warnings`
+
+### 2.3 错误模型与退出约定（建议）
+
+> 目标：让核心能稳定判定 Run 成败、是否可重试，并在 UI/日志中提供“可读且脱敏”的错误信息。
+
+#### 2.3.1 errors[] 结构（建议）
+
+当插件执行失败（healthcheck/detect/collect 任一模式）时：
+
+- 插件应在输出 JSON 中填充 `errors[]`（即使返回非 0 退出码或非 2xx HTTP）。
+- 错误信息必须脱敏：不得包含明文凭证、Token、AK/SK、密码。
+
+建议单条 error 结构：
+
+```json
+{
+  "code": "AUTH_FAILED",
+  "category": "auth|permission|network|rate_limit|parse|unknown",
+  "message": "human readable, redacted",
+  "retryable": true,
+  "redacted_context": { "endpoint": "/api/...", "http_status": 403, "trace_id": "..." }
+}
+```
+
+#### 2.3.2 子进程退出码 / HTTP 状态码
+
+**决策点 D-08：错误信号的主判据**
+
+- 已决策：方案 A（退出码/HTTP status 为主，errors 用于解释）
+
+- 方案 A（已选）：子进程以“退出码”判定成功（0 成功，非 0 失败）；HTTP 以 status code 判定成功（2xx 成功，非 2xx 失败）；`errors[]` 用于解释与分类
+  - 优点：行为明确；缺点：需要核心统一转换 error_summary。
+- 方案 B：忽略退出码/HTTP status，仅以 `errors[]` 是否为空判定成功
+  - 优点：更“契约化”；缺点：更容易被插件实现疏忽导致误判（忘记填 errors）。
+
+#### 2.3.3 部分成功（partial success）处理
+
+采集过程可能出现“已采集部分资产，但中途失败”的情况。
+
+**决策点 D-09：是否允许部分结果落库**
+
+- 已决策：方案 A（落库排障证据，但 Run 失败不推进语义）
+
+- 方案 A（已选）：允许落库**已采集的 source_record/raw**用于排障，但该 Run 仍标记为 Failed；核心不得据此推进 missing/last_seen/关系 last_seen（仅成功 Run 才能推进）
+  - 优点：既保留排障证据，又不污染台账语义；缺点：实现需要区分“失败 Run 的记录不参与状态推进”。
+- 方案 B：不落库任何结果（失败即全丢）
+  - 优点：语义最简单；缺点：排障困难，难以复盘。
+
+#### 2.3.4 warnings 的语义（非致命）
+
+- `stats.warnings[]` 表示“非致命问题”（例如部分字段缺失、某些对象无权限读取），Run 可仍视为成功。
+- `warnings` 不得包含敏感信息；建议仅包含可定位问题的上下文摘要。
+
+### 2.4 normalized 最小字段集合（满足 dup-rules-v1）
+
+> 口径：键不存在时视为缺失，缺失不计分；实现可按来源能力填充。
+
+- `identity.machine_uuid`（vm）
+- `network.mac_addresses[]`（vm）
+- `network.ip_addresses[]`（vm）
+- `identity.hostname`（vm）
+- `identity.serial_number`（host）
+- `network.management_ip`（host）
+- 辅助键（用于解释与人工研判，不强制计分）：`os.fingerprint`、`resource.profile`、`identity.cloud_native_id`
 
 ## 3. 采集流程与职责边界
 
@@ -82,7 +163,9 @@ flowchart TD
   B --> C["Plugin: healthcheck/detect"]
   C --> D["Plugin: collect assets + relations"]
   D --> E["Core: persist raw + normalized (SourceRecord)"]
+  D --> E2["Core: persist relation raw (RelationRecord)"]
   E --> F["Core: bind to Asset via asset_source_link"]
+  E2 --> F
   F --> G["Core: generate DuplicateCandidate"]
   G --> H["Admin: review + merge/ignore"]
 ```
@@ -179,9 +262,47 @@ flowchart TD
 
 ## 6. Raw 永久保留与脱敏要求
 
-1. 插件必须输出 raw（raw_payload），核心永久保留。
+### 6.1 插件侧责任（必须）
+
+1. 插件必须输出 raw（`raw_payload`），核心永久保留（支持回放/补算/审计）。
 2. raw 中不得包含明文凭证（Token/AK/SK/密码）。若目标 API 回显敏感字段，插件需在输出前清洗。
 3. 插件日志必须脱敏；建议输出“可定位问题的上下文”（请求 URL/状态码/traceId 等），但不得输出密钥。
+
+### 6.2 核心侧 raw 存储形态（建议）
+
+> 说明：此处属于核心实现/运维决策，但会影响插件契约（例如是否需要输出 raw_ref），因此在此记录。
+
+**决策点 D-10：raw_payload 的落库方案**
+
+- 已决策：方案 A（DB 内联）
+
+- 方案 A（已选）：raw 以内联 JSON/二进制存 DB（例如 JSONB/TEXT/BLOB）
+  - 优点：实现最少、查询方便；缺点：DB 膨胀快，长期成本高。
+- 方案 B（最可控）：raw 存对象存储（S3/MinIO 等），DB 仅存 `raw_ref + raw_hash + size`
+  - 优点：DB 轻、成本可控；缺点：需要对象存储与权限/生命周期治理。
+- 方案 C（推荐）：混合——小 payload 内联，大 payload 上对象存储（按阈值分流）
+  - 优点：兼顾易用与成本；缺点：实现稍复杂，需要阈值与迁移策略。
+
+### 6.3 压缩与阈值（建议）
+
+**决策点 D-11：压缩策略**
+
+- 已决策：方案 D（不压缩，`raw_compression=none`）
+
+- 方案 A：核心对 raw 统一压缩后再存储（gzip/zstd），同时保存 `raw_hash`（基于未压缩内容计算）
+- 方案 B：仅对超过阈值的 raw 压缩（例如 > 256KB）
+- 方案 C：由插件输出压缩后的 raw（base64 编码）
+  - 不推荐：增加契约复杂度与调试成本，且容易引入“双重压缩/编码”问题。
+- 方案 D：不压缩（`raw_compression=none`）
+
+补充说明（用于决策 D-11）：
+
+- “压缩”通常是**无损（lossless）**的：gzip/zstd 解压后可以还原出与压缩前**完全一致的字节序列**（前提是你存的是原始字节，而不是“解码后又重新序列化”的 JSON）。
+- 建议核心同时保存：
+  - `raw_hash`：基于**未压缩内容**计算（用于比对/审计）
+  - `raw_size`（未压缩字节数）与 `raw_compressed_size`（可选）
+  - `raw_compression`：`none|gzip|zstd`（方便解压与迁移）
+- 若 raw 以 JSON 存储且需要“按 JSON 字段查询 raw”，则不建议对同一列做压缩（会失去 JSON 查询能力）；更常见做法是：`normalized` 可查询，`raw_payload` 仅用于下载/回放，可用二进制列存压缩数据。
 
 ## 7. 插件交付形态建议（非强制）
 
@@ -190,3 +311,10 @@ flowchart TD
 - **容器化插件**：核心通过容器运行插件（隔离依赖/权限），插件用 stdout 输出 JSON。
 - **独立二进制/脚本**：核心以子进程方式调用（适合内网环境）。
 - **HTTP 服务型插件**：插件常驻服务，核心通过 HTTP 调用（适合高频/多次调用，但你当前需求是每日一次，可后置）。
+
+## 待决策（Decision Log）
+
+- D-08：A（退出码/HTTP status 为主，errors 用于解释）
+- D-09：A（允许落库排障证据，但 Run 失败不推进语义）
+- D-10：A（DB 内联存 raw）
+- D-11：D（不压缩，`raw_compression=none`）
