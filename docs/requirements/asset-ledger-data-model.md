@@ -1,6 +1,6 @@
 # 资产台账系统概念数据模型（Conceptual Data Model）
 
-版本：v1.0（冻结）  
+版本：v1.1  
 日期：2026-01-26
 
 ## 文档简介
@@ -12,6 +12,7 @@
 - 关联文档：
   - SRS：`docs/requirements/asset-ledger-srs.md`
   - 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`
+  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
 
 > 本文为“概念模型 + 关键约束”沉淀，目标是让后续实现/评审对齐：哪些实体必须存在、如何关联、状态如何流转、哪些字段需要可追溯。本文不绑定具体数据库实现，但会标注关键唯一性与索引建议。
 
@@ -106,19 +107,25 @@
 - `asset_uuid`：外键 → asset（冗余可选，便于查询）
 - `collected_at`：采集到该条记录的时间
 - `normalized`：标准化字段（JSON）
-- `raw_payload`：原始数据（JSON/二进制，永久保留，可压缩）
+- `raw_ref`：原始数据引用（对象存储 key/路径；永久保留）
+- `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
+- `raw_size_bytes`：压缩后大小（字节）
+- `raw_mime_type`：内容类型（可选，例如 `application/json`）
+- `raw_inline_excerpt`：少量内联摘录（可选，仅用于排障/列表摘要；不得包含敏感信息）
 - `raw_hash`：原始数据摘要（用于快速比对/去重/审计）
 
 **normalized 最小字段集合（满足 dup-rules-v1）**
 
 > 口径：键不存在时视为缺失，缺失不计分；实现可按来源能力填充。
+> normalized-v1 完整结构见：`docs/requirements/asset-ledger-json-schema.md`。
 
 - `identity.machine_uuid`（vm）
 - `network.mac_addresses[]`（vm）
 - `network.ip_addresses[]`（vm）
 - `identity.hostname`（vm）
 - `identity.serial_number`（host）
-- `network.management_ip`（host）
+- `network.management_ip`（host，可为 in-band 管理 IP）
+- `network.bmc_ip`（host，out-of-band 管理 IP；推荐优先提供）
 - 辅助键（用于解释与人工研判，不强制计分）：`os.fingerprint`、`resource.profile`、`identity.cloud_native_id`
 
 ### 2.7 relation_record（关系来源记录：每次采集的关系 raw 快照，永久保留）
@@ -131,7 +138,11 @@
 - `from_asset_uuid`：外键 → asset
 - `to_asset_uuid`：外键 → asset
 - `collected_at`：采集到该条记录的时间
-- `raw_payload`：原始数据（JSON/二进制，永久保留）
+- `raw_ref`：原始数据引用（对象存储 key/路径；永久保留）
+- `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
+- `raw_size_bytes`：压缩后大小（字节）
+- `raw_mime_type`：内容类型（可选，例如 `application/json`）
+- `raw_inline_excerpt`：少量内联摘录（可选，仅用于排障/列表摘要；不得包含敏感信息）
 - `raw_hash`：原始数据摘要
 
 **关键约束（建议）**
@@ -192,7 +203,7 @@
 
 - `event_id`：主键
 - `occurred_at`：事件发生时间
-- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`duplicate_candidate.ignored`、`asset.merged`、`custom_field.value_updated`）
+- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`run.trigger_suppressed`、`duplicate_candidate.ignored`、`asset.merged`、`custom_field.value_updated`）
 - `actor_user_id`：操作者（系统自动事件可为空）
 - `subject_type`：被影响对象类型（如 `source/run/asset/duplicate_candidate/custom_field_definition/custom_field_value`）
 - `subject_id`：被影响对象标识（字符串；例如 `asset_uuid`、`source_id`）
@@ -263,6 +274,7 @@
 
 - `canonical` 建议采用“值 + provenance（来源）”结构：每个字段至少能回溯到 `source_id` 与 `run_id/collected_at`。
 - 多值字段（如 IP/MAC 列表）使用去重并集；单值字段冲突时应显式表示冲突（保留当前选用值与备选值列表），以满足 UI 对比与审计需求。
+- canonical-v1 完整结构见：`docs/requirements/asset-ledger-json-schema.md`。
 
 **关键约束（建议）**
 
@@ -350,12 +362,14 @@ erDiagram
         string record_id PK
         string run_id FK
         string link_id FK
+        string raw_ref
         string raw_hash
     }
     RELATION_RECORD {
         string relation_record_id PK
         string run_id FK
         string relation_id FK
+        string raw_ref
         string raw_hash
     }
     ASSET_RUN_SNAPSHOT {
@@ -460,3 +474,4 @@ stateDiagram-v2
 - D-05：A（仅 audit_event）
 - D-06：B（typed FK，保留 subject_type + subject_id）
 - D-07：B（物化 `asset_run_snapshot`）
+- D-08：A（raw 采用对象存储持久化，DB 存 raw_ref + hash + size + compression；必要时保留少量 inline excerpt）

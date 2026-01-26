@@ -1,6 +1,6 @@
 # 资产台账系统需求规格说明书（SRS）
 
-版本：v1.0（冻结）  
+版本：v1.1  
 日期：2026-01-26
 
 ## 文档简介
@@ -12,6 +12,7 @@
 - 关联文档：
   - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`（实体/关系/关键约束）
   - 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`（插件契约与选型建议）
+  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
 
 ## 1. 概述
 
@@ -116,16 +117,16 @@
 
 - Given Source 已启用且到达定时触发点  
   When 定时任务执行  
-  Then 系统为该 Source 创建一个新的 Run，状态进入 Running/Queued（实现可选其一，但需可观测）。
+  Then 系统为该 Source 创建一个新的 Run，状态进入 `Queued`（必须可观测）。
 - Given 管理员手动触发某 Source 采集  
   When 触发成功  
   Then 生成 Run 并可在 Run 列表看到状态变化与日志/错误摘要。
 - Given 管理员查看 Run 列表  
   When 展示  
   Then 必须展示 Run 的 `mode`（collect/detect/healthcheck）。
-- Given 同一 Source 已存在一个 Running 的 Run  
+- Given 同一 Source 已存在一个状态为 `Queued` 或 `Running` 的 Run  
   When 再次触发同一 Source（定时或手动）  
-  Then 系统必须避免并发冲突（允许返回“已在运行/已排队”之一，但行为需一致并可解释）。
+  Then 系统不得创建新的 Run，而是返回当前活动 Run 的 `run_id`，并记录一次审计事件（例如 `run.trigger_suppressed`，包含 trigger_type 与原因）。
 
 ### FR-03 插件化采集（Collector）与目标版本适配
 
@@ -152,6 +153,9 @@
 - Given 插件在 collect 模式无法保证“完整资产清单”（例如缺少列举权限/分页中断/接口错误）  
   When Run 执行  
   Then Run 必须失败并给出可读错误（需脱敏），不得以 warnings 方式标记成功。
+- Given 插件输出 `assets[].normalized`  
+  When 核心落库到 `source_record.normalized`  
+  Then 其结构必须符合 `normalized-v1`（见：`docs/requirements/asset-ledger-json-schema.md`）。
 
 ### FR-04 资产入账与统一视图（Asset）
 
@@ -165,6 +169,7 @@
 - 多值字段（如 `mac_addresses[]`、`ip_addresses[]`）在统一视图中取并集去重。
 - 单值字段（如 `hostname`、`serial_number` 等）若存在多来源不一致，统一视图必须标记“冲突”，并展示当前选用值的来源；其余值在“关联来源明细”中可对比查看。
 - 统一视图不应隐藏来源差异：用户必须能回溯到各来源的原始值与采集批次。
+- canonical-v1 的结构（含字段级来源证据）见：`docs/requirements/asset-ledger-json-schema.md`。
 
 **验收标准**
 
@@ -272,17 +277,19 @@
 
 > 说明：规则使用 `source_record.normalized` 中的“候选键（candidate keys）”。键不存在时视为不命中；不强制所有来源都提供全部键。
 
-| rule_code                | 适用对象 | 分值 | 命中条件（摘要）                                            | 解释要点                               |
-| ------------------------ | -------- | ---- | ----------------------------------------------------------- | -------------------------------------- |
-| `vm.machine_uuid_match`  | vm       | 100  | `machine_uuid` 存在且完全相同（SMBIOS/BIOS UUID 等）        | 强信号：同一虚拟机跨平台迁移仍可能保留 |
-| `vm.mac_overlap`         | vm       | 90   | `mac_addresses` 交集 ≥ 1                                    | 强信号：需注意 MAC 复用/漂移           |
-| `vm.hostname_ip_overlap` | vm       | 70   | `hostname` 相同且 `ip_addresses` 交集 ≥ 1（取最近一次快照） | 中信号：DHCP/重装会带来误报            |
-| `host.serial_match`      | host     | 100  | `serial_number` 存在且完全相同                              | 强信号：物理机/设备序列号              |
-| `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                 |
+| rule_code                | 适用对象 | 分值 | 命中条件（摘要）                                            | 解释要点                                       |
+| ------------------------ | -------- | ---- | ----------------------------------------------------------- | ---------------------------------------------- |
+| `vm.machine_uuid_match`  | vm       | 100  | `machine_uuid` 存在且完全相同（SMBIOS/BIOS UUID 等）        | 强信号：同一虚拟机跨平台迁移仍可能保留         |
+| `vm.mac_overlap`         | vm       | 90   | `mac_addresses` 交集 ≥ 1                                    | 强信号：需注意 MAC 复用/漂移                   |
+| `vm.hostname_ip_overlap` | vm       | 70   | `hostname` 相同且 `ip_addresses` 交集 ≥ 1（取最近一次快照） | 中信号：DHCP/重装会带来误报                    |
+| `host.serial_match`      | host     | 100  | `serial_number` 存在且完全相同                              | 强信号：物理机/设备序列号                      |
+| `host.bmc_ip_match`      | host     | 90   | `bmc_ip` 存在且完全相同                                     | 强信号：OOB 管理地址通常稳定；仍需注意 IP 复用 |
+| `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                         |
 
 ##### 候选键集合（D-03，已决策）
 
-- 最小集合：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`management_ip`
+- 最小集合：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`bmc_ip`（host）
+- 可选：`management_ip`（host，in-band；仅来源可稳定提供时使用）
 - 辅助键（用于解释与人工研判；默认不计分）：`os_fingerprint`、`resource_profile`、`cloud_native_id`
 
 ##### 可解释性：原因与证据（reasons JSON）
@@ -407,7 +414,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 
 - Run 失败需记录可读错误与失败原因分类（认证失败/网络失败/解析失败等）。
 - 失败原因分类需结构化落库（`run.errors`），非致命问题落库为 `run.warnings`。
-- 对同一 Source 的并发触发应有一致策略（拒绝/排队），避免写入竞态。
+- 对同一 Source 的并发触发必须采用单一策略（见 FR-02 / D-05），避免写入竞态。
 
 ### NFR-04 可扩展性
 
@@ -424,6 +431,23 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - 系统必须提供可执行的备份与恢复方案（包含 DB 数据与 raw/审计数据），确保恢复后仍满足“永久可追溯”语义。
 - 由于 raw 与审计永久保留，系统必须有容量规划与告警；实现侧应支持数据分区/归档/分层存储等手段控制长期存储成本（语义不变）。
 
+### NFR-07 Raw 存储策略（压缩/对象存储/分区，可验收）
+
+> 背景：raw 永久保留会快速膨胀；若将 raw 长期内联在 DB，会显著放大容量、备份与查询成本。
+
+- raw 必须写入对象存储（S3 兼容或等价方案）；DB 仅存 `raw_ref + raw_hash + raw_size_bytes + raw_compression` 等元数据（允许按需保留少量 inline excerpt 用于排障）。
+- raw 必须启用压缩（默认推荐 zstd；算法可固定，但必须可在元数据中记录 `raw_compression`）。
+- `source_record` / `relation_record` 等高增长表必须采用时间分区（按月或等价策略），以保证长期查询与维护可控。
+
+**验收标准**
+
+- Given 一个 `mode=collect` 的 Run 成功结束  
+  When 系统持久化 SourceRecord/RelationRecord  
+  Then 每条记录必须同时具备：`raw_ref`（可下载）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`。
+- Given 对象存储不可用  
+  When 系统无法写入 raw  
+  Then 该 Run 必须失败，并给出可读错误（不得标记为成功）。
+
 ## 5. 约束与假设
 
 - 阿里云来源不映射 Cluster（Cluster 为空）；通常无法获取宿主 Host（runs_on 允许为空）。
@@ -437,3 +461,4 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - D-02：A（固定 70/90）
 - D-03：B（增加辅助键：os_fingerprint/resource_profile/cloud_native_id）
 - D-04：A（永久 ignored，更新 last_observed，允许手工 reopen）
+- D-05：A（单 Source 单飞：同一 Source 同时最多 1 个活动 Run；触发时若已存在活动 Run，则不新建而是返回已有 run_id，并记录 trigger_suppressed 审计）

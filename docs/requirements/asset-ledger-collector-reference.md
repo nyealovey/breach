@@ -1,6 +1,6 @@
 # 资产台账系统采集插件参考（开源组件优先）
 
-版本：v1.0（冻结）  
+版本：v1.1  
 日期：2026-01-26
 
 ## 文档简介
@@ -12,6 +12,7 @@
 - 关联文档：
   - SRS：`docs/requirements/asset-ledger-srs.md`
   - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`
+  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
 
 > 目标：台账“本体”自研（入库、关系、疑似重复、人工合并、审计、自定义字段等），采集插件尽量基于成熟开源组件/官方 SDK/CLI，插件只做“薄适配层”，避免重复造轮子。
 
@@ -85,10 +86,11 @@
 关键约束：
 
 - `schema_version` 必须存在，用于契约版本化。
+- `assets[].normalized.version` 必须存在且为 `normalized-v1`，并符合 schema（见：`docs/requirements/asset-ledger-json-schema.md`）。
 - `external_id` 必须在“同一 Source 内稳定”，用于持续追踪（asset_source_link 的 `(source_id, external_kind, external_id)` 唯一）。
 - 对 `mode=collect`：插件输出必须代表该 Source 的“完整资产清单快照”（inventory complete）。若因权限/分页/接口错误无法保证完整，必须失败并在 `errors[]` 中说明；不得以 warnings 方式标记成功。
 - `stats.inventory_complete` 必须存在（仅 collect 有意义）：`true` 表示本次清单完整且可用于推进 missing/offline 语义；失败 Run 不得标记为 `true`。
-- `raw_payload` 永久保留；当前版本不压缩（核心侧 `raw_compression=none`）；可附 `raw_hash`（由核心计算也可）。
+- `raw_payload` 永久保留；核心必须将 raw 写入对象存储并压缩（参见第 6 节与 SRS 的 NFR-07）；可附 `raw_hash`（由核心计算也可）。
 - `relations[].raw_payload` 永久保留，核心落到 `relation_record`。
 - `relations[]` 引用的端点（from/to）必须在同次输出的 `assets[]` 中存在；若无法提供端点资产，请不要输出该关系或输出端点资产的最小 stub（至少 external_kind/external_id）。
 - 阿里云不映射 Cluster：`cluster` 资产可不输出；`runs_on/member_of` 关系可为空。
@@ -150,8 +152,11 @@
 - `network.ip_addresses[]`（vm）
 - `identity.hostname`（vm）
 - `identity.serial_number`（host）
-- `network.management_ip`（host）
+- `network.management_ip`（host，可为 in-band 管理 IP）
+- `network.bmc_ip`（host，out-of-band 管理 IP；如可得强烈建议提供）
 - 辅助键（用于解释与人工研判，不强制计分）：`os.fingerprint`、`resource.profile`、`identity.cloud_native_id`
+
+> normalized-v1 完整结构与示例见：`docs/requirements/asset-ledger-json-schema.md`。
 
 ## 3. 采集流程与职责边界
 
@@ -266,17 +271,18 @@ flowchart TD
 2. raw 中不得包含明文凭证（Token/AK/SK/密码）。若目标 API 回显敏感字段，插件需在输出前清洗。
 3. 插件日志必须脱敏；建议输出“可定位问题的上下文”（请求 URL/状态码/traceId 等），但不得输出密钥。
 
-### 6.2 核心侧 raw 存储形态（建议）
+### 6.2 核心侧 raw 存储形态（必须）
 
 > 说明：此处属于核心实现/运维决策，但会影响插件契约（例如是否需要输出 raw_ref），因此在此记录。
 
 **raw_payload 落库方案（D-10，已决策）**
 
-- raw 以内联 JSON/二进制存 DB（例如 JSONB/TEXT/BLOB）。由于 raw 永久保留，需配合容量规划、备份与分区/归档策略。
+- raw 必须写入对象存储（S3 兼容或等价方案）；DB 仅存 `raw_ref/raw_hash/raw_size_bytes/raw_compression` 等元数据（可选：少量 inline excerpt 用于排障）。
+- 对象存储对象 key 建议包含：`source_id/run_id/external_kind/external_id`（或等价可追溯路径），便于按来源与 Run 维度定位与归档。
 
 ### 6.3 压缩策略（已决策）
 
-- 不压缩（`raw_compression=none`）。
+- 默认启用压缩（`raw_compression=zstd`）。
 
 ## 7. 插件交付形态建议（非强制）
 
@@ -290,5 +296,5 @@ flowchart TD
 
 - D-08：A（退出码/HTTP status 为主，errors 用于解释）
 - D-09：A（允许落库排障证据，但 Run 失败不推进语义）
-- D-10：A（DB 内联存 raw）
-- D-11：D（不压缩，`raw_compression=none`）
+- D-10：B（对象存储保存 raw；DB 存 raw_ref + hash + size + compression；可选保留 inline excerpt）
+- D-11：A（默认压缩，`raw_compression=zstd`）

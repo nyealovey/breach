@@ -96,11 +96,15 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ### 资产台账系统文档
 
+- PRD（vCenter MVP v1.0）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
+- PRD（Host 字段模型 v1.0）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - 需求规格说明书（SRS）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
 - 概念数据模型（Conceptual Data Model）：[`docs/requirements/asset-ledger-data-model.md`](docs/requirements/asset-ledger-data-model.md)
 - 采集插件参考（开源组件优先）：[`docs/requirements/asset-ledger-collector-reference.md`](docs/requirements/asset-ledger-collector-reference.md)
+- normalized/canonical JSON Schema：[`docs/requirements/asset-ledger-json-schema.md`](docs/requirements/asset-ledger-json-schema.md)
+- 旧字段映射（导入/对齐）：[`docs/requirements/asset-ledger-legacy-field-mapping.md`](docs/requirements/asset-ledger-legacy-field-mapping.md)
 - 待决策汇总：见以上各文档末尾「待决策（Decision Log）」小节
-- 修订口径摘要：新增 `relation_record`，Run 增加 `mode/errors/warnings`，Source 增加 `schedule_timezone`，normalized 最小字段集合明确为 dup-rules-v1，资产快照包含关系摘要
+- 修订口径摘要：v1.0 PRD 决策以 `docs/prds/asset-ledger-v1.0-prd.md` 为准（vCenter-only、admin-only、Source 必填仅 endpoint/username/password、raw 存 PostgreSQL(jsonb)+分区、Run 单 Source 单飞、raw 无 UI 入口）；Host 字段模型以 `docs/prds/asset-ledger-host-field-model-v1.0-prd.md` 为准（`network.bmc_ip` 为首选去重键，磁盘总量/已用先预留不强制实现）
 
 ### Requirements
 
