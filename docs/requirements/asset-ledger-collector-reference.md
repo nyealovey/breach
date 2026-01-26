@@ -31,6 +31,7 @@
 
 ```json
 {
+  "schema_version": "collector-request-v1",
   "source": {
     "source_id": "src_123",
     "source_type": "vcenter",
@@ -45,6 +46,7 @@
 }
 ```
 
+> `schema_version` 用于契约版本化；当核心传入插件不支持的版本时，插件应失败并输出可读错误。  
 > `credential` 字段建议由核心在运行时注入（不落盘），插件不得将其写入日志/输出。
 
 ### 2.2 输出（插件 → 核心）
@@ -53,6 +55,7 @@
 
 ```json
 {
+  "schema_version": "collector-response-v1",
   "detect": {
     "target_version": "8.1",
     "capabilities": {},
@@ -74,16 +77,20 @@
       "raw_payload": {}
     }
   ],
-  "stats": { "assets": 0, "relations": 0, "warnings": [] },
+  "stats": { "assets": 0, "relations": 0, "inventory_complete": true, "warnings": [] },
   "errors": []
 }
 ```
 
 关键约束：
 
+- `schema_version` 必须存在，用于契约版本化。
 - `external_id` 必须在“同一 Source 内稳定”，用于持续追踪（asset_source_link 的 `(source_id, external_kind, external_id)` 唯一）。
-- `raw_payload` 永久保留；可压缩；可附 `raw_hash`（由核心计算也可）。
+- 对 `mode=collect`：插件输出必须代表该 Source 的“完整资产清单快照”（inventory complete）。若因权限/分页/接口错误无法保证完整，必须失败并在 `errors[]` 中说明；不得以 warnings 方式标记成功。
+- `stats.inventory_complete` 必须存在（仅 collect 有意义）：`true` 表示本次清单完整且可用于推进 missing/offline 语义；失败 Run 不得标记为 `true`。
+- `raw_payload` 永久保留；当前版本不压缩（核心侧 `raw_compression=none`）；可附 `raw_hash`（由核心计算也可）。
 - `relations[].raw_payload` 永久保留，核心落到 `relation_record`。
+- `relations[]` 引用的端点（from/to）必须在同次输出的 `assets[]` 中存在；若无法提供端点资产，请不要输出该关系或输出端点资产的最小 stub（至少 external_kind/external_id）。
 - 阿里云不映射 Cluster：`cluster` 资产可不输出；`runs_on/member_of` 关系可为空。
 
 **errors 与 warnings 的落库口径**
@@ -116,31 +123,22 @@
 
 #### 2.3.2 子进程退出码 / HTTP 状态码
 
-**决策点 D-08：错误信号的主判据**
+**错误信号主判据（D-08，已决策）**
 
-- 已决策：方案 A（退出码/HTTP status 为主，errors 用于解释）
-
-- 方案 A（已选）：子进程以“退出码”判定成功（0 成功，非 0 失败）；HTTP 以 status code 判定成功（2xx 成功，非 2xx 失败）；`errors[]` 用于解释与分类
-  - 优点：行为明确；缺点：需要核心统一转换 error_summary。
-- 方案 B：忽略退出码/HTTP status，仅以 `errors[]` 是否为空判定成功
-  - 优点：更“契约化”；缺点：更容易被插件实现疏忽导致误判（忘记填 errors）。
+- 子进程以退出码判定成功（0 成功，非 0 失败）；HTTP 以 status code 判定成功（2xx 成功，非 2xx 失败）；`errors[]` 用于解释与分类。
 
 #### 2.3.3 部分成功（partial success）处理
 
 采集过程可能出现“已采集部分资产，但中途失败”的情况。
 
-**决策点 D-09：是否允许部分结果落库**
+**部分成功落库（D-09，已决策）**
 
-- 已决策：方案 A（落库排障证据，但 Run 失败不推进语义）
-
-- 方案 A（已选）：允许落库**已采集的 source_record/raw**用于排障，但该 Run 仍标记为 Failed；核心不得据此推进 missing/last_seen/关系 last_seen（仅成功 Run 才能推进）
-  - 优点：既保留排障证据，又不污染台账语义；缺点：实现需要区分“失败 Run 的记录不参与状态推进”。
-- 方案 B：不落库任何结果（失败即全丢）
-  - 优点：语义最简单；缺点：排障困难，难以复盘。
+- 允许落库已采集的 `source_record/raw` 用于排障，但该 Run 仍标记为 Failed；核心不得据此推进 missing/last_seen/关系 last_seen（仅成功 Run 才能推进）。
 
 #### 2.3.4 warnings 的语义（非致命）
 
-- `stats.warnings[]` 表示“非致命问题”（例如部分字段缺失、某些对象无权限读取），Run 可仍视为成功。
+- `stats.warnings[]` 表示“非致命问题”（例如部分字段缺失、少数对象详情读取失败），Run 可仍视为成功。
+- 若问题影响“完整资产清单”（例如无法列举对象/分页中断/列表接口权限不足），必须作为 `errors[]` 处理并使 Run 失败；不得以 warnings 方式成功返回不完整清单。
 - `warnings` 不得包含敏感信息；建议仅包含可定位问题的上下文摘要。
 
 ### 2.4 normalized 最小字段集合（满足 dup-rules-v1）
@@ -272,37 +270,13 @@ flowchart TD
 
 > 说明：此处属于核心实现/运维决策，但会影响插件契约（例如是否需要输出 raw_ref），因此在此记录。
 
-**决策点 D-10：raw_payload 的落库方案**
+**raw_payload 落库方案（D-10，已决策）**
 
-- 已决策：方案 A（DB 内联）
+- raw 以内联 JSON/二进制存 DB（例如 JSONB/TEXT/BLOB）。由于 raw 永久保留，需配合容量规划、备份与分区/归档策略。
 
-- 方案 A（已选）：raw 以内联 JSON/二进制存 DB（例如 JSONB/TEXT/BLOB）
-  - 优点：实现最少、查询方便；缺点：DB 膨胀快，长期成本高。
-- 方案 B（最可控）：raw 存对象存储（S3/MinIO 等），DB 仅存 `raw_ref + raw_hash + size`
-  - 优点：DB 轻、成本可控；缺点：需要对象存储与权限/生命周期治理。
-- 方案 C（推荐）：混合——小 payload 内联，大 payload 上对象存储（按阈值分流）
-  - 优点：兼顾易用与成本；缺点：实现稍复杂，需要阈值与迁移策略。
+### 6.3 压缩策略（已决策）
 
-### 6.3 压缩与阈值（建议）
-
-**决策点 D-11：压缩策略**
-
-- 已决策：方案 D（不压缩，`raw_compression=none`）
-
-- 方案 A：核心对 raw 统一压缩后再存储（gzip/zstd），同时保存 `raw_hash`（基于未压缩内容计算）
-- 方案 B：仅对超过阈值的 raw 压缩（例如 > 256KB）
-- 方案 C：由插件输出压缩后的 raw（base64 编码）
-  - 不推荐：增加契约复杂度与调试成本，且容易引入“双重压缩/编码”问题。
-- 方案 D：不压缩（`raw_compression=none`）
-
-补充说明（用于决策 D-11）：
-
-- “压缩”通常是**无损（lossless）**的：gzip/zstd 解压后可以还原出与压缩前**完全一致的字节序列**（前提是你存的是原始字节，而不是“解码后又重新序列化”的 JSON）。
-- 建议核心同时保存：
-  - `raw_hash`：基于**未压缩内容**计算（用于比对/审计）
-  - `raw_size`（未压缩字节数）与 `raw_compressed_size`（可选）
-  - `raw_compression`：`none|gzip|zstd`（方便解压与迁移）
-- 若 raw 以 JSON 存储且需要“按 JSON 字段查询 raw”，则不建议对同一列做压缩（会失去 JSON 查询能力）；更常见做法是：`normalized` 可查询，`raw_payload` 仅用于下载/回放，可用二进制列存压缩数据。
+- 不压缩（`raw_compression=none`）。
 
 ## 7. 插件交付形态建议（非强制）
 

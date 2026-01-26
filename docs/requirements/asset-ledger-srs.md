@@ -67,9 +67,11 @@
   - 处理疑似重复（合并/忽略）
   - 管理自定义字段定义
   - 查看/导出全量台账
+  - 查看/下载来源 raw payload（需脱敏；下载动作需审计）
 - 普通用户（user）
   - 查看资产列表/详情/关系/历史
   - 不可查看/编辑凭证
+  - 不可查看/下载 raw payload
   - 不可合并资产
   - 不可管理字段定义
 
@@ -77,6 +79,7 @@
 
 - 管理员可访问“来源管理/重复中心/字段管理”等管理功能；普通用户不可见或无权限操作。
 - 普通用户不可直接获取任何来源凭证明文（包括 API 响应与页面渲染）。
+- 普通用户不可查看/下载任何来源 raw payload（403/无入口）。
 
 ## 3. 功能需求（Functional Requirements）
 
@@ -146,12 +149,22 @@
 - Given 目标版本升级导致旧 driver 不再适用  
   When 下一次 Run 执行  
   Then 插件应选择匹配的新 driver 或明确失败原因，不得“静默采集不完整数据”。
+- Given 插件在 collect 模式无法保证“完整资产清单”（例如缺少列举权限/分页中断/接口错误）  
+  When Run 执行  
+  Then Run 必须失败并给出可读错误（需脱敏），不得以 warnings 方式标记成功。
 
 ### FR-04 资产入账与统一视图（Asset）
 
 **描述**
 
 系统以 Asset 作为统一资产视图实体，主键 `asset_uuid` 由系统生成。Asset 可关联多个 SourceRecord，形成统一展示。
+
+**统一字段视图口径（canonical-v1）**
+
+- 统一字段视图由关联的来源快照（SourceRecord.normalized）聚合得出，但必须保留字段级可追溯性（至少包含来源 `source_id` 与采集时间/Run）。
+- 多值字段（如 `mac_addresses[]`、`ip_addresses[]`）在统一视图中取并集去重。
+- 单值字段（如 `hostname`、`serial_number` 等）若存在多来源不一致，统一视图必须标记“冲突”，并展示当前选用值的来源；其余值在“关联来源明细”中可对比查看。
+- 统一视图不应隐藏来源差异：用户必须能回溯到各来源的原始值与采集批次。
 
 **验收标准**
 
@@ -163,7 +176,10 @@
   Then 系统应将新的 SourceRecord 归属到同一个 Asset（用于“持续追踪”，不等同于跨来源自动合并）。
 - Given 用户查看资产详情  
   When 展示  
-  Then 必须同时展示：统一字段视图 + 关联来源明细（含 raw 可查看/下载）。
+  Then 必须同时展示：统一字段视图（含字段来源/采集时间）+ 关联来源明细（normalized 对所有人可见；raw 仅管理员可查看/下载）。
+- Given 同一 Asset 关联多个来源且某字段出现不一致（例如 hostname 不一致）  
+  When 查看资产详情  
+  Then 统一字段视图必须标记该字段为“冲突”，并在关联来源明细中可对比各来源值与采集时间。
 
 ### FR-05 资产关系（VM ↔ Host ↔ Cluster）
 
@@ -234,17 +250,11 @@
 - 排除：任一方 `asset.status=merged` 的资产不参与候选。
 - 可包含：`vm` / `host`（`cluster` 默认不生成候选，除非后续明确需要）。
 
-**决策点 D-01：候选时间窗（用于降噪与成本控制）**
+##### 候选时间窗（D-01，已决策）
 
-- 已决策：方案 B（在管 + 最近 N 天内离线）
-- 参数：`N = 7`（天；作为常量固化，不提供 UI 配置）
-
-- 方案 A（最简单/最省）：仅比较“当前在管（in_service）”资产
-  - 优点：噪音低、计算量小；缺点：容易漏掉“迁移后新旧资产一在管一离线”的重复。
-- 方案 B（已选）：在管 + 最近 N 天内出现过（last_seen_at within N days）的离线资产
-  - 优点：覆盖迁移场景、噪音可控；缺点：需要一个可配置 N（尽管规则固定，N 仍是常量）。
-- 方案 C（最全/最贵）：全量历史资产参与
-  - 优点：不漏；缺点：计算与人工处理成本极高，且历史噪音大。
+- 候选范围：在管（in_service）+ 最近 `N` 天内出现过（`last_seen_at` within N days）的离线资产。
+- 参数：`N = 7`（天；常量固化，不提供 UI 配置）。
+- 目的：覆盖迁移场景，同时控制噪音与计算成本。
 
 ##### 评分与阈值（Score）
 
@@ -254,13 +264,9 @@
   - `90-100`：高（High）
   - `70-89`：中（Medium）
 
-**决策点 D-02：阈值是否调整**
+##### 阈值固定（D-02，已决策）
 
-- 已决策：方案 A（固定 70/90）
-
-- 方案 A（已选）：固定为 70/90（如上）
-- 方案 B：提高创建阈值（例如 80）以减少噪音，但可能漏报
-- 方案 C：降低创建阈值（例如 60）以提高召回，但会显著增加人工工作量
+- 固定阈值：创建 `score >= 70`；High `score >= 90`。不提供配置项。
 
 ##### 规则列表（Rule Set）
 
@@ -274,15 +280,10 @@
 | `host.serial_match`      | host     | 100  | `serial_number` 存在且完全相同                              | 强信号：物理机/设备序列号              |
 | `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                 |
 
-**决策点 D-03：候选键的最小集合**
+##### 候选键集合（D-03，已决策）
 
-- 已决策：方案 B（增加辅助键）
-
-- 方案 A（最小/易落地）：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`management_ip`
-- 方案 B（已选/更稳）：在 A 基础上增加以下辅助键（用于对比解释与人工研判；是否纳入评分可后续迭代）：
-  - `os_fingerprint`（如 OS family + version）
-  - `resource_profile`（如 vCPU/内存/磁盘等规格摘要）
-  - `cloud_native_id`（如 cloud instanceId/资源 ARN 等，来源内强标识）
+- 最小集合：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`management_ip`
+- 辅助键（用于解释与人工研判；默认不计分）：`os_fingerprint`、`resource_profile`、`cloud_native_id`
 
 ##### 可解释性：原因与证据（reasons JSON）
 
@@ -309,13 +310,10 @@
 
 基础要求：支持“永久忽略”（见 FR-07 验收）。
 
-**决策点 D-04：ignored 后再次命中如何处理**
+##### ignored 抑制策略（D-04，已决策）
 
-- 已决策：方案 A（永久忽略，记录 last_observed，可手工 reopen）
-
-- 方案 A（已选）：保持 `status=ignored` 不变，仅更新 `last_observed_at`，UI 默认不再提示；允许管理员手工 reopen
-- 方案 B：ignored 设置 TTL（例如 90 天）到期后自动 reopen（更灵活但更易扰民）
-- 方案 C：不记录 last_observed，仅永久压制（最安静但丢失“再次命中”的信号）
+- 处理：保持 `status=ignored` 不变；再次命中仅更新 `last_observed_at`，默认不再提示。
+- 管理员可手工 reopen（将 ignored 重新置为 open），并记录审计。
 
 ### FR-08 人工合并（Merge）与审计
 
@@ -330,7 +328,7 @@
   Then A 的来源明细应包含原本属于 B 的 SourceRecord；关系边去重合并；B 状态变为“已合并”且默认不出现在资产列表。
 - Given 合并发生字段冲突  
   When 合并执行  
-  Then 按系统策略处理（默认：主资产优先；若实现提供其它策略需在界面明确选择并审计）。
+  Then 系统按冲突处理策略解决（默认：主资产优先）；且必须在界面展示冲突字段清单、双方取值与最终采用值；冲突处理策略与冲突字段摘要必须写入审计。
 - Given 合并完成  
   When 查看审计  
   Then 必须记录：操作者、时间、主/从资产、冲突处理策略、影响范围摘要。
@@ -364,9 +362,33 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - Given 资产经过多次 Run  
   When 查看资产历史  
   Then 能按时间/Run 查看历史记录（至少包含每次 Run 的采集时间、关键字段变化与关系变化摘要）。
-- Given 用户查看某条来源明细  
+- Given 管理员查看某条来源明细  
   When 打开 raw  
-  Then 可查看或下载该次采集的 raw payload（需脱敏敏感字段如凭证）。
+  Then 可查看或下载该次采集的 raw payload（需脱敏敏感字段如凭证），且下载动作必须记录审计。
+- Given 普通用户查看某条来源明细  
+  When 尝试打开 raw  
+  Then 无入口或被拒绝（403）。
+
+### FR-11 资产浏览、查询与导出
+
+**描述**
+
+系统提供资产列表的浏览与查询能力；管理员可导出全量台账用于盘点与离线分析。
+
+**验收标准**
+
+- Given 任一用户访问资产列表  
+  When 展示  
+  Then 必须支持分页；支持按 `asset_type`、`status`、`source` 等过滤；支持关键字搜索（至少覆盖 `asset_uuid`/hostname/external_id）。
+- Given 用户在资产列表选择排序  
+  When 生效  
+  Then 至少支持按 `last_seen_at` 与 `display_name` 排序。
+- Given 管理员发起“导出全量台账”  
+  When 导出完成  
+  Then 生成可下载文件（CSV/JSON 其一即可），且每行/每条至少包含：`asset_uuid`、`asset_type`、`status`、`display_name`、`last_seen_at`、来源摘要（source_id/source_type）；导出动作必须记录审计。
+- Given 普通用户发起“导出全量台账”  
+  When 执行  
+  Then 无入口或被拒绝（403）。
 
 ## 4. 非功能需求（Non-Functional Requirements）
 
@@ -396,6 +418,11 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 
 - Run 必须记录：开始/结束时间、状态、采集数量统计、错误摘要、插件版本与 driver、目标探测信息。
 - 系统应提供最小可观测入口（列表/详情页即可）。
+
+### NFR-06 容量与备份恢复
+
+- 系统必须提供可执行的备份与恢复方案（包含 DB 数据与 raw/审计数据），确保恢复后仍满足“永久可追溯”语义。
+- 由于 raw 与审计永久保留，系统必须有容量规划与告警；实现侧应支持数据分区/归档/分层存储等手段控制长期存储成本（语义不变）。
 
 ## 5. 约束与假设
 

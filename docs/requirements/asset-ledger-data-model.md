@@ -58,7 +58,7 @@
 - `detect_result`：目标版本/能力探测摘要（JSON，脱敏）
 - `collector_plugin`：插件标识（`plugin_id`、`plugin_version`）
 - `collector_driver`：driver 标识（用于目标版本适配）
-- `stats`：采集统计（新增/更新/缺失/关系数量等，JSON）
+- `stats`：采集统计（新增/更新/缺失/关系数量等，JSON；建议包含 `inventory_complete` 用于判定是否可推进缺失/下线语义）
 - `error_summary`：失败摘要（脱敏）
 - `errors`：结构化错误数组（JSON，字段参考插件 `errors[]`）
 - `warnings`：非致命告警数组（JSON，字段参考插件 `stats.warnings[]`）
@@ -180,6 +180,12 @@
 - `summary`：合并影响摘要（JSON）
 - `snapshot_ref`：合并前快照引用（可选，为未来“撤销合并”预留）
 
+**合并语义与不变量（必须）**
+
+- 被合并资产：`asset.status=merged`，且必须设置 `merged_into_asset_uuid=primary_asset_uuid`；业务查询/列表默认隐藏（展示层可跳转到主资产）。
+- 资产持续追踪：被合并资产的 `asset_source_link` 必须迁移/重绑定到主资产，迁移后仍需满足 `(source_id, external_kind, external_id)` 唯一约束（冲突时需去重合并）。
+- 历史不丢：`source_record`、关系边与 `audit_event` 在查询层必须可追溯（可通过实体迁移或通过 merge 归并展示实现）。
+
 ### 2.11 audit_event（通用审计事件：永久保留）
 
 > 目标：满足 SRS 的“重要操作审计永久保留”与“字段变更可追溯”。审计记录应**只增不改**（append-only），严禁物理删除。
@@ -201,29 +207,13 @@
 - 索引：`(actor_user_id, occurred_at desc)`（按人追溯）
 - 索引：`(event_type, occurred_at desc)`（按事件类型审计）
 
-**决策点 D-05：审计落库形态**
+**审计落库形态（D-05，已决策）**
 
-- 已决策：方案 A（仅 audit_event）
+- 仅使用 `audit_event` 统一承载所有审计（包括字段值变更）。
 
-- 方案 A（已选/最小表）：仅使用 `audit_event` 统一承载所有审计（包括字段值变更）
-  - 优点：模型简单、扩展性强；缺点：字段值历史查询需要在 JSON 上做筛选/索引设计。
-- 方案 B（分表）：保留 `audit_event`，但字段值/高频事件另建专用 history 表（如 `custom_field_value_history`）
-  - 优点：关键历史查询更容易；缺点：表增多、维护成本更高。
+**subject 外键策略（D-06，已决策）**
 
-**决策点 D-06：subject 是否做强外键（polymorphic vs typed FK）**
-
-- 已决策：方案 B（typed FK）
-
-- 方案 A（polymorphic）：仅 `subject_type + subject_id`（无强外键）
-  - 优点：灵活；缺点：缺少参照完整性，误写更难发现。
-- 方案 B（typed FK）：为常见对象增加可选外键列（`asset_uuid/source_id/run_id/candidate_id/...`），同时保留 `subject_type/id`
-  - 优点：强约束与查询性能更好；缺点：nullable 列增多，DDL 更重。
-
-补充说明（用于下次决策）：
-
-- 何时倾向方案 A：事件量大、对象类型会扩展、审计主要用于“时间线展示/导出”，并且你能接受由应用层保证 subject 正确性。
-- 何时倾向方案 B：审计需要经常 join 回业务表做筛选（例如“列出某 source 的全部变更”）、希望 DB 帮你兜底参照完整性、以及能接受 schema 更重。
-- 折中实践（常见）：表结构按方案 A 设计；但对“常用 subject”（如 asset/source/run）额外增加冗余列与索引（不强 FK 或弱 FK），以优化查询与减少 JSON 过滤成本。
+- 为常见对象增加可选 typed FK 列（`asset_uuid/source_id/run_id/candidate_id/...`），同时保留 `subject_type + subject_id`，以获得参照完整性与查询性能。
 
 ### 2.12 custom_field_definition / custom_field_value（自定义字段）
 
@@ -268,6 +258,11 @@
 
 - `canonical` 必须包含关系摘要（runs_on/member_of 的目标引用与展示字段）
 - `diff_summary` 必须包含关系变化（新增/移除/变化原因）
+
+**canonical 聚合口径（canonical-v1）**
+
+- `canonical` 建议采用“值 + provenance（来源）”结构：每个字段至少能回溯到 `source_id` 与 `run_id/collected_at`。
+- 多值字段（如 IP/MAC 列表）使用去重并集；单值字段冲突时应显式表示冲突（保留当前选用值与备选值列表），以满足 UI 对比与审计需求。
 
 **关键约束（建议）**
 
@@ -447,21 +442,17 @@ stateDiagram-v2
 
 合并后的历史：当 asset B 合并进 asset A 时，B 的历史不应丢失；展示层可将 B 的 `source_record` 与 `audit_event` 归并到 A 的时间线中，同时保留“来源于被合并资产 B”的标识。
 
-**决策点 D-07：历史“快照/变更摘要”如何生成**
+**历史快照形态（D-07，已决策）**
 
-- 已决策：方案 B（物化快照 asset_run_snapshot）
-
-- 方案 A（最小实现）：不新增表；基于 `source_record.normalized` 在查询时生成“快照展示”与“变更摘要”
-  - 优点：不引入额外存储；缺点：API/页面需要做 diff，复杂查询可能较慢。
-- 方案 B（已选/物化快照）：新增 `asset_run_snapshot`（或等价）持久化“每次 Run 的展示快照/摘要”
-  - 优点：读性能好、口径稳定；缺点：存储显著增加，需要定义聚合规则（跨来源如何合并字段）。
+- 物化 `asset_run_snapshot`（或等价）持久化“每次 Run 的展示快照/摘要”，以稳定口径并提升读性能。
 
 ### 6.3 成功/失败 Run 对“缺失/关系/状态”的影响（强约束）
 
-- 仅 **Succeeded** 的 Run 才能推进：
+- 仅 **Succeeded** 的 `mode=collect` Run 才能推进（且必须满足“资产清单完整”，建议由 `run.stats.inventory_complete=true` 表达）：
   - `asset_source_link.presence_status`（present/missing）与 `last_seen_at`
   - `relation.last_seen_at` 与 `relation.status`（active/inactive）
   - 由可见性汇总得到的 `asset.status`（in_service/offline）
+- `mode=detect/healthcheck` 的 Run 不推进缺失/下线/关系失活语义（仅记录探测/连通性结果）。
 - **Failed/Cancelled** 的 Run 可持久化错误与部分采集结果（用于排障），但不得作为“缺失/下线/关系失活”的依据。
 
 ## 待决策（Decision Log）
