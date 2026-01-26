@@ -92,6 +92,11 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ## Documentation
 
+### 资产台账系统文档
+
+- 需求规格说明书（SRS）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
+- 概念数据模型（Conceptual Data Model）：[`docs/requirements/asset-ledger-data-model.md`](docs/requirements/asset-ledger-data-model.md)
+
 ### Requirements
 
 - Node.js >= 24
