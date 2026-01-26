@@ -1,1 +1,9 @@
-pnpm commitlint --edit $1
+#!/usr/bin/env sh
+set -e
+
+BUN="bun"
+if ! command -v bun >/dev/null 2>&1 && [ -x "$HOME/.bun/bin/bun" ]; then
+  BUN="$HOME/.bun/bin/bun"
+fi
+
+"$BUN" x commitlint --edit "$1"

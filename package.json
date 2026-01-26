@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.6",
   "author": "João Pedro Schmitz (@jpedroschmitz)",
   "license": "MIT",
   "keywords": [
@@ -53,11 +54,5 @@
     "prettier": "3.8.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.53.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "@types/react": "19.2.9",
-      "@types/react-dom": "19.2.3"
-    }
   }
 }

@@ -42,3 +42,9 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# local bun caches / temp
+.bun-cache/
+.bun-tmp/
+.tmp/
+tmp/

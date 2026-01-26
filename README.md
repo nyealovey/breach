@@ -48,6 +48,8 @@
 The best way to start with this template is using [Create Next App](https://nextjs.org/docs/api-reference/create-next-app).
 
 ```
+# bun
+bunx create next-app -e https://github.com/jpedroschmitz/typescript-nextjs-starter
 # pnpm
 pnpm create next-app -e https://github.com/jpedroschmitz/typescript-nextjs-starter
 # yarn
@@ -61,7 +63,7 @@ npx create-next-app -e https://github.com/jpedroschmitz/typescript-nextjs-starte
 To start the project locally, run:
 
 ```bash
-pnpm dev
+bun run dev
 ```
 
 Open `http://localhost:3000` with your browser to see the result.
@@ -100,7 +102,7 @@ List of websites that started off with Next.js TypeScript Starter:
 ### Requirements
 
 - Node.js >= 24
-- pnpm 10
+- Bun >= 1.3
 
 ### Directory Structure
 
@@ -111,15 +113,15 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ### Scripts
 
-- `pnpm dev` — Starts the application in development mode at `http://localhost:3000`.
-- `pnpm build` — Creates an optimized production build of your application.
-- `pnpm start` — Starts the application in production mode.
-- `pnpm type-check` — Validate code using TypeScript compiler.
-- `pnpm lint` — Runs ESLint for all files in the `src` directory.
-- `pnpm lint:fix` — Runs ESLint fix for all files in the `src` directory.
-- `pnpm format` — Runs Prettier for all files in the `src` directory.
-- `pnpm format:check` — Check Prettier list of files that need to be formatted.
-- `pnpm format:ci` — Prettier check for CI.
+- `bun run dev` — Starts the application in development mode at `http://localhost:3000`.
+- `bun run build` — Creates an optimized production build of your application.
+- `bun run start` — Starts the application in production mode.
+- `bun run type-check` — Validate code using TypeScript compiler.
+- `bun run lint` — Runs ESLint for all files in the `src` directory.
+- `bun run lint:fix` — Runs ESLint fix for all files in the `src` directory.
+- `bun run format` — Runs Prettier for all files in the `src` directory.
+- `bun run format:check` — Check Prettier list of files that need to be formatted.
+- `bun run format:ci` — Prettier check for CI.
 
 ### Path Mapping
 
@@ -131,9 +133,9 @@ import { Button } from '@/components/Button';
 import avatar from '@/public/avatar.png';
 ```
 
-### Switch to Yarn/npm
+### Switch to pnpm/Yarn/npm
 
-This starter uses pnpm by default, but this choice is yours. If you'd like to switch to Yarn/npm, delete the `pnpm-lock.yaml` file, install the dependencies with Yarn/npm, change the CI workflow, and Husky Git hooks to use Yarn/npm commands.
+This starter uses Bun by default, but this choice is yours. If you'd like to switch to pnpm/Yarn/npm, delete `bun.lock`, install dependencies with your preferred package manager, and update the CI workflow and Husky Git hooks to match.
 
 > **Note:** If you use Yarn, make sure to follow these steps from the [Husky documentation](https://typicode.github.io/husky/troubleshoot.html#yarn-on-windows) so that Git hooks do not fail with Yarn on Windows.
 
@@ -159,7 +161,7 @@ Husky is a tool that helps us run scrips before Git events. We have 3 hooks:
 
 - `pre-commit` — (Disabled by default) Runs lint-staged to lint and format the files.
 - `commit-msg` — Runs commitlint to check if the commit message follows the conventional commit message format.
-- `post-merge` — Runs pnpm install to update the dependencies if there was a change in the `pnpm-lock.yaml` file.
+- `post-merge` — Runs `bun install` to update dependencies if there was a change in the `bun.lock` file.
 
 > Important note: Husky is disabled by default in the pre-commit hook. This is intention because most developers don't want to run lint-staged on every commit. If you want to enable it, run `echo 'HUSKY_ENABLED=true' > .husky/_/pre-commit.options`.
 
