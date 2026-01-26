@@ -114,6 +114,8 @@
 
 采集必须插件化。系统通过插件完成 `detect`（目标版本/能力探测）、`collect`（采集资产/关系/原始数据）、`healthcheck`（连通性与权限校验）。同一来源类型可随目标版本差异选择不同 driver。
 
+> 采集插件建议尽量基于成熟开源组件/官方 SDK/CLI 实现“薄适配层”，以降低维护成本与风险。参考：`docs/requirements/asset-ledger-collector-reference.md`。
+
 **验收标准**
 
 - Given Source 创建后执行 healthcheck  
