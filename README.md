@@ -96,15 +96,41 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ### 资产台账系统文档
 
+文档总览（建议先读，解释 PRD vs SRS 的分层与优先级）：[`docs/index.md`](docs/index.md)
+
+需求文档：
+
 - PRD（vCenter MVP v1.0）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
 - PRD（Host 字段模型 v1.0）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - 需求规格说明书（SRS）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
-- 概念数据模型（Conceptual Data Model）：[`docs/requirements/asset-ledger-data-model.md`](docs/requirements/asset-ledger-data-model.md)
-- 采集插件参考（开源组件优先）：[`docs/requirements/asset-ledger-collector-reference.md`](docs/requirements/asset-ledger-collector-reference.md)
-- normalized/canonical JSON Schema：[`docs/requirements/asset-ledger-json-schema.md`](docs/requirements/asset-ledger-json-schema.md)
-- 旧字段映射（导入/对齐）：[`docs/requirements/asset-ledger-legacy-field-mapping.md`](docs/requirements/asset-ledger-legacy-field-mapping.md)
-- 待决策汇总：见以上各文档末尾「待决策（Decision Log）」小节
-- 修订口径摘要：v1.0 PRD 决策以 `docs/prds/asset-ledger-v1.0-prd.md` 为准（vCenter-only、admin-only、Source 必填仅 endpoint/username/password、raw 存 PostgreSQL(jsonb)+分区、Run 单 Source 单飞、raw 无 UI 入口）；Host 字段模型以 `docs/prds/asset-ledger-host-field-model-v1.0-prd.md` 为准（`network.bmc_ip` 为首选去重键，磁盘总量/已用先预留不强制实现）
+
+设计文档：
+
+- 技术设计（vCenter MVP v1.0）：[`docs/design/asset-ledger-vcenter-mvp-design.md`](docs/design/asset-ledger-vcenter-mvp-design.md)
+- 日志规范（宽事件 / 采集域事件）：[`docs/design/asset-ledger-logging-spec.md`](docs/design/asset-ledger-logging-spec.md)
+- 疑似重复规则（dup-rules-v1）：[`docs/design/asset-ledger-dup-rules-v1.md`](docs/design/asset-ledger-dup-rules-v1.md)
+- 概念数据模型（Conceptual Data Model）：[`docs/design/asset-ledger-data-model.md`](docs/design/asset-ledger-data-model.md)
+- 采集插件参考（开源组件优先）：[`docs/design/asset-ledger-collector-reference.md`](docs/design/asset-ledger-collector-reference.md)
+- normalized/canonical JSON Schema：[`docs/design/asset-ledger-json-schema.md`](docs/design/asset-ledger-json-schema.md)
+- 旧字段映射（导入/对齐）：[`docs/design/asset-ledger-legacy-field-mapping.md`](docs/design/asset-ledger-legacy-field-mapping.md)
+
+### 资产台账（单机自建 / PG-only）运行方式（MVP）
+
+环境变量（服务端）：
+
+- `DATABASE_URL`：PostgreSQL 连接串（Prisma 使用）
+- `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用）
+- `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
+- `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
+- `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）
+- `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`：插件执行超时（默认 300000）
+
+命令：
+
+- `bun run db:generate`：生成 Prisma Client
+- `bun run db:migrate`：本地创建/更新数据库表（开发环境）
+- `bun run scheduler`：启动调度器（按“调度组固定时间”创建 Run；错过触发点不补跑）
+- `bun run worker`：启动 worker（消费 Queued Run，子进程调用插件）
 
 ### Requirements
 

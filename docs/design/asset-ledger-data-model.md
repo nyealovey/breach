@@ -11,8 +11,8 @@
 - 使用方式：当 SRS（需求）与实现发生冲突时，用本文对齐“实体边界/约束/状态机”；发生歧义时，优先以 SRS 的业务语义为准。
 - 关联文档：
   - SRS：`docs/requirements/asset-ledger-srs.md`
-  - 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`
-  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
+  - 采集插件参考：`docs/design/asset-ledger-collector-reference.md`
+  - normalized/canonical JSON Schema：`docs/design/asset-ledger-json-schema.md`
 
 > 本文为“概念模型 + 关键约束”沉淀，目标是让后续实现/评审对齐：哪些实体必须存在、如何关联、状态如何流转、哪些字段需要可追溯。本文不绑定具体数据库实现，但会标注关键唯一性与索引建议。
 
@@ -41,11 +41,31 @@
 - `name`：来源名称（唯一建议：同租户内唯一）
 - `source_type`：`aliyun` / `vcenter` / `pve` / `hyperv` / `third_party` …
 - `enabled`：启用/停用
-- `schedule`：每天一次的触发配置（例如固定时刻或 cron 表达式）
-- `schedule_timezone`：时区（IANA TZ，例如 `Asia/Shanghai`）
+- `schedule_group_id`：调度组外键（见 2.2A；用于“分组定时触发”）
 - `config`：非敏感连接配置（JSON）
 - `credential_ref`：凭证引用（密文存储在独立实体/密钥系统）
 - `created_at` / `updated_at`
+
+### 2.2A schedule_group（调度组/采集任务）
+
+> 目标：支持“不同采集任务在不同固定时间触发”，并允许按组控制并发与隔离负载。
+
+- `group_id`：主键
+- `name`：组名（唯一建议）
+- `enabled`：启用/停用
+- `timezone`：时区（IANA TZ，例如 `Asia/Shanghai`）
+- `run_at_hhmm`：固定触发时间（`HH:mm`，按 `timezone` 解释）
+- `max_parallel_sources`：该组同时允许执行的 Source 数量上限（可选；MVP 可固定为全局默认）
+- `last_triggered_on`：上一次成功触发“调度入队”的日期（按 `timezone` 的 local date；用于避免重复触发）
+- `created_at` / `updated_at`
+
+**关键约束（建议）**
+
+- 唯一：`(name)` 唯一
+
+绑定方式（建议）：
+
+- `source.schedule_group_id` 外键直接指向 `schedule_group`（一组多来源），实现最简单；如未来需要“一个来源属于多个任务”，再引入中间表。
 
 ### 2.3 run（采集批次）
 
@@ -107,7 +127,8 @@
 - `asset_uuid`：外键 → asset（冗余可选，便于查询）
 - `collected_at`：采集到该条记录的时间
 - `normalized`：标准化字段（JSON）
-- `raw_ref`：原始数据引用（对象存储 key/路径；永久保留）
+- `raw_ref`：原始数据引用（用于定位 raw；可以是对象存储 key/路径，或 DB 内联记录指针；永久保留）
+- `raw`：原始数据内容（JSON，可选；当 raw 内联存 DB 时使用；不得包含敏感信息）
 - `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
 - `raw_size_bytes`：压缩后大小（字节）
 - `raw_mime_type`：内容类型（可选，例如 `application/json`）
@@ -117,7 +138,7 @@
 **normalized 最小字段集合（满足 dup-rules-v1）**
 
 > 口径：键不存在时视为缺失，缺失不计分；实现可按来源能力填充。
-> normalized-v1 完整结构见：`docs/requirements/asset-ledger-json-schema.md`。
+> normalized-v1 完整结构见：`docs/design/asset-ledger-json-schema.md`。
 
 - `identity.machine_uuid`（vm）
 - `network.mac_addresses[]`（vm）
@@ -138,7 +159,8 @@
 - `from_asset_uuid`：外键 → asset
 - `to_asset_uuid`：外键 → asset
 - `collected_at`：采集到该条记录的时间
-- `raw_ref`：原始数据引用（对象存储 key/路径；永久保留）
+- `raw_ref`：原始数据引用（用于定位 raw；可以是对象存储 key/路径，或 DB 内联记录指针；永久保留）
+- `raw`：原始数据内容（JSON，可选；当 raw 内联存 DB 时使用；不得包含敏感信息）
 - `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
 - `raw_size_bytes`：压缩后大小（字节）
 - `raw_mime_type`：内容类型（可选，例如 `application/json`）
@@ -274,7 +296,7 @@
 
 - `canonical` 建议采用“值 + provenance（来源）”结构：每个字段至少能回溯到 `source_id` 与 `run_id/collected_at`。
 - 多值字段（如 IP/MAC 列表）使用去重并集；单值字段冲突时应显式表示冲突（保留当前选用值与备选值列表），以满足 UI 对比与审计需求。
-- canonical-v1 完整结构见：`docs/requirements/asset-ledger-json-schema.md`。
+- canonical-v1 完整结构见：`docs/design/asset-ledger-json-schema.md`。
 
 **关键约束（建议）**
 
@@ -432,10 +454,14 @@ stateDiagram-v2
     [*] --> Open
     Open --> Ignored
     Open --> Merged
-    Ignored --> Open : "reopen(optional)"
+    Ignored --> Open : reopen
 ```
 
-> 说明：是否支持从 Ignored 重新打开可作为后续迭代；若不支持，可移除该迁移。
+> 说明：
+>
+> - SRS 仅要求“至少支持永久忽略”；是否提供 `reopen` 能力属于可选增强。
+> - 若实现 `reopen`：必须记录审计事件（建议 `duplicate_candidate.reopened`），并在重复中心/候选详情提供入口。
+> - 若不实现 `reopen`：不提供 UI/API 入口，该迁移不发生（Ignored 仅能停留在 Ignored 或通过合并链路结束）。
 
 ## 6. 审计与历史口径（面向实现）
 
@@ -469,9 +495,9 @@ stateDiagram-v2
 - `mode=detect/healthcheck` 的 Run 不推进缺失/下线/关系失活语义（仅记录探测/连通性结果）。
 - **Failed/Cancelled** 的 Run 可持久化错误与部分采集结果（用于排障），但不得作为“缺失/下线/关系失活”的依据。
 
-## 待决策（Decision Log）
+## 决策记录（Decision Log，已确认）
 
-- D-05：A（仅 audit_event）
-- D-06：B（typed FK，保留 subject_type + subject_id）
-- D-07：B（物化 `asset_run_snapshot`）
-- D-08：A（raw 采用对象存储持久化，DB 存 raw_ref + hash + size + compression；必要时保留少量 inline excerpt）
+- **D-05（审计落库形态）**：仅使用 `audit_event` 统一承载所有审计（append-only）。
+- **D-06（subject 外键策略）**：对常见对象增加可选 typed FK 列，同时保留 `subject_type + subject_id`。
+- **D-07（历史快照形态）**：物化 `asset_run_snapshot`（或等价）持久化“按 Run 的展示快照/摘要”。
+- raw 存储方案：见 `docs/design/asset-ledger-collector-reference.md` 的 **D-10**（raw_payload 落库方案）与 **D-11**（压缩策略）。

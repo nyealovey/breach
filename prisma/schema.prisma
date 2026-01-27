@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  vcenter
+  pve
+  hyperv
+  aliyun
+  third_party
+}
+
+enum RunTriggerType {
+  schedule
+  manual
+}
+
+enum RunMode {
+  collect
+  detect
+  healthcheck
+}
+
+enum RunStatus {
+  Queued
+  Running
+  Succeeded
+  Failed
+  Cancelled
+}
+
+model ScheduleGroup {
+  id                 String    @id @default(cuid())
+  name               String    @unique
+  enabled            Boolean   @default(true)
+  timezone           String
+  runAtHhmm          String
+  maxParallelSources Int?
+  lastTriggeredOn    DateTime? @db.Date
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sources Source[]
+  runs    Run[]
+
+  @@index([enabled])
+}
+
+model Source {
+  id              String         @id @default(cuid())
+  name            String
+  sourceType      SourceType
+  enabled         Boolean        @default(true)
+  scheduleGroupId String?
+  scheduleGroup   ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
+
+  // Non-sensitive config (JSON). Credentials should be encrypted/kept elsewhere.
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  runs Run[]
+
+  @@index([enabled])
+  @@index([scheduleGroupId])
+}
+
+model Run {
+  id              String  @id @default(cuid())
+  sourceId        String
+  scheduleGroupId String?
+
+  triggerType RunTriggerType
+  mode        RunMode
+  status      RunStatus      @default(Queued)
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  detectResult Json?
+  stats        Json?
+  warnings     Json?
+  errors       Json?
+  errorSummary String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  source        Source         @relation(fields: [sourceId], references: [id])
+  scheduleGroup ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([sourceId, status, createdAt])
+  @@index([scheduleGroupId, status, createdAt])
+}

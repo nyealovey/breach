@@ -11,8 +11,8 @@
 - 不包含：台账核心域逻辑的实现细节（入账、去重候选、合并、审计等由核心负责）。
 - 关联文档：
   - SRS：`docs/requirements/asset-ledger-srs.md`
-  - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`
-  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
+  - 概念数据模型：`docs/design/asset-ledger-data-model.md`
+  - normalized/canonical JSON Schema：`docs/design/asset-ledger-json-schema.md`
 
 > 目标：台账“本体”自研（入库、关系、疑似重复、人工合并、审计、自定义字段等），采集插件尽量基于成熟开源组件/官方 SDK/CLI，插件只做“薄适配层”，避免重复造轮子。
 
@@ -50,6 +50,23 @@
 > `schema_version` 用于契约版本化；当核心传入插件不支持的版本时，插件应失败并输出可读错误。  
 > `credential` 字段建议由核心在运行时注入（不落盘），插件不得将其写入日志/输出。
 
+#### 2.1.A vCenter Source 输入字段（v1.0 约定）
+
+为避免“插件能跑，但核心/文档对不齐”，vCenter Source 的最小输入约定如下：
+
+- `source.config`（非敏感，可落库/可回显）
+  - `endpoint`（必填）：支持填写 `https://<host>`（例如 `https://vcenter.example.com`）。实现侧可自行规范化为实际 SDK endpoint（例如自动补齐 `/sdk`），无需要求用户输入完整路径。
+  - `inventory_scope`（预留，可选）：v1.0 默认全量采集；当该字段为空/缺失时表示“全量”。
+    - 建议结构（仅作预留，不作为 v1.0 验收项）：
+      - `datacenter_names?: string[]`
+      - `cluster_names?: string[]`
+      - `folder_paths?: string[]`
+- `source.credential`（敏感，运行时注入；不得落日志/不得回显）
+  - `username`（必填）
+  - `password`（必填）
+
+TLS 说明：v1.0 允许自签名证书；实现侧可内部处理（例如内置信任策略或跳过校验），不要求暴露额外配置项。
+
 ### 2.2 输出（插件 → 核心）
 
 建议统一输出为 JSON（stdout/HTTP response），包含四块：
@@ -86,11 +103,11 @@
 关键约束：
 
 - `schema_version` 必须存在，用于契约版本化。
-- `assets[].normalized.version` 必须存在且为 `normalized-v1`，并符合 schema（见：`docs/requirements/asset-ledger-json-schema.md`）。
+- `assets[].normalized.version` 必须存在且为 `normalized-v1`，并符合 schema（见：`docs/design/asset-ledger-json-schema.md`）。
 - `external_id` 必须在“同一 Source 内稳定”，用于持续追踪（asset_source_link 的 `(source_id, external_kind, external_id)` 唯一）。
 - 对 `mode=collect`：插件输出必须代表该 Source 的“完整资产清单快照”（inventory complete）。若因权限/分页/接口错误无法保证完整，必须失败并在 `errors[]` 中说明；不得以 warnings 方式标记成功。
 - `stats.inventory_complete` 必须存在（仅 collect 有意义）：`true` 表示本次清单完整且可用于推进 missing/offline 语义；失败 Run 不得标记为 `true`。
-- `raw_payload` 永久保留；核心必须将 raw 写入对象存储并压缩（参见第 6 节与 SRS 的 NFR-07）；可附 `raw_hash`（由核心计算也可）。
+- `raw_payload` 永久保留；核心必须持久化 raw（PG 内联或对象存储均可）并记录必要元数据（参见第 6 节）；可附 `raw_hash`（由核心计算也可）。
 - `relations[].raw_payload` 永久保留，核心落到 `relation_record`。
 - `relations[]` 引用的端点（from/to）必须在同次输出的 `assets[]` 中存在；若无法提供端点资产，请不要输出该关系或输出端点资产的最小 stub（至少 external_kind/external_id）。
 - 阿里云不映射 Cluster：`cluster` 资产可不输出；`runs_on/member_of` 关系可为空。
@@ -156,7 +173,7 @@
 - `network.bmc_ip`（host，out-of-band 管理 IP；如可得强烈建议提供）
 - 辅助键（用于解释与人工研判，不强制计分）：`os.fingerprint`、`resource.profile`、`identity.cloud_native_id`
 
-> normalized-v1 完整结构与示例见：`docs/requirements/asset-ledger-json-schema.md`。
+> normalized-v1 完整结构与示例见：`docs/design/asset-ledger-json-schema.md`。
 
 ## 3. 采集流程与职责边界
 
@@ -277,12 +294,15 @@ flowchart TD
 
 **raw_payload 落库方案（D-10，已决策）**
 
-- raw 必须写入对象存储（S3 兼容或等价方案）；DB 仅存 `raw_ref/raw_hash/raw_size_bytes/raw_compression` 等元数据（可选：少量 inline excerpt 用于排障）。
-- 对象存储对象 key 建议包含：`source_id/run_id/external_kind/external_id`（或等价可追溯路径），便于按来源与 Run 维度定位与归档。
+- 单机 PG-only：raw 直接内联存 PostgreSQL（`jsonb` 或压缩后的 `bytea`），并对高增长表做时间分区。
+- 即使 raw 在 PG，也建议记录/落库最小元数据：`raw_hash/raw_size_bytes/raw_compression`；`raw_ref` 可作为“定位引用”（例如行主键/路径），便于审计与排障。
+- 若未来引入对象存储：可将 raw 迁移到对象存储，DB 保留 `raw_ref + 元数据`（无需改动插件输出）。
 
 ### 6.3 压缩策略（已决策）
 
-- 默认启用压缩（`raw_compression=zstd`）。
+- 默认启用压缩并记录到 `raw_compression`：
+  - raw 以 `jsonb` 内联存 PG：记录为 `postgres_toast`（由 PG 自动压缩）
+  - raw 以应用层压缩后存 `bytea`：记录为 `gzip`（MVP 默认）
 
 ## 7. 插件交付形态建议（非强制）
 
@@ -292,9 +312,9 @@ flowchart TD
 - **独立二进制/脚本**：核心以子进程方式调用（适合内网环境）。
 - **HTTP 服务型插件**：插件常驻服务，核心通过 HTTP 调用（适合高频/多次调用，但你当前需求是每日一次，可后置）。
 
-## 待决策（Decision Log）
+## 决策记录（Decision Log，已确认）
 
-- D-08：A（退出码/HTTP status 为主，errors 用于解释）
-- D-09：A（允许落库排障证据，但 Run 失败不推进语义）
-- D-10：B（对象存储保存 raw；DB 存 raw_ref + hash + size + compression；可选保留 inline excerpt）
-- D-11：A（默认压缩，`raw_compression=zstd`）
+- **D-08（错误信号主判据）**：退出码/HTTP status 为主判据，`errors[]` 用于解释与分类。
+- **D-09（部分成功落库语义）**：允许落库排障证据，但 Run 失败不推进 missing/last_seen/关系 last_seen 等语义。
+- **D-10（raw_payload 落库方案）**：单机 PG-only：raw 内联 PostgreSQL；保留 raw_ref/hash/size/compression 元数据；未来需要时再迁移对象存储。
+- **D-11（压缩策略）**：默认启用压缩；PG 内联 jsonb 记录 `postgres_toast`；应用层压缩记录 `gzip`（MVP）。

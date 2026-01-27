@@ -15,8 +15,8 @@
 关联文档：
 
 - SRS：`docs/requirements/asset-ledger-srs.md`
-- 概念数据模型：`docs/requirements/asset-ledger-data-model.md`
-- 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`
+- 概念数据模型：`docs/design/asset-ledger-data-model.md`
+- 采集插件参考：`docs/design/asset-ledger-collector-reference.md`
 
 ## 1. normalized-v1（SourceRecord.normalized）
 
@@ -154,6 +154,18 @@
           "uniqueItems": true
         },
         "service_level": { "type": "string" }
+      }
+    },
+
+    "resource": {
+      "type": "object",
+      "description": "可选：用于承接资源规格/形态等辅助信息（不作为强制候选键），避免散落在 attributes.*",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "description": "资源规格/形态的指纹化描述（例如 instance_type / sku / 合并后的规格摘要）"
+        }
       }
     },
 

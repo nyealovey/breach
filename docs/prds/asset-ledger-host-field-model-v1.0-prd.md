@@ -58,22 +58,14 @@
 - `hardware.cpu_count` 与 `hardware.memory_bytes` 仅表达数量；无法可靠解析时必须保留原文到 `attributes.legacy_cpu_raw/legacy_memory_raw`。
 - 敏感信息（如管理口令）禁止明文落库，仅允许 `attributes.management_secret_ref` 或 `attributes.management_credential_present=true`。
 
-## Design Decisions
+## 技术设计（另附）
 
-### Technical Approach
+为避免“需求/设计”混写，本 PRD 不再包含具体 schema/文档对齐的实现细节；对应设计与口径见：
 
-- Schema 变更：在 `normalized-v1` 中新增可选字段 `network.bmc_ip`，并将 `network.ilo_ip` 标记为废弃别名。
-- 文档对齐：更新 legacy 映射与 collector/data-model 对“最小字段集合/候选键”的口径描述。
-
-### Constraints
-
-- 兼容性：新增字段不应破坏既有 normalized 数据；旧数据无需回填即可继续校验通过。
-- 可实现性：v1 不引入“磁盘 used”的强依赖（BMC/Redfish 通常不可得），仅预留字段。
-
-### Risk Assessment
-
-- 若 Host 来源无法提供 `network.bmc_ip` 且缺少 `serial_number`，去重候选将显著变弱；需要在导入/采集阶段给出告警或降级策略。
-- 不同来源对 `management_ip` 的语义可能不同（in-band 管理 vs OOB），因此 v1 明确 `bmc_ip` 为 OOB 专用字段。
+- `docs/design/asset-ledger-json-schema.md`
+- `docs/design/asset-ledger-legacy-field-mapping.md`
+- `docs/design/asset-ledger-collector-reference.md`
+- `docs/design/asset-ledger-data-model.md`
 
 ## Acceptance Criteria
 

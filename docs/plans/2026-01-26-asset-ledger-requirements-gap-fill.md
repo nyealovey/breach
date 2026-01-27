@@ -40,7 +40,7 @@
 
 **Files:**
 
-- Modify: `docs/requirements/asset-ledger-data-model.md`
+- Modify: `docs/design/asset-ledger-data-model.md`
 
 **Step 1: 增加“文档简介”**
 
@@ -61,7 +61,7 @@
 Run:
 
 ```bash
-~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/requirements/asset-ledger-data-model.md
+~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/design/asset-ledger-data-model.md
 ```
 
 Expected: `✅` Valid。
@@ -72,7 +72,7 @@ Expected: `✅` Valid。
 
 **Files:**
 
-- Modify: `docs/requirements/asset-ledger-collector-reference.md`
+- Modify: `docs/design/asset-ledger-collector-reference.md`
 
 **Step 1: 增加“文档简介”**
 
@@ -93,7 +93,7 @@ Expected: `✅` Valid。
 Run:
 
 ```bash
-~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/requirements/asset-ledger-collector-reference.md
+~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/design/asset-ledger-collector-reference.md
 ```
 
 Expected: `✅` Valid。
@@ -105,8 +105,8 @@ Expected: `✅` Valid。
 **Files:**
 
 - Modify: `docs/requirements/asset-ledger-srs.md`
-- Modify: `docs/requirements/asset-ledger-data-model.md`
-- Modify: `docs/requirements/asset-ledger-collector-reference.md`
+- Modify: `docs/design/asset-ledger-data-model.md`
+- Modify: `docs/design/asset-ledger-collector-reference.md`
 - Modify: `README.md` (optional)
 
 **Step 1: 每份文档末尾新增“待决策（Decision Log）”**

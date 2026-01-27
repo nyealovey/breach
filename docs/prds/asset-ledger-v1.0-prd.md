@@ -14,14 +14,15 @@
 
 #### Core Features（v1.0）
 
-- vCenter Source 管理：创建/编辑/启停（调度/时区自动处理，不做 per-source 配置）。
+- 调度组（采集任务）管理：创建/编辑/启停；配置时区 + 固定触发时间（`HH:mm`）；Source 绑定调度组；错过触发点不补跑。
+- vCenter Source 管理：创建/编辑/启停；绑定调度组。
 - vCenter 凭据管理：凭据加密存储；UI 不回显；支持更新。
 - Run 管理：每日一次定时采集 + 管理员手动触发；Run 列表与详情（状态、错误、统计、driver、日志摘要）。
 - 插件化采集（子进程）：支持 `healthcheck/detect/collect`；支持目标能力探测并选择 driver。
 - 资产入账与统一视图：以 `Asset(asset_uuid)` 为统一资产实体；展示 unified fields（带来源证据/冲突标记）与来源明细（normalized）。
 - 关系链展示：VM → Host → Cluster（允许缺边）。
-- OpenAPI/Swagger：提供 API 规范与可视化文档（作为交付物）。
-- 日志系统：结构化 JSON 日志 + “宽事件/Canonical Log Lines”模式，覆盖 Web 请求与后台采集流程。
+- OpenAPI/Swagger：提供 API 规范与可视化文档（作为交付物；OpenAPI 由 Zod schema 生成，避免手写漂移）。
+- 日志系统：结构化 JSON 日志 + “宽事件/Canonical Log Lines”模式，覆盖 Web 请求与后台采集流程（字段规范见 `docs/design/asset-ledger-logging-spec.md`）。
 
 #### Feature Boundaries
 
@@ -32,14 +33,14 @@
 
 - 角色：仅 admin（SRS 中的 user 角色推后）。
 - 来源：仅 vCenter（SRS 的多来源推后）。
-- raw 存储：raw 统一存 PostgreSQL（jsonb + 分区表），不使用对象存储（SRS/NFR-07 推后）。
-- raw 可见性：不提供 UI/API 的 raw 查看/下载入口（仅内部排障）。
+- raw 可见性：v1.0 **不提供** UI/API 的 raw 查看/下载入口（仅内部排障）；因此 SRS 中关于 raw 可下载与下载审计（FR-10/NFR-07）的条款对 v1.0 不作为验收项；raw 的具体存储实现见技术设计文档。
 
 ### User Scenarios
 
-1. 管理员创建 vCenter Source（仅填写 endpoint/账号密码；其余默认），执行 healthcheck 验证连通性与权限。
+1. 管理员创建调度组（配置时区 + 固定触发时间），并创建 vCenter Source 绑定到该调度组；执行 healthcheck 验证连通性与权限。
 2. 管理员手动触发 collect Run，观察 Run 状态流转，查看错误与统计。
-3. 管理员在资产列表检索/过滤资产，进入资产详情查看 unified fields（含来源证据/冲突）与 VM→Host→Cluster 关系链。
+3. 到达调度组触发点时系统自动创建定时 Run；管理员查看 Run 列表与资产列表。
+4. 管理员在资产列表检索/过滤资产，进入资产详情查看 unified fields（含来源证据/冲突）与 VM→Host→Cluster 关系链。
 
 ## Detailed Requirements
 
@@ -52,7 +53,8 @@
 
 #### Web UI（必须）
 
-- Source 管理页：列表/创建/编辑/启停；展示最近一次 Run 状态/时间。（调度/时区自动处理，不做 per-source 配置）
+- 调度组管理页：列表/创建/编辑/启停；配置时区 + 触发时间（`HH:mm`）；展示该组下 Source 数量。
+- Source 管理页：列表/创建/编辑/启停；绑定调度组；展示最近一次 Run 状态/时间。
 - 凭据管理：仅可设置/更新，不回显明文；更新需审计（事件级别）。
 - Run 列表页：按 Source 过滤；展示 `mode`、`trigger_type`、`status`、开始/结束时间、driver、统计摘要。
 - Run 详情页：展示 detect 结果、统计、errors/warnings（脱敏）、（可选）插件 stdout/stderr 摘要。
@@ -66,12 +68,13 @@
 
 - 需覆盖 UI 所需的最小 API：Source/Run/Asset 查询与管理、登录与改密。
 - OpenAPI/Swagger 作为交付物：
+  - OpenAPI JSON 由 Zod schema 生成（单一真相），避免实现与文档漂移。
   - 提供 OpenAPI JSON（例如 `/api/openapi.json`）
   - 提供 Swagger UI（例如 `/api/docs`），建议仅管理员可访问（生产环境）。
 
 #### 插件接口（核心 → 子进程插件；插件 → 核心）
 
-- 契约沿用 `docs/requirements/asset-ledger-collector-reference.md`：
+- 契约沿用 `docs/design/asset-ledger-collector-reference.md`：
   - 输入：`collector-request-v1`，含 source/config/credential/request(run_id/mode/now)
   - 输出：`collector-response-v1`，含 detect/assets/relations/stats/errors
 - v1.0 插件范围：仅 vCenter。
@@ -82,13 +85,16 @@
 #### 创建 Source（vCenter）
 
 - 管理员填写（必填）：endpoint、用户名、密码。
+- endpoint 输入：支持填写 `https://<host>`（系统内部可自行规范化为实际 SDK endpoint）；允许自签名证书（内部自行处理，不要求额外配置项）。
 - 管理员填写（可选）：名称（默认可从 endpoint 自动生成）。
-- 系统自动处理：启用状态默认启用；调度/时区采用系统默认（每天一次，不做 per-source 配置）。
+- 管理员选择：绑定到某个调度组（该组决定时区与触发时间）。
+- 系统自动处理：启用状态默认启用。
+- 采集范围：v1.0 默认全量采集；预留 scope 能力但不在 v1.0 验收范围内。
 - 保存后可立即执行 healthcheck（可按钮触发），healthcheck 生成 Run（`mode=healthcheck`）。
 
 #### 触发采集
 
-- 定时触发：每天一次（全局调度；具体时刻/时区由服务端默认值决定，不做 per-source 配置）。
+- 定时触发：按调度组配置的固定触发时间（`HH:mm`，按调度组 `timezone` 解释）创建 Run；允许存在 ≤ scheduler tick 间隔（见 `README.md`：`ASSET_LEDGER_SCHEDULER_TICK_MS`）的触发延迟；若服务在触发点宕机/停止，错过的触发点不补跑。
 - 手动触发：管理员可对单个 Source 触发。
 - 并发策略：同一 Source 同时最多 1 个活动 Run；重复触发需返回当前活动 run_id 并记录审计（`run.trigger_suppressed`）。
 
@@ -97,21 +103,23 @@
 #### 数据模型（v1.0 最小集合）
 
 - `user`：仅 admin。
+- `schedule_group`：调度组（采集任务）。
 - `source` / `run`
 - `asset` / `asset_source_link`
-- `source_record`：含 `normalized jsonb` + `raw jsonb`（每条一份 raw），永久保留。
+- `source_record`：含 `normalized`（schema 校验）+ `raw`（每条一份 raw，永久保留）。
 - `relation` / `relation_record`：关系边与每次关系 raw 快照。
 - `audit_event`：只增不改，永久保留。
 
 #### Raw 与分区策略（v1.0 决策）
 
-- raw 统一存 PostgreSQL（jsonb），永久保留。
+- raw 统一存 PostgreSQL，永久保留；并记录 raw 元数据（至少 `raw_hash/raw_size_bytes/raw_compression`，可选 `raw_mime_type/raw_ref`）用于审计与容量评估。
 - `source_record` / `relation_record` 必须为分区表（按月或等价策略）。
 - raw 不提供 UI/API 入口；仅用于内部排障。
+- raw 的具体存储形态（`jsonb` vs 压缩 `bytea`）与分区/索引细节见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
 
 #### 数据校验
 
-- 插件输出 `assets[].normalized` 必须满足 `normalized-v1` schema（见 `docs/requirements/asset-ledger-json-schema.md`）。
+- 插件输出 `assets[].normalized` 必须满足 `normalized-v1` schema（见 `docs/design/asset-ledger-json-schema.md`）。
 - 统一视图输出需满足 `canonical-v1` schema。
 
 ### Edge Cases
@@ -121,65 +129,9 @@
 - vCenter 能力差异：必须通过 detect + driver 选择体现；不允许静默采集不完整字段。
 - 关系缺边：允许 VM 无 Host/Cluster；UI 必须可解释（例如“来源不提供/权限不足/采集失败”等）。
 
-## Design Decisions
+## 技术设计（另附）
 
-### Technical Approach
-
-- 核心应用：Next.js（App Router）+ API（供 UI 与 OpenAPI）。
-- 存储：PostgreSQL。
-- 采集：以子进程方式调用 vCenter 插件（stdin 输入 JSON，stdout 输出 JSON）。
-- 调度：应用内定时任务或等价 worker（每天一次；全局调度配置/固定默认）；需保证单 Source 单飞。
-
-### Key Components
-
-- Source Service（管理 config/credential/enabled；schedule 使用系统默认）
-- Run Orchestrator（创建 Run、调用插件、落库、状态机）
-- Plugin Runner（子进程执行、超时控制、stdout/stderr 捕获、退出码处理）
-- Ingest Pipeline（raw+normalized 落库、schema 校验、统计生成）
-- Asset Binder（基于 `asset_source_link` 的持续追踪；生成 unified view）
-- Relation Upserter（关系边归并与 last_seen 维护）
-- API + OpenAPI（面向 UI 的最小 API + 文档）
-- Logging（wide events + 关键域事件日志）
-
-### Data Storage
-
-- 关键表建议索引：
-  - `asset_source_link(source_id, external_kind, external_id)` 唯一
-  - `run(source_id, status, started_at desc)`
-  - `source_record(run_id)`、`source_record(asset_uuid)`、分区键（按月）
-  - `relation(relation_type, from_asset_uuid, to_asset_uuid, source_id)` 唯一
-- raw 存 jsonb：以 `source_id/run_id/external_kind/external_id` 等字段可快速定位。
-
-### Interface Design
-
-- 插件契约与错误模型沿用 `collector-reference`：`errors[]` 需包含 code/category/message/retryable。
-- OpenAPI 必须覆盖所有对外 API（至少 UI 调用的 API）。
-
-### Constraints
-
-#### 性能/可靠性
-
-- 采集 Run 不阻塞 Web 请求：UI 查看应尽量读取 Run 落库结果。
-- 同一 Source 单飞，避免并发写入竞态。
-
-#### 安全
-
-- 凭据加密存储；不得出现在 API 响应、页面渲染、日志中。
-- 脱敏规则：仅凭证脱敏（其余字段不额外清洗）；但日志与错误信息必须避免意外泄漏凭证。
-
-#### 可观测性（日志系统，必须）
-
-- 结构化 JSON 日志；禁止纯字符串 `console.log`。
-- Web 请求采用“宽事件/Canonical Log Line”：每个请求结束时输出一条 context-rich 日志。
-- 必须包含的高基数字段（示例）：`request_id`、`user_id`、`source_id`、`run_id`、`asset_uuid`（按场景）。
-- 必须包含环境字段（示例）：`service_version`、`commit_sha`、`env`。
-- 采集流程需有关键域事件：`run.created`、`run.started`、`run.finished`、`plugin.invoked`、`plugin.failed`、`ingest.completed` 等。
-
-### Risk Assessment
-
-- raw 永久存 PG 会带来容量与性能风险；虽不要求备份恢复，但长期需要容量告警与运维策略。
-- vCenter API/权限差异可能导致字段缺失或关系缺边，需要在 UI/日志中可解释。
-- 子进程执行的可控性（超时/资源/失败重试策略）需要设计清楚，避免僵尸进程与 Run 卡死。
+为避免“需求/设计”混写，本 PRD 不再包含实现方式、库选型、索引/分区等技术细节；对应的技术设计与选型建议见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
 
 ## Acceptance Criteria
 
@@ -211,10 +163,11 @@
 
 **Goal**：确定 MVP 范围与技术基座
 
-- [ ] 明确 vCenter Source 必填字段仅 endpoint/username/password；其余（名称默认、TLS、调度/时区）自动处理。
+- [ ] 明确 vCenter Source 必填字段仅 endpoint/username/password + 调度组；其余（名称默认、TLS 等）自动处理。
+- [ ] 明确调度组能力：可配置时区 + 固定触发时间（HH:mm），Source 绑定调度组；错过触发点不补跑。
 - [ ] 设计 DB 最小表结构与分区策略（source_record/relation_record）。
-- [ ] 定义 OpenAPI 基础结构与生成/维护方式。
-- [ ] 设计日志字段规范（wide events + 采集域事件）。
+- [ ] 定义 OpenAPI 基础结构与生成/维护方式（Zod 生成）。
+- [ ] 设计日志字段规范（wide events + 采集域事件，见 `docs/design/asset-ledger-logging-spec.md`）。
 - **Deliverables**：DB schema 草案、OpenAPI 草案、日志字段规范。
 - **Time**：0.5-1 周
 
@@ -223,7 +176,7 @@
 **Goal**：实现 FR-01~FR-05 核心链路
 
 - [ ] Source/凭据管理（加密存储、UI 不回显）。
-- [ ] Run Orchestrator + 调度（定时/手动/单飞）。
+- [ ] 调度组管理 + 调度器（按组定时触发、错过不补跑）+ Run Orchestrator（定时/手动/单飞）。
 - [ ] vCenter 插件子进程执行与契约对齐（healthcheck/detect/collect）。
 - [ ] 入账：asset_source_link 绑定、asset 生成、canonical 聚合、relation upsert。
 - [ ] Web UI：Source/Run/Asset 页面与关系链展示。

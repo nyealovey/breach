@@ -15,7 +15,7 @@
 **Files:**
 
 - Create: `docs/requirements/asset-ledger-srs.md`
-- Create: `docs/requirements/asset-ledger-data-model.md`
+- Create: `docs/design/asset-ledger-data-model.md`
 - Modify: `README.md`
 
 **Step 1: 确认目录存在**
@@ -33,7 +33,7 @@ Expected: 目录存在且无报错。
 Run:
 
 ```bash
-touch docs/requirements/asset-ledger-srs.md docs/requirements/asset-ledger-data-model.md
+touch docs/requirements/asset-ledger-srs.md docs/design/asset-ledger-data-model.md
 ```
 
 Expected: 两个文件创建成功。
@@ -79,7 +79,7 @@ git commit -m "docs: add plan for asset ledger specs"
 
 **Files:**
 
-- Modify: `docs/requirements/asset-ledger-data-model.md`
+- Modify: `docs/design/asset-ledger-data-model.md`
 
 **Step 1: 写入实体/关系定义**
 
@@ -101,7 +101,7 @@ git commit -m "docs: add plan for asset ledger specs"
 Run:
 
 ```bash
-~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/requirements/asset-ledger-data-model.md
+~/.codex/skills/mermaid/scripts/validate_mermaid.sh docs/design/asset-ledger-data-model.md
 ```
 
 Expected: 输出 `✅ ... Valid`。
@@ -128,7 +128,7 @@ Expected: 输出 `✅ ... Valid`。
 **Files:**
 
 - Modify: `docs/requirements/asset-ledger-srs.md`
-- Modify: `docs/requirements/asset-ledger-data-model.md`
+- Modify: `docs/design/asset-ledger-data-model.md`
 - Modify: `README.md`
 
 **Step 1: 可选格式化（仅触达新增/修改文件）**
@@ -136,7 +136,7 @@ Expected: 输出 `✅ ... Valid`。
 Run:
 
 ```bash
-bunx prettier docs/requirements/asset-ledger-srs.md docs/requirements/asset-ledger-data-model.md docs/plans/2026-01-26-asset-ledger-specs.md README.md --write
+bunx prettier docs/requirements/asset-ledger-srs.md docs/design/asset-ledger-data-model.md docs/plans/2026-01-26-asset-ledger-specs.md README.md --write
 ```
 
 Expected: 无报错，格式化完成。
@@ -156,6 +156,6 @@ Expected: 通过（或仅报告与本次无关文件）。
 若需要提交：
 
 ```bash
-git add docs/requirements/asset-ledger-srs.md docs/requirements/asset-ledger-data-model.md README.md
+git add docs/requirements/asset-ledger-srs.md docs/design/asset-ledger-data-model.md README.md
 git commit -m "docs: add asset ledger SRS and data model"
 ```

@@ -10,9 +10,9 @@
 - 适用读者：产品、研发、测试、运维、评审人员。
 - 使用方式：优先以 FR 的验收标准为准；发生歧义时，以本文术语表与约束/假设为准。
 - 关联文档：
-  - 概念数据模型：`docs/requirements/asset-ledger-data-model.md`（实体/关系/关键约束）
-  - 采集插件参考：`docs/requirements/asset-ledger-collector-reference.md`（插件契约与选型建议）
-  - normalized/canonical JSON Schema：`docs/requirements/asset-ledger-json-schema.md`
+  - 概念数据模型：`docs/design/asset-ledger-data-model.md`（实体/关系/关键约束）
+  - 采集插件参考：`docs/design/asset-ledger-collector-reference.md`（插件契约与选型建议）
+  - normalized/canonical JSON Schema：`docs/design/asset-ledger-json-schema.md`
 
 ## 1. 概述
 
@@ -99,7 +99,7 @@
   Then 系统阻止保存并提示缺失字段。
 - Given 管理员创建 Source  
   When 保存  
-  Then 必须包含 `schedule` 与 `schedule_timezone`。
+  Then 必须绑定一个调度组（Schedule Group），用于“分组定时触发”（见 FR-02）。
 - Given 管理员创建 Source 成功  
   When 在列表查看  
   Then 可看到 Source 基本信息（名称、类型、启用状态、最近一次 Run 状态/时间）。
@@ -107,17 +107,41 @@
   When 到达定时触发点  
   Then 系统不应为该 Source 自动创建新的 Run。
 
+### FR-01.A 调度组（Schedule Group）管理
+
+**描述**
+
+系统支持管理员定义“采集任务/调度组”，用于将不同采集任务分组，并在不同固定时间触发该组下的定时采集。
+
+**验收标准**
+
+- Given 管理员创建调度组时缺少必填项（名称、时区、触发时间）  
+  When 保存  
+  Then 系统阻止保存并提示缺失字段。
+- Given 管理员创建调度组  
+  When 保存  
+  Then 触发时间必须为合法 `HH:mm`，时区必须为 IANA TZ（例如 `Asia/Shanghai`）。
+- Given 管理员停用某调度组  
+  When 到达该组的定时触发点  
+  Then 系统不应为该组下的任何 Source 自动创建新的 Run。
+- Given 管理员修改某调度组的触发时间  
+  When 修改生效  
+  Then 新触发时间仅影响下一次触发，不应对过去错过的触发点进行补跑。
+
 ### FR-02 采集批次（Run）管理：定时与手动
 
 **描述**
 
-系统支持每天一次定时采集，并支持管理员对单个/多个 Source 手动触发采集。
+系统支持按“调度组（Schedule Group）”进行每天一次的固定时间定时采集，并支持管理员对单个/多个 Source 手动触发采集。
 
 **验收标准**
 
-- Given Source 已启用且到达定时触发点  
+- Given 某调度组已启用且到达该组的定时触发点  
   When 定时任务执行  
-  Then 系统为该 Source 创建一个新的 Run，状态进入 `Queued`（必须可观测）。
+  Then 系统应在触发点后 **≤ 60 秒** 内为该组下所有已启用 Source 创建新的 Run，状态进入 `Queued`（必须可观测）。
+- Given 系统在某调度组触发点发生宕机/停止，导致错过触发点  
+  When 系统在触发点之后恢复运行  
+  Then 系统不得补跑该次定时采集（跳过），仅在下一次触发点到达时再创建 Run。
 - Given 管理员手动触发某 Source 采集  
   When 触发成功  
   Then 生成 Run 并可在 Run 列表看到状态变化与日志/错误摘要。
@@ -134,7 +158,7 @@
 
 采集必须插件化。系统通过插件完成 `detect`（目标版本/能力探测）、`collect`（采集资产/关系/原始数据）、`healthcheck`（连通性与权限校验）。同一来源类型可随目标版本差异选择不同 driver。
 
-> 采集插件建议尽量基于成熟开源组件/官方 SDK/CLI 实现“薄适配层”，以降低维护成本与风险。参考：`docs/requirements/asset-ledger-collector-reference.md`。
+> 插件契约与实现建议见：`docs/design/asset-ledger-collector-reference.md`。
 
 **验收标准**
 
@@ -155,7 +179,7 @@
   Then Run 必须失败并给出可读错误（需脱敏），不得以 warnings 方式标记成功。
 - Given 插件输出 `assets[].normalized`  
   When 核心落库到 `source_record.normalized`  
-  Then 其结构必须符合 `normalized-v1`（见：`docs/requirements/asset-ledger-json-schema.md`）。
+  Then 其结构必须符合 `normalized-v1`（见：`docs/design/asset-ledger-json-schema.md`）。
 
 ### FR-04 资产入账与统一视图（Asset）
 
@@ -168,8 +192,9 @@
 - 统一字段视图由关联的来源快照（SourceRecord.normalized）聚合得出，但必须保留字段级可追溯性（至少包含来源 `source_id` 与采集时间/Run）。
 - 多值字段（如 `mac_addresses[]`、`ip_addresses[]`）在统一视图中取并集去重。
 - 单值字段（如 `hostname`、`serial_number` 等）若存在多来源不一致，统一视图必须标记“冲突”，并展示当前选用值的来源；其余值在“关联来源明细”中可对比查看。
+- **冲突字段默认选用策略（D-12，已决策）**：当单值字段存在多来源不一致时，默认选用“最新一次成功 `mode=collect` Run”所观察到的值（以 `run.finished_at`/`run.started_at` 作为时间序，取最新）；若最新来源该字段缺失，则回退到下一条更早的成功快照。
 - 统一视图不应隐藏来源差异：用户必须能回溯到各来源的原始值与采集批次。
-- canonical-v1 的结构（含字段级来源证据）见：`docs/requirements/asset-ledger-json-schema.md`。
+- canonical-v1 的结构（含字段级来源证据）见：`docs/design/asset-ledger-json-schema.md`。
 
 **验收标准**
 
@@ -241,86 +266,7 @@
 
 #### FR-07.A 固定规则说明（dup-rules-v1）
 
-> 目标：仅生成“疑似重复候选”，不做自动合并；规则固定但**可解释**（命中原因 + 证据 + 分数）。
-
-##### 候选生成时机与数据口径
-
-- 触发时机：在**每个 Source 的 Run 成功结束后**生成候选（可异步任务）。
-- 数据口径：仅基于**成功 Run**产生的快照（`source_record.normalized` 等）计算；失败/取消的 Run **不得**推进去重候选与缺失/下线语义。
-
-##### 候选范围（Candidate Scope）
-
-默认约束：
-
-- 排除：任一方 `asset.status=merged` 的资产不参与候选。
-- 可包含：`vm` / `host`（`cluster` 默认不生成候选，除非后续明确需要）。
-
-##### 候选时间窗（D-01，已决策）
-
-- 候选范围：在管（in_service）+ 最近 `N` 天内出现过（`last_seen_at` within N days）的离线资产。
-- 参数：`N = 7`（天；常量固化，不提供 UI 配置）。
-- 目的：覆盖迁移场景，同时控制噪音与计算成本。
-
-##### 评分与阈值（Score）
-
-- 分数：`score ∈ [0,100]`，由规则命中累加（上限 100）。
-- 候选创建阈值：`score >= 70` 创建候选；`score < 70` 不创建。
-- 置信度标签（UI 展示建议）：
-  - `90-100`：高（High）
-  - `70-89`：中（Medium）
-
-##### 阈值固定（D-02，已决策）
-
-- 固定阈值：创建 `score >= 70`；High `score >= 90`。不提供配置项。
-
-##### 规则列表（Rule Set）
-
-> 说明：规则使用 `source_record.normalized` 中的“候选键（candidate keys）”。键不存在时视为不命中；不强制所有来源都提供全部键。
-
-| rule_code                | 适用对象 | 分值 | 命中条件（摘要）                                            | 解释要点                                       |
-| ------------------------ | -------- | ---- | ----------------------------------------------------------- | ---------------------------------------------- |
-| `vm.machine_uuid_match`  | vm       | 100  | `machine_uuid` 存在且完全相同（SMBIOS/BIOS UUID 等）        | 强信号：同一虚拟机跨平台迁移仍可能保留         |
-| `vm.mac_overlap`         | vm       | 90   | `mac_addresses` 交集 ≥ 1                                    | 强信号：需注意 MAC 复用/漂移                   |
-| `vm.hostname_ip_overlap` | vm       | 70   | `hostname` 相同且 `ip_addresses` 交集 ≥ 1（取最近一次快照） | 中信号：DHCP/重装会带来误报                    |
-| `host.serial_match`      | host     | 100  | `serial_number` 存在且完全相同                              | 强信号：物理机/设备序列号                      |
-| `host.bmc_ip_match`      | host     | 90   | `bmc_ip` 存在且完全相同                                     | 强信号：OOB 管理地址通常稳定；仍需注意 IP 复用 |
-| `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                         |
-
-##### 候选键集合（D-03，已决策）
-
-- 最小集合：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`bmc_ip`（host）
-- 可选：`management_ip`（host，in-band；仅来源可稳定提供时使用）
-- 辅助键（用于解释与人工研判；默认不计分）：`os_fingerprint`、`resource_profile`、`cloud_native_id`
-
-##### 可解释性：原因与证据（reasons JSON）
-
-为满足“可解释”，候选需持久化命中原因与证据（示例结构）：
-
-```json
-{
-  "version": "dup-rules-v1",
-  "matched_rules": [
-    {
-      "code": "vm.machine_uuid_match",
-      "weight": 100,
-      "evidence": {
-        "field": "normalized.identity.machine_uuid",
-        "a": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        "b": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-      }
-    }
-  ]
-}
-```
-
-##### 降噪与抑制策略（Ignored Handling）
-
-基础要求：支持“永久忽略”（见 FR-07 验收）。
-
-##### ignored 抑制策略（D-04，已决策）
-
-- 处理：保持 `status=ignored` 不变；再次命中仅更新 `last_observed_at`，默认不再提示。
-- 管理员可手工 reopen（将 ignored 重新置为 open），并记录审计。
+> 规则细节（评分/阈值/候选键/降噪策略）属于“实现规范”，为避免与需求混写，已独立成文：`docs/design/asset-ledger-dup-rules-v1.md`。
 
 ### FR-08 人工合并（Merge）与审计
 
@@ -414,7 +360,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 
 - Run 失败需记录可读错误与失败原因分类（认证失败/网络失败/解析失败等）。
 - 失败原因分类需结构化落库（`run.errors`），非致命问题落库为 `run.warnings`。
-- 对同一 Source 的并发触发必须采用单一策略（见 FR-02 / D-05），避免写入竞态。
+- 对同一 Source 的并发触发必须采用单一策略（见 FR-02），避免写入竞态。
 
 ### NFR-04 可扩展性
 
@@ -431,12 +377,16 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - 系统必须提供可执行的备份与恢复方案（包含 DB 数据与 raw/审计数据），确保恢复后仍满足“永久可追溯”语义。
 - 由于 raw 与审计永久保留，系统必须有容量规划与告警；实现侧应支持数据分区/归档/分层存储等手段控制长期存储成本（语义不变）。
 
-### NFR-07 Raw 存储策略（压缩/对象存储/分区，可验收）
+### NFR-07 Raw 存储（永久保留/压缩/可下载，可验收）
 
 > 背景：raw 永久保留会快速膨胀；若将 raw 长期内联在 DB，会显著放大容量、备份与查询成本。
 
-- raw 必须写入对象存储（S3 兼容或等价方案）；DB 仅存 `raw_ref + raw_hash + raw_size_bytes + raw_compression` 等元数据（允许按需保留少量 inline excerpt 用于排障）。
-- raw 必须启用压缩（默认推荐 zstd；算法可固定，但必须可在元数据中记录 `raw_compression`）。
+- raw 必须永久保留，且满足“可追溯/可下载/可校验”的语义（见 FR-10 与 NFR-06）。
+- raw 必须启用压缩；实现需记录压缩算法到元数据 `raw_compression`（推荐默认 zstd，亦可在实现阶段选择等价算法）。
+- 系统必须为每条 raw 记录元数据（最小集合）：`raw_ref`（可定位/可下载的引用或路径）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`（可扩展 `raw_mime_type/raw_inline_excerpt` 等）。
+- 实现可选对象存储/数据库/分层存储，但必须满足容量与备份恢复要求；推荐方案与字段口径见：
+  - `docs/design/asset-ledger-data-model.md`
+  - `docs/design/asset-ledger-collector-reference.md`
 - `source_record` / `relation_record` 等高增长表必须采用时间分区（按月或等价策略），以保证长期查询与维护可控。
 
 **验收标准**
@@ -444,7 +394,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - Given 一个 `mode=collect` 的 Run 成功结束  
   When 系统持久化 SourceRecord/RelationRecord  
   Then 每条记录必须同时具备：`raw_ref`（可下载）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`。
-- Given 对象存储不可用  
+- Given raw 存储不可用（例如对象存储不可用或 DB 写入失败）  
   When 系统无法写入 raw  
   Then 该 Run 必须失败，并给出可读错误（不得标记为成功）。
 
@@ -453,12 +403,4 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - 阿里云来源不映射 Cluster（Cluster 为空）；通常无法获取宿主 Host（runs_on 允许为空）。
 - 采集频率为每天一次；不要求实时一致性。
 - 疑似重复规则固定，不提供 UI 配置。
-- `schedule_timezone` 使用 IANA TZ 格式（例如 `Asia/Shanghai`）。
-
-## 待决策（Decision Log）
-
-- D-01：B（在管 + 最近 N 天离线；`N=7`）
-- D-02：A（固定 70/90）
-- D-03：B（增加辅助键：os_fingerprint/resource_profile/cloud_native_id）
-- D-04：A（永久 ignored，更新 last_observed，允许手工 reopen）
-- D-05：A（单 Source 单飞：同一 Source 同时最多 1 个活动 Run；触发时若已存在活动 Run，则不新建而是返回已有 run_id，并记录 trigger_suppressed 审计）
+- 调度相关时区字段使用 IANA TZ 格式（例如 `Asia/Shanghai`）。
