@@ -18,7 +18,7 @@
 
 ### `docs/prds/`：PRD（Product Requirements Document）
 
-定位：某个迭代或专题（例如 vCenter MVP）的“当期范围 + 决策 + 验收闭环”。
+定位：某个迭代/专题（例如 vCenter MVP）的“当期范围 + 决策 + 验收闭环”。
 
 - 面向：交付/实现团队（让当期目标不含糊）
 - 内容：In/Out of scope、关键决策、最小可用闭环、与 SRS 的差异声明
@@ -31,9 +31,28 @@
 
 ### `docs/design/`：设计文档（Design）
 
-定位：承载“怎么做”的技术方案（架构/数据模型落库细化/实现策略/库选型）。
+定位：承载"怎么做"的技术方案（架构/数据模型落库细化/实现策略/库选型）。
 
 - 设计应引用 PRD/SRS，不重复定义需求
+
+当前：
+
+- `docs/design/asset-ledger-vcenter-mvp-design.md`（vCenter MVP 技术设计）
+- `docs/design/asset-ledger-data-model.md`（概念数据模型）
+- `docs/design/asset-ledger-json-schema.md`（normalized/canonical JSON Schema）
+- `docs/design/asset-ledger-collector-reference.md`（采集插件契约参考）
+- `docs/design/asset-ledger-logging-spec.md`（日志字段规范）
+- `docs/design/asset-ledger-error-codes.md`（错误码规范）
+- `docs/design/asset-ledger-dup-rules-v1.md`（疑似重复规则）
+- `docs/design/asset-ledger-legacy-field-mapping.md`（旧台账字段映射）
+- `docs/design/asset-ledger-api-spec.md`（API 规范）
+- `docs/design/asset-ledger-ui-spec.md`（UI 交互规范）
+
+### `docs/decisions/`：决策记录（Decision Log）
+
+定位：汇总所有已确认的技术决策（D-xx），便于快速查阅与追溯。
+
+当前：`docs/decisions/README.md`（决策索引）
 
 ### `docs/plans/`：计划（Plan）
 
@@ -49,10 +68,10 @@
 
 示例（vCenter MVP v1.0）：
 
-- PRD 明确 v1.0 不提供 raw 的 UI/API 入口（仅内部排障），因此 SRS 中关于 raw 可下载/下载审计的条款对 v1.0 不作为验收项。
+- PRD 明确 v1.0 不提供 raw 的 UI/API 入口（仅内部排障），因此 SRS 中关于 raw 可查看与访问审计（FR-10/NFR-07）的条款对 v1.0 不作为验收项。
 
 ## 3) 维护建议（避免重复与漂移）
 
 - 新增“全局性需求”（角色/权限/长期保留/FR/NFR）优先改 SRS。
 - 新增“当期迭代范围/关键取舍”优先改 PRD，并在 PRD 中写清与 SRS 的差异。
-- 设计文档只写实现方案与可选方案对比，不引入新的需求口径；若必须新增需求口径，先回写 PRD/SRS。
+- 设计文档只写已确认的实现方案，不提供多方案对比，不引入新的需求口径；如必须新增/变更需求口径，先回写 PRD/SRS 并更新对应 Decision Log。

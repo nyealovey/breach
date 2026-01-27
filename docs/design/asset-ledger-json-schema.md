@@ -24,7 +24,7 @@
 
 - normalized 仅表达“来源侧看到的事实 + 轻量标准化”，不承载台账核心域逻辑（去重、合并、冲突裁决由 core 负责）。
 - normalized 必须覆盖 dup-rules-v1 的最小候选键（见 SRS/Collector Reference），其余字段按来源能力填充。
-- **安全**：normalized 不得包含明文凭证/口令；如确需表达“管理码”，只能以脱敏后的引用/占位符形式出现（例如 `***` 或 `secret_ref`）。
+- **安全**：normalized 不得包含明文凭证/口令；如确需表达“管理码”，只能以脱敏后的引用/占位符形式出现（例如 `***`、`secret_ref`）。
 
 ### 1.2 JSON Schema（Draft 2020-12）
 
@@ -240,6 +240,33 @@
   "physical": {
     "fixed_asset_id": "FA-2025-0001",
     "maintenance_period": "3y"
+  }
+}
+```
+
+### 1.5 示例：集群（cluster）
+
+```json
+{
+  "version": "normalized-v1",
+  "kind": "cluster",
+  "identity": {
+    "hostname": "cluster-prod-01",
+    "caption": "生产集群"
+  },
+  "hardware": {
+    "cpu_count": 128,
+    "memory_bytes": 1099511627776
+  },
+  "location": {
+    "region": "华东",
+    "city": "上海"
+  },
+  "attributes": {
+    "ha_enabled": true,
+    "drs_enabled": true,
+    "host_count": 4,
+    "vm_count": 120
   }
 }
 ```

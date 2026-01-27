@@ -33,7 +33,24 @@
 
 - 角色：仅 admin（SRS 中的 user 角色推后）。
 - 来源：仅 vCenter（SRS 的多来源推后）。
-- raw 可见性：v1.0 **不提供** UI/API 的 raw 查看/下载入口（仅内部排障）；因此 SRS 中关于 raw 可下载与下载审计（FR-10/NFR-07）的条款对 v1.0 不作为验收项；raw 的具体存储实现见技术设计文档。
+- raw 可见性：v1.0 **不提供** UI/API 的 raw 查看入口（仅内部排障）；因此 SRS 中关于 raw 可查看与访问审计（FR-10/NFR-07）的条款对 v1.0 不作为验收项；raw 的具体存储实现见技术设计文档。
+- 资产状态/last_seen：v1.0 **不实现** FR-09（下线语义）与 FR-11 的 `status/last_seen_at` 相关要求；资产列表不提供 `status` 过滤与 `last_seen_at` 排序。
+
+#### v1.0 与 SRS 差异汇总表
+
+| SRS 条款                | SRS 要求                       | v1.0 决策              | 说明              |
+| ----------------------- | ------------------------------ | ---------------------- | ----------------- |
+| 角色权限                | admin + user 两类角色          | **仅 admin**           | user 角色推后迭代 |
+| FR-01 来源类型          | 阿里云/Hyper-V/vCenter/PVE     | **仅 vCenter**         | 其他来源推后迭代  |
+| FR-06 自定义字段        | 管理员可新增/停用自定义字段    | **不实现**             | 推后迭代          |
+| FR-07 疑似重复候选      | 系统生成疑似重复候选           | **不实现**             | 推后迭代          |
+| FR-08 人工合并          | 管理员可合并重复资产           | **不实现**             | 推后迭代          |
+| FR-09 软删除/下线语义   | 来源消失标记为"未发现/下线"    | **不实现**             | 推后迭代          |
+| FR-10 raw 可查看        | 管理员可查看 raw payload       | **不提供 UI/API 入口** | 仅内部排障        |
+| FR-11 资产导出          | 管理员可导出全量台账           | **不实现**             | 推后迭代          |
+| FR-11 status 过滤       | 资产列表支持 status 过滤       | **不实现**             | 推后迭代          |
+| FR-11 last_seen_at 排序 | 资产列表支持 last_seen_at 排序 | **不实现**             | 推后迭代          |
+| NFR-07 raw 访问审计     | raw 访问需记录审计             | **不作为验收项**       | 无 UI/API 入口    |
 
 ### User Scenarios
 
@@ -48,8 +65,10 @@
 
 #### 管理员初始化与登录
 
-- 首次启动：从 `.env` 读取管理员初始密码（及用户名/邮箱，若需要），若 DB 中不存在 admin 账号则自动创建并写入 DB。
-- 后续启动：不重复创建；管理员可在 UI 修改密码。
+- 首次启动：若 DB 中不存在管理员账号，则使用环境变量 `ASSET_LEDGER_ADMIN_PASSWORD` 创建默认管理员账号（用户名固定为 `admin`）。
+  - 若 `ASSET_LEDGER_ADMIN_PASSWORD` 未设置/为空：服务启动必须失败并给出可读错误（避免产生默认弱口令）。
+- 后续启动：若 admin 已存在，则不再读取 `ASSET_LEDGER_ADMIN_PASSWORD`；管理员可在 UI 修改密码。
+- 认证方式（v1.0）：使用 session（HttpOnly Cookie）维持登录态；`SECRET_KEY` 用于会话签名；v1.0 不使用 JWT（`JWT_SECRET_KEY` 预留给后续迭代）。
 
 #### Web UI（必须）
 
@@ -58,7 +77,7 @@
 - 凭据管理：仅可设置/更新，不回显明文；更新需审计（事件级别）。
 - Run 列表页：按 Source 过滤；展示 `mode`、`trigger_type`、`status`、开始/结束时间、driver、统计摘要。
 - Run 详情页：展示 detect 结果、统计、errors/warnings（脱敏）、（可选）插件 stdout/stderr 摘要。
-- 资产列表页：分页；支持关键字搜索（至少 `asset_uuid/hostname/external_id`）；支持过滤（至少 `asset_type/status/source_id`）；支持排序（至少 `last_seen_at/display_name`）。
+- 资产列表页：分页；支持关键字搜索（至少 `asset_uuid/hostname/external_id`）；支持过滤（至少 `asset_type/source_id`）；支持排序（至少 `display_name`）。
 - 资产详情页：
   - unified fields（canonical-v1 结构，含 sources/alternatives/conflict）
   - 关联来源明细（normalized-v1）
@@ -94,7 +113,8 @@
 
 #### 触发采集
 
-- 定时触发：按调度组配置的固定触发时间（`HH:mm`，按调度组 `timezone` 解释）创建 Run；允许存在 ≤ scheduler tick 间隔（见 `README.md`：`ASSET_LEDGER_SCHEDULER_TICK_MS`）的触发延迟；若服务在触发点宕机/停止，错过的触发点不补跑。
+- 定时触发：按调度组配置的固定触发时间（`HH:mm`，按调度组 `timezone` 解释）创建 Run；允许存在 ≤ scheduler tick 间隔的触发延迟；若服务在触发点宕机/停止，错过的触发点不补跑。
+  - **Scheduler Tick 配置**：环境变量 `ASSET_LEDGER_SCHEDULER_TICK_MS`，默认值 `30000`（30 秒），可配置范围 `10000~120000`（10 秒~2 分钟）；tick 间隔越小触发越精准，但 CPU 开销越高。
 - 手动触发：管理员可对单个 Source 触发。
 - 并发策略：同一 Source 同时最多 1 个活动 Run；重复触发需返回当前活动 run_id 并记录审计（`run.trigger_suppressed`）。
 
@@ -112,10 +132,10 @@
 
 #### Raw 与分区策略（v1.0 决策）
 
-- raw 统一存 PostgreSQL，永久保留；并记录 raw 元数据（至少 `raw_hash/raw_size_bytes/raw_compression`，可选 `raw_mime_type/raw_ref`）用于审计与容量评估。
-- `source_record` / `relation_record` 必须为分区表（按月或等价策略）。
+- raw 统一存 PostgreSQL，永久保留；并记录 raw 元数据：`raw_ref/raw_hash/raw_size_bytes/raw_compression`（raw 压缩算法固定为 `zstd`）。
+- `source_record` / `relation_record` 必须为按月分区表。
 - raw 不提供 UI/API 入口；仅用于内部排障。
-- raw 的具体存储形态（`jsonb` vs 压缩 `bytea`）与分区/索引细节见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
+- raw 的具体存储形态固定为 **zstd 压缩 `bytea`**；分区/索引细节见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
 
 #### 数据校验
 
@@ -125,7 +145,7 @@
 ### Edge Cases
 
 - 插件崩溃/超时：Run 标记 Failed；记录结构化错误与可读摘要（脱敏）。
-- 采集不完整：必须 Failed；不得推进 missing/offline/关系失活语义。
+- 采集不完整：必须 Failed；失败 Run 仅用于排障证据沉淀，不得影响 v1.0 的资产展示口径（v1.0 不实现 FR-09/下线语义）。
 - vCenter 能力差异：必须通过 detect + driver 选择体现；不允许静默采集不完整字段。
 - 关系缺边：允许 VM 无 Host/Cluster；UI 必须可解释（例如“来源不提供/权限不足/采集失败”等）。
 
@@ -137,7 +157,7 @@
 
 ### Functional Acceptance
 
-- [ ] 管理员初始化：首次启动可从 `.env` 创建 admin，并可在 UI 修改密码。
+- [ ] 管理员初始化：首次启动可使用 `ASSET_LEDGER_ADMIN_PASSWORD` 初始化默认管理员（用户名 `admin`），并可在 UI 修改密码。
 - [ ] FR-01 Source 管理：可创建/编辑/启停 Source；列表展示最近一次 Run 信息。
 - [ ] FR-02 Run：支持每日一次定时采集与手动触发；同 Source 单飞 + 触发抑制可审计。
 - [ ] FR-03 插件化采集：支持 `healthcheck/detect/collect`；driver 选择可追溯；inventory 不完整必须失败。
@@ -151,7 +171,46 @@
 - [ ] 代码质量：通过 `bun run lint`、`bun run format:check`、`bun run type-check`。
 - [ ] 日志：所有 Web 请求有宽事件日志；采集流程有关键域事件日志；日志中不出现任何明文凭证。
 - [ ] 数据校验：插件输出 normalized 必须通过 schema 校验；不通过则 Run 失败并记录错误。
-- [ ] 数据分区：`source_record` 与 `relation_record` 使用分区表（按月或等价）。
+- [ ] 数据分区：`source_record` 与 `relation_record` 使用按月分区表。
+
+### Test Strategy
+
+#### 单元测试
+
+- **覆盖率目标**：≥ 80%（核心业务逻辑）
+- **框架**：Vitest
+- **重点覆盖**：
+  - [ ] Schema 校验（normalized-v1/canonical-v1）
+  - [ ] 时区计算与 DST 处理
+  - [ ] 凭证加密/解密
+  - [ ] 错误码映射与脱敏
+
+#### 集成测试
+
+- **框架**：Vitest + Prisma Test Environment
+- **重点覆盖**：
+  - [ ] Source CRUD + 凭证更新
+  - [ ] Run 状态机流转
+  - [ ] 资产入账与 asset_source_link 绑定
+  - [ ] 关系边 upsert
+
+#### E2E 测试
+
+- **框架**：Playwright
+- **场景覆盖**：
+  - [ ] 管理员登录 → 创建调度组 → 创建 Source → healthcheck
+  - [ ] 手动触发 collect → Run 状态流转 → 查看 Run 详情
+  - [ ] 资产列表搜索/过滤 → 资产详情 → 关系链展示
+  - [ ] 冲突字段展示 → 来源明细对比
+  - [ ] 修改密码 → 重新登录
+
+#### 性能测试
+
+- **工具**：k6 或 Artillery
+- **场景**：
+  - [ ] 10 并发用户访问资产列表（10,000 资产）
+  - [ ] 5 个 Source 并发采集
+  - [ ] API P95 响应时间验证
 
 ### User Acceptance
 
@@ -197,7 +256,7 @@
 
 **Goal**：发布与最小运维
 
-- [ ] 配置 `.env` 的 admin 初始化参数与加密密钥。
+- [ ] 配置环境变量：`ASSET_LEDGER_ADMIN_PASSWORD`、`PASSWORD_ENCRYPTION_KEY`、`SECRET_KEY`（可选 `JWT_SECRET_KEY`），见 `README.md`。
 - [ ] 上线后首轮 Run 执行与观测（Run 状态、错误、日志）。
 - [ ] 容量基线：记录 raw 增长速度与分区策略可用性。
 - **Deliverables**：上线手册（最小）、容量基线。

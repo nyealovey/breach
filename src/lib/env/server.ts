@@ -7,6 +7,13 @@ export const serverEnv = createEnv({
     DATABASE_URL: z.string().min(1),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
+    // Auth / security (MVP: optional at runtime; production should set them)
+    ASSET_LEDGER_ADMIN_PASSWORD: z.string().min(1).optional(),
+    SECRET_KEY: z.string().min(1).optional(),
+    JWT_SECRET_KEY: z.string().min(1).optional(),
+    BCRYPT_LOG_ROUNDS: z.coerce.number().int().positive().default(12),
+    PASSWORD_ENCRYPTION_KEY: z.string().min(1).optional(),
+
     ASSET_LEDGER_SCHEDULER_TICK_MS: z.coerce.number().int().positive().default(30_000),
     ASSET_LEDGER_WORKER_POLL_MS: z.coerce.number().int().positive().default(2_000),
     ASSET_LEDGER_WORKER_BATCH_SIZE: z.coerce.number().int().positive().default(1),

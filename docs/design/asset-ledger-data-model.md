@@ -88,12 +88,12 @@
 
 - `asset_uuid`：主键（系统生成）
 - `asset_type`：`vm` / `host` / `cluster`
-- `display_name`：展示名称（可来自来源或人工编辑）
+- `display_name`：展示名称（来源填充；允许管理员人工编辑覆盖）
 - `status`：`in_service` / `offline` / `merged`（offline 可由可见性汇总计算，也可落库缓存）
 - `merged_into_asset_uuid`：当 status=merged 时指向主资产
 - `created_at` / `updated_at`
 
-> 说明：统一字段（例如 CPU/内存/IP 等）可实现为“规范化列”或“canonical_json”，但必须可追溯来源（见 source_record 与审计）。
+> 说明：统一字段（例如 CPU/内存/IP 等）固定通过 `asset_run_snapshot.canonical`（canonical-v1 JSON）表达，且必须可追溯来源（见 source_record 与审计）。
 
 ### 2.5 asset_source_link（统一资产与来源对象的绑定，用于持续追踪 + 软删除）
 
@@ -127,13 +127,21 @@
 - `asset_uuid`：外键 → asset（冗余可选，便于查询）
 - `collected_at`：采集到该条记录的时间
 - `normalized`：标准化字段（JSON）
-- `raw_ref`：原始数据引用（用于定位 raw；可以是对象存储 key/路径，或 DB 内联记录指针；永久保留）
-- `raw`：原始数据内容（JSON，可选；当 raw 内联存 DB 时使用；不得包含敏感信息）
-- `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
+- `raw_ref`：原始数据定位引用（固定为 `record_id`；永久保留）
+- `raw`：原始数据内容（zstd 压缩后的 bytes；不得包含敏感信息）
+- `raw_compression`：压缩算法（固定为 `zstd`）
 - `raw_size_bytes`：压缩后大小（字节）
 - `raw_mime_type`：内容类型（可选，例如 `application/json`）
 - `raw_inline_excerpt`：少量内联摘录（可选，仅用于排障/列表摘要；不得包含敏感信息）
 - `raw_hash`：原始数据摘要（用于快速比对/去重/审计）
+
+**分区策略**
+
+> 与 `relation_record` 共享相同的分区策略，详见 2.7 节的 **D-08（分区策略）**。
+
+- **分区键**：`collected_at`
+- **分区粒度**：按月分区
+- **索引**：`(run_id)`、`(link_id)`、`(asset_uuid, collected_at desc)`
 
 **normalized 最小字段集合（满足 dup-rules-v1）**
 
@@ -159,9 +167,9 @@
 - `from_asset_uuid`：外键 → asset
 - `to_asset_uuid`：外键 → asset
 - `collected_at`：采集到该条记录的时间
-- `raw_ref`：原始数据引用（用于定位 raw；可以是对象存储 key/路径，或 DB 内联记录指针；永久保留）
-- `raw`：原始数据内容（JSON，可选；当 raw 内联存 DB 时使用；不得包含敏感信息）
-- `raw_compression`：压缩算法（例如 `zstd/gzip`；`none` 仅用于迁移/特殊场景）
+- `raw_ref`：原始数据定位引用（固定为 `relation_record_id`；永久保留）
+- `raw`：原始数据内容（zstd 压缩后的 bytes；不得包含敏感信息）
+- `raw_compression`：压缩算法（固定为 `zstd`）
 - `raw_size_bytes`：压缩后大小（字节）
 - `raw_mime_type`：内容类型（可选，例如 `application/json`）
 - `raw_inline_excerpt`：少量内联摘录（可选，仅用于排障/列表摘要；不得包含敏感信息）
@@ -170,6 +178,20 @@
 **关键约束（建议）**
 
 - 索引：`(run_id)`、`(source_id)`、`(relation_type, from_asset_uuid, to_asset_uuid)`
+
+**分区策略（D-08，已决策）**
+
+> 目标：控制高增长表的查询性能与维护成本，同时满足"永久保留"语义。
+
+- **分区键**：`collected_at`（采集时间）
+- **分区粒度**：按月分区（`YYYY-MM`）
+- **分区命名**：`{table_name}_YYYYMM`（例如 `relation_record_202601`）
+- **保留策略**：永久保留（不自动删除分区）；允许将历史分区迁移到低成本存储（如 tablespace 切换），但必须保持可查询
+- **索引策略**：每个分区独立创建本地索引；全局索引仅用于跨分区查询的高频场景
+- **容量估算**：
+  - 假设：10 个 Source，每 Source 每日采集 1,000 资产，每条 raw 压缩后 ~2KB
+  - 月增量：10 × 1,000 × 30 × 2KB ≈ 600MB/月（source_record）
+  - 年增量：~7.2GB/年（source_record）；relation_record 约为其 1/10
 
 ### 2.8 relation（资产关系：VM↔Host↔Cluster）
 
@@ -217,7 +239,7 @@
 
 - 被合并资产：`asset.status=merged`，且必须设置 `merged_into_asset_uuid=primary_asset_uuid`；业务查询/列表默认隐藏（展示层可跳转到主资产）。
 - 资产持续追踪：被合并资产的 `asset_source_link` 必须迁移/重绑定到主资产，迁移后仍需满足 `(source_id, external_kind, external_id)` 唯一约束（冲突时需去重合并）。
-- 历史不丢：`source_record`、关系边与 `audit_event` 在查询层必须可追溯（可通过实体迁移或通过 merge 归并展示实现）。
+- 历史不丢：`source_record`、关系边与 `audit_event` 在查询层必须可追溯（通过实体迁移实现）。
 
 ### 2.11 audit_event（通用审计事件：永久保留）
 
@@ -267,13 +289,13 @@
 - `value_id`：主键
 - `field_id`：外键 → custom_field_definition
 - `asset_uuid`：外键 → asset
-- `value`：值（JSON 或 typed columns）
+- `value`：值（JSON）
 - `updated_by_user_id`
 - `updated_at`
 
 **关键约束（建议）**
 
-- 唯一：`(field_id, asset_uuid)` 唯一（一资产一字段一个值；历史追溯由审计或历史表完成）。
+- 唯一：`(field_id, asset_uuid)` 唯一（一资产一字段一个值；历史追溯由审计完成）。
 
 ### 2.13 asset_run_snapshot（按 Run 的资产快照/摘要，物化）
 
@@ -454,14 +476,12 @@ stateDiagram-v2
     [*] --> Open
     Open --> Ignored
     Open --> Merged
-    Ignored --> Open : reopen
 ```
 
 > 说明：
 >
-> - SRS 仅要求“至少支持永久忽略”；是否提供 `reopen` 能力属于可选增强。
-> - 若实现 `reopen`：必须记录审计事件（建议 `duplicate_candidate.reopened`），并在重复中心/候选详情提供入口。
-> - 若不实现 `reopen`：不提供 UI/API 入口，该迁移不发生（Ignored 仅能停留在 Ignored 或通过合并链路结束）。
+> - `Ignored` 为终态：不提供 `reopen` 能力（不允许从 Ignored 回到 Open）。
+> - 合并发生后候选进入 `Merged`；`Merged` 为终态。
 
 ## 6. 审计与历史口径（面向实现）
 
@@ -484,7 +504,7 @@ stateDiagram-v2
 
 **历史快照形态（D-07，已决策）**
 
-- 物化 `asset_run_snapshot`（或等价）持久化“每次 Run 的展示快照/摘要”，以稳定口径并提升读性能。
+- 物化 `asset_run_snapshot` 持久化“每次 Run 的展示快照/摘要”，以稳定口径并提升读性能。
 
 ### 6.3 成功/失败 Run 对“缺失/关系/状态”的影响（强约束）
 
@@ -499,5 +519,174 @@ stateDiagram-v2
 
 - **D-05（审计落库形态）**：仅使用 `audit_event` 统一承载所有审计（append-only）。
 - **D-06（subject 外键策略）**：对常见对象增加可选 typed FK 列，同时保留 `subject_type + subject_id`。
-- **D-07（历史快照形态）**：物化 `asset_run_snapshot`（或等价）持久化“按 Run 的展示快照/摘要”。
-- raw 存储方案：见 `docs/design/asset-ledger-collector-reference.md` 的 **D-10**（raw_payload 落库方案）与 **D-11**（压缩策略）。
+- **D-07（历史快照形态）**：物化 `asset_run_snapshot` 持久化"按 Run 的展示快照/摘要"。
+- **D-08（分区策略）**：`source_record` 与 `relation_record` 按 `collected_at` 月分区，永久保留，允许历史分区迁移到低成本存储。
+- raw 存储方案：见 `docs/design/asset-ledger-collector-reference.md` 的 **D-11**（raw_payload 落库方案）与 **D-12**（压缩策略）。
+
+## 7. 索引策略详解
+
+### 7.1 索引设计原则
+
+| 原则     | 说明                                   |
+| -------- | -------------------------------------- |
+| 查询驱动 | 索引基于实际查询模式设计，避免过度索引 |
+| 写入平衡 | 高频写入表控制索引数量，避免写放大     |
+| 分区感知 | 分区表使用本地索引，减少跨分区扫描     |
+| 覆盖优先 | 高频查询优先使用覆盖索引               |
+
+### 7.2 核心表索引清单
+
+#### source
+
+```sql
+-- 主键
+PRIMARY KEY (source_id)
+
+-- 唯一约束
+UNIQUE INDEX idx_source_name ON source(name)
+
+-- 查询索引
+INDEX idx_source_enabled ON source(enabled, source_type)
+INDEX idx_source_schedule_group ON source(schedule_group_id)
+```
+
+#### run
+
+```sql
+-- 主键
+PRIMARY KEY (run_id)
+
+-- 查询索引（高频）
+INDEX idx_run_source_status ON run(source_id, status, started_at DESC)
+INDEX idx_run_started_at ON run(started_at DESC)
+INDEX idx_run_status ON run(status) WHERE status IN ('Queued', 'Running')
+```
+
+#### asset
+
+```sql
+-- 主键
+PRIMARY KEY (asset_uuid)
+
+-- 查询索引
+INDEX idx_asset_type_status ON asset(asset_type, status)
+INDEX idx_asset_display_name ON asset(display_name)
+INDEX idx_asset_merged_into ON asset(merged_into_asset_uuid) WHERE merged_into_asset_uuid IS NOT NULL
+```
+
+#### asset_source_link
+
+```sql
+-- 主键
+PRIMARY KEY (link_id)
+
+-- 唯一约束（持续追踪关键）
+UNIQUE INDEX idx_asl_source_external ON asset_source_link(source_id, external_kind, external_id)
+
+-- 查询索引
+INDEX idx_asl_asset ON asset_source_link(asset_uuid)
+INDEX idx_asl_presence ON asset_source_link(presence_status, last_seen_at DESC)
+```
+
+#### source_record（分区表）
+
+```sql
+-- 主键（含分区键）
+PRIMARY KEY (record_id, collected_at)
+
+-- 本地索引（每个分区独立）
+INDEX idx_sr_run ON source_record(run_id) LOCAL
+INDEX idx_sr_link ON source_record(link_id) LOCAL
+INDEX idx_sr_asset_time ON source_record(asset_uuid, collected_at DESC) LOCAL
+```
+
+#### relation
+
+```sql
+-- 主键
+PRIMARY KEY (relation_id)
+
+-- 唯一约束
+UNIQUE INDEX idx_rel_unique ON relation(relation_type, from_asset_uuid, to_asset_uuid, source_id)
+
+-- 查询索引
+INDEX idx_rel_from ON relation(from_asset_uuid, relation_type)
+INDEX idx_rel_to ON relation(to_asset_uuid, relation_type)
+INDEX idx_rel_status ON relation(status, last_seen_at DESC)
+```
+
+#### audit_event
+
+```sql
+-- 主键
+PRIMARY KEY (event_id)
+
+-- 查询索引（审计追溯）
+INDEX idx_audit_subject ON audit_event(subject_type, subject_id, occurred_at DESC)
+INDEX idx_audit_actor ON audit_event(actor_user_id, occurred_at DESC)
+INDEX idx_audit_type ON audit_event(event_type, occurred_at DESC)
+
+-- Typed FK 索引（可选）
+INDEX idx_audit_asset ON audit_event(asset_uuid, occurred_at DESC) WHERE asset_uuid IS NOT NULL
+INDEX idx_audit_source ON audit_event(source_id, occurred_at DESC) WHERE source_id IS NOT NULL
+INDEX idx_audit_run ON audit_event(run_id, occurred_at DESC) WHERE run_id IS NOT NULL
+```
+
+### 7.3 分区表维护 SOP
+
+#### 创建新分区（每月执行）
+
+```sql
+-- 示例：创建 2026-02 分区
+CREATE TABLE source_record_202602 PARTITION OF source_record
+    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+
+CREATE TABLE relation_record_202602 PARTITION OF relation_record
+    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+
+-- 创建本地索引
+CREATE INDEX idx_sr_run_202602 ON source_record_202602(run_id);
+CREATE INDEX idx_sr_link_202602 ON source_record_202602(link_id);
+CREATE INDEX idx_sr_asset_time_202602 ON source_record_202602(asset_uuid, collected_at DESC);
+```
+
+#### 分区维护检查清单
+
+| 检查项       | 频率 | 操作               |
+| ------------ | ---- | ------------------ |
+| 分区是否存在 | 每月 | 提前创建下月分区   |
+| 分区大小     | 每周 | 监控增长趋势       |
+| 索引健康     | 每月 | REINDEX 碎片化索引 |
+| 查询性能     | 每周 | 检查慢查询日志     |
+
+#### 历史分区迁移（可选）
+
+```sql
+-- 将历史分区迁移到低成本 tablespace
+ALTER TABLE source_record_202501 SET TABLESPACE archive_tablespace;
+
+-- 注意：迁移后仍可查询，但 I/O 性能可能下降
+```
+
+### 7.4 索引监控指标
+
+| 指标         | 阈值       | 告警级别 |
+| ------------ | ---------- | -------- |
+| 索引膨胀率   | > 30%      | Warning  |
+| 索引扫描比例 | < 90%      | Warning  |
+| 顺序扫描次数 | > 1000/min | Info     |
+| 索引大小增长 | > 10%/周   | Info     |
+
+```sql
+-- 索引使用统计查询
+SELECT
+    schemaname,
+    tablename,
+    indexname,
+    idx_scan,
+    idx_tup_read,
+    idx_tup_fetch
+FROM pg_stat_user_indexes
+WHERE schemaname = 'public'
+ORDER BY idx_scan DESC;
+```

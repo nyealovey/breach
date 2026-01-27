@@ -18,7 +18,7 @@
 
 ### 1.1 背景
 
-现有虚拟化/云平台资产分散在多个来源（阿里云、Hyper-V、vCenter、PVE 等），并可能因迁移/复制导致“同一资产在不同来源或同一来源不同时间窗口出现多份记录”。需要一个统一台账系统，按固定频率持续采集并留痕，支持人工治理（疑似重复提示与合并），同时允许业务自定义字段扩展。
+现有虚拟化/云平台资产分散在多个来源（阿里云、Hyper-V、vCenter、PVE 等），并可能因迁移/复制导致“同一资产在不同来源、同一来源不同时间窗口出现多份记录”。需要一个统一台账系统，按固定频率持续采集并留痕，支持人工治理（疑似重复提示与合并），同时允许业务自定义字段扩展。
 
 ### 1.2 目标
 
@@ -68,19 +68,19 @@
   - 处理疑似重复（合并/忽略）
   - 管理自定义字段定义
   - 查看/导出全量台账
-  - 查看/下载来源 raw payload（需脱敏；下载动作需审计）
+  - 查看来源 raw payload（需脱敏；访问动作需审计）
 - 普通用户（user）
   - 查看资产列表/详情/关系/历史
   - 不可查看/编辑凭证
-  - 不可查看/下载 raw payload
+  - 不可查看 raw payload
   - 不可合并资产
   - 不可管理字段定义
 
 ### 2.2 验收标准
 
-- 管理员可访问“来源管理/重复中心/字段管理”等管理功能；普通用户不可见或无权限操作。
+- 管理员可访问“来源管理/重复中心/字段管理”等管理功能；普通用户不可见且无权限操作。
 - 普通用户不可直接获取任何来源凭证明文（包括 API 响应与页面渲染）。
-- 普通用户不可查看/下载任何来源 raw payload（403/无入口）。
+- 普通用户不可查看任何来源 raw payload（403/无入口）。
 
 ## 3. 功能需求（Functional Requirements）
 
@@ -100,6 +100,9 @@
 - Given 管理员创建 Source  
   When 保存  
   Then 必须绑定一个调度组（Schedule Group），用于“分组定时触发”（见 FR-02）。
+- Given 管理员创建或更新 Source 时填写/更新凭证  
+  When 保存成功  
+  Then 系统必须安全存储凭证（加密/密文）；任何 API/日志/页面不得回显明文凭证。
 - Given 管理员创建 Source 成功  
   When 在列表查看  
   Then 可看到 Source 基本信息（名称、类型、启用状态、最近一次 Run 状态/时间）。
@@ -121,12 +124,24 @@
 - Given 管理员创建调度组  
   When 保存  
   Then 触发时间必须为合法 `HH:mm`，时区必须为 IANA TZ（例如 `Asia/Shanghai`）。
+- Given 调度组时区存在夏令时切换，且在某个 `local_date` 当天该时区的本地时间不存在所配置的 `HH:mm`（spring forward）  
+  When 到达该日并执行定时调度  
+  Then 系统应跳过该日（不创建 Run），且不得补跑。
+- Given 调度组时区存在夏令时切换，且在某个 `local_date` 当天该时区的本地时间会出现两次所配置的 `HH:mm`（fall back）  
+  When 定时调度覆盖两次 `HH:mm`  
+  Then 系统在该 `local_date` 只能触发一次（不重复创建 Run）。
 - Given 管理员停用某调度组  
   When 到达该组的定时触发点  
   Then 系统不应为该组下的任何 Source 自动创建新的 Run。
 - Given 管理员修改某调度组的触发时间  
   When 修改生效  
   Then 新触发时间仅影响下一次触发，不应对过去错过的触发点进行补跑。
+- Given 管理员删除某调度组，且该调度组下仍存在任一 Source  
+  When 删除  
+  Then 系统必须拒绝删除并返回“资源冲突”（409），提示需先迁移/解绑该组下的 Source。
+- Given 管理员删除某调度组，且该调度组下不存在任何 Source  
+  When 删除  
+  Then 删除成功，且该调度组不再出现在调度组列表中。
 
 ### FR-02 采集批次（Run）管理：定时与手动
 
@@ -148,8 +163,8 @@
 - Given 管理员查看 Run 列表  
   When 展示  
   Then 必须展示 Run 的 `mode`（collect/detect/healthcheck）。
-- Given 同一 Source 已存在一个状态为 `Queued` 或 `Running` 的 Run  
-  When 再次触发同一 Source（定时或手动）  
+- Given 同一 Source 已存在一个状态为 `Queued`、`Running` 的 Run  
+  When 再次触发同一 Source（定时触发、手动触发）  
   Then 系统不得创建新的 Run，而是返回当前活动 Run 的 `run_id`，并记录一次审计事件（例如 `run.trigger_suppressed`，包含 trigger_type 与原因）。
 
 ### FR-03 插件化采集（Collector）与目标版本适配
@@ -173,7 +188,7 @@
   Then Run 记录中必须保存探测到的目标版本/能力摘要与最终选用的 driver 标识（例如 pve@v8-driver）。
 - Given 目标版本升级导致旧 driver 不再适用  
   When 下一次 Run 执行  
-  Then 插件应选择匹配的新 driver 或明确失败原因，不得“静默采集不完整数据”。
+  Then 插件应选择匹配的新 driver；如无法匹配必须明确失败原因，不得“静默采集不完整数据”。
 - Given 插件在 collect 模式无法保证“完整资产清单”（例如缺少列举权限/分页中断/接口错误）  
   When Run 执行  
   Then Run 必须失败并给出可读错误（需脱敏），不得以 warnings 方式标记成功。
@@ -192,7 +207,7 @@
 - 统一字段视图由关联的来源快照（SourceRecord.normalized）聚合得出，但必须保留字段级可追溯性（至少包含来源 `source_id` 与采集时间/Run）。
 - 多值字段（如 `mac_addresses[]`、`ip_addresses[]`）在统一视图中取并集去重。
 - 单值字段（如 `hostname`、`serial_number` 等）若存在多来源不一致，统一视图必须标记“冲突”，并展示当前选用值的来源；其余值在“关联来源明细”中可对比查看。
-- **冲突字段默认选用策略（D-12，已决策）**：当单值字段存在多来源不一致时，默认选用“最新一次成功 `mode=collect` Run”所观察到的值（以 `run.finished_at`/`run.started_at` 作为时间序，取最新）；若最新来源该字段缺失，则回退到下一条更早的成功快照。
+- **冲突字段默认选用策略（D-13，已决策）**：当单值字段存在多来源不一致时，默认选用“最新一次成功 `mode=collect` Run”所观察到的值（以 `run.finished_at`/`run.started_at` 作为时间序，取最新）；若最新来源该字段缺失，则回退到下一条更早的成功快照。
 - 统一视图不应隐藏来源差异：用户必须能回溯到各来源的原始值与采集批次。
 - canonical-v1 的结构（含字段级来源证据）见：`docs/design/asset-ledger-json-schema.md`。
 
@@ -206,7 +221,7 @@
   Then 系统应将新的 SourceRecord 归属到同一个 Asset（用于“持续追踪”，不等同于跨来源自动合并）。
 - Given 用户查看资产详情  
   When 展示  
-  Then 必须同时展示：统一字段视图（含字段来源/采集时间）+ 关联来源明细（normalized 对所有人可见；raw 仅管理员可查看/下载）。
+  Then 必须同时展示：统一字段视图（含字段来源/采集时间）+ 关联来源明细（normalized 对所有人可见；raw 仅管理员可查看）。
 - Given 同一 Asset 关联多个来源且某字段出现不一致（例如 hostname 不一致）  
   When 查看资产详情  
   Then 统一字段视图必须标记该字段为“冲突”，并在关联来源明细中可对比各来源值与采集时间。
@@ -317,10 +332,10 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
   Then 能按时间/Run 查看历史记录（至少包含每次 Run 的采集时间、关键字段变化与关系变化摘要）。
 - Given 管理员查看某条来源明细  
   When 打开 raw  
-  Then 可查看或下载该次采集的 raw payload（需脱敏敏感字段如凭证），且下载动作必须记录审计。
+  Then 可查看该次采集的 raw payload（必须脱敏敏感字段如凭证），且访问动作必须记录审计。
 - Given 普通用户查看某条来源明细  
   When 尝试打开 raw  
-  Then 无入口或被拒绝（403）。
+  Then 无入口并返回 403。
 
 ### FR-11 资产浏览、查询与导出
 
@@ -338,10 +353,10 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
   Then 至少支持按 `last_seen_at` 与 `display_name` 排序。
 - Given 管理员发起“导出全量台账”  
   When 导出完成  
-  Then 生成可下载文件（CSV/JSON 其一即可），且每行/每条至少包含：`asset_uuid`、`asset_type`、`status`、`display_name`、`last_seen_at`、来源摘要（source_id/source_type）；导出动作必须记录审计。
+  Then 生成可下载文件（CSV），且每行/每条至少包含：`asset_uuid`、`asset_type`、`status`、`display_name`、`last_seen_at`、来源摘要（source_id/source_type）；导出动作必须记录审计。
 - Given 普通用户发起“导出全量台账”  
   When 执行  
-  Then 无入口或被拒绝（403）。
+  Then 无入口并返回 403。
 
 ## 4. 非功能需求（Non-Functional Requirements）
 
@@ -372,29 +387,70 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - Run 必须记录：开始/结束时间、状态、采集数量统计、错误摘要、插件版本与 driver、目标探测信息。
 - 系统应提供最小可观测入口（列表/详情页即可）。
 
+### NFR-05.A 性能基线
+
+> 目标：为系统性能提供可验收的基线指标，确保用户体验与系统稳定性。
+
+**API 响应时间（P95）**
+
+| 操作类型         | 目标响应时间 | 说明                                 |
+| ---------------- | ------------ | ------------------------------------ |
+| 列表查询（分页） | ≤ 500ms      | Source/Run/Asset 列表，单页 ≤ 100 条 |
+| 详情查询         | ≤ 300ms      | 单个 Source/Run/Asset 详情           |
+| 创建/更新操作    | ≤ 1000ms     | Source 创建/编辑、手动触发 Run       |
+| 登录/认证        | ≤ 500ms      | 登录、会话校验                       |
+
+**并发能力**
+
+| 指标          | 目标值 | 说明                              |
+| ------------- | ------ | --------------------------------- |
+| 并发管理员    | ≥ 10   | 同时操作 UI 的管理员数量          |
+| 并发 API 请求 | ≥ 50   | 同时处理的 API 请求数（不含采集） |
+| 数据库连接池  | ≥ 20   | Prisma 连接池大小                 |
+
+**采集吞吐量**
+
+| 指标               | 目标值          | 说明                     |
+| ------------------ | --------------- | ------------------------ |
+| 单 Source 采集速率 | ≥ 100 资产/分钟 | vCenter 环境，网络正常   |
+| 单 Run 最大资产数  | ≥ 10,000        | 单次采集可处理的资产上限 |
+| 并发 Run 数        | ≥ 5             | 不同 Source 可并发执行   |
+
+**验收标准**
+
+- Given 系统在正常负载下运行（≤ 10 个 Source，≤ 10,000 资产）
+  When 执行 API 请求
+  Then P95 响应时间应满足上述基线。
+- Given 10 个管理员同时操作 UI
+  When 执行常规操作（列表查询、详情查看）
+  Then 系统响应正常，无明显延迟或错误。
+- Given 单个 vCenter Source 包含 1,000 个 VM
+  When 执行 `mode=collect` Run
+  Then 采集应在 15 分钟内完成（含入账处理）。
+
 ### NFR-06 容量与备份恢复
 
 - 系统必须提供可执行的备份与恢复方案（包含 DB 数据与 raw/审计数据），确保恢复后仍满足“永久可追溯”语义。
 - 由于 raw 与审计永久保留，系统必须有容量规划与告警；实现侧应支持数据分区/归档/分层存储等手段控制长期存储成本（语义不变）。
 
-### NFR-07 Raw 存储（永久保留/压缩/可下载，可验收）
+### NFR-07 Raw 存储（永久保留/压缩/可查看，可验收）
 
 > 背景：raw 永久保留会快速膨胀；若将 raw 长期内联在 DB，会显著放大容量、备份与查询成本。
 
-- raw 必须永久保留，且满足“可追溯/可下载/可校验”的语义（见 FR-10 与 NFR-06）。
-- raw 必须启用压缩；实现需记录压缩算法到元数据 `raw_compression`（推荐默认 zstd，亦可在实现阶段选择等价算法）。
-- 系统必须为每条 raw 记录元数据（最小集合）：`raw_ref`（可定位/可下载的引用或路径）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`（可扩展 `raw_mime_type/raw_inline_excerpt` 等）。
-- 实现可选对象存储/数据库/分层存储，但必须满足容量与备份恢复要求；推荐方案与字段口径见：
+- raw 必须永久保留，且满足“可追溯/可查看/可校验”的语义（见 FR-10 与 NFR-06）。
+- raw 必须启用压缩；压缩算法固定为 **zstd**，并记录到元数据 `raw_compression`。
+- 系统必须为每条 raw 记录元数据（最小集合）：`raw_ref`（数据库定位引用，用于定位与查看 raw）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`（可扩展 `raw_mime_type/raw_inline_excerpt` 等）。
+- raw 仅允许以内联方式存储在 PostgreSQL（不使用对象存储）；推荐字段口径见：
   - `docs/design/asset-ledger-data-model.md`
   - `docs/design/asset-ledger-collector-reference.md`
-- `source_record` / `relation_record` 等高增长表必须采用时间分区（按月或等价策略），以保证长期查询与维护可控。
+- `source_record` / `relation_record` 等高增长表必须采用按月时间分区，以保证长期查询与维护可控。
 
 **验收标准**
 
 - Given 一个 `mode=collect` 的 Run 成功结束  
   When 系统持久化 SourceRecord/RelationRecord  
-  Then 每条记录必须同时具备：`raw_ref`（可下载）+ `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`。
-- Given raw 存储不可用（例如对象存储不可用或 DB 写入失败）  
+  Then 每条记录必须同时具备：`raw_ref` + `raw_hash`（可校验）+ `raw_size_bytes` + `raw_compression`。
+- Given raw 存储不可用（例如 DB 写入失败、压缩失败）  
   When 系统无法写入 raw  
   Then 该 Run 必须失败，并给出可读错误（不得标记为成功）。
 
@@ -404,3 +460,35 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 - 采集频率为每天一次；不要求实时一致性。
 - 疑似重复规则固定，不提供 UI 配置。
 - 调度相关时区字段使用 IANA TZ 格式（例如 `Asia/Shanghai`）。
+
+## 6. 版本演进路线
+
+> 本章节描述系统的版本演进规划，用于明确各版本的功能边界与迭代优先级。
+
+### 6.1 版本规划
+
+| 版本 | 范围                               | 状态     | 说明                       |
+| ---- | ---------------------------------- | -------- | -------------------------- |
+| v1.0 | vCenter MVP（FR-01~FR-05）         | **当前** | 单来源、核心采集与统一视图 |
+| v1.1 | 多来源扩展（PVE/Hyper-V）          | 规划中   | 新增来源类型插件           |
+| v2.0 | 重复中心 + 人工合并（FR-07~FR-08） | 规划中   | 疑似重复候选与合并治理     |
+| v2.1 | 自定义字段 + 导出（FR-06/FR-11）   | 规划中   | 台账字段扩展与数据导出     |
+| v2.2 | 下线语义 + 历史追溯（FR-09~FR-10） | 规划中   | 软删除与完整历史时间线     |
+
+### 6.2 v1.0 → v1.1 演进要点
+
+- 新增 PVE/Hyper-V 插件（遵循 `collector-reference` 契约）
+- 来源类型枚举扩展
+- 多来源冲突场景验证
+
+### 6.3 v1.x → v2.0 演进要点
+
+- 引入 `duplicate_candidate` 表与重复中心 UI
+- 实现 dup-rules-v1 评分与候选生成
+- 合并操作与审计落库
+
+### 6.4 版本兼容性承诺
+
+- **数据兼容**：升级不破坏已有数据；`normalized-v1`/`canonical-v1` schema 保持向后兼容。
+- **API 兼容**：v1.x 内 API 保持向后兼容；v2.0 可能引入 breaking changes（需提前公告）。
+- **插件兼容**：`collector-request-v1`/`collector-response-v1` 契约在 v1.x 内保持稳定。

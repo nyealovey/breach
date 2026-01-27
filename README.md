@@ -108,6 +108,7 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - 技术设计（vCenter MVP v1.0）：[`docs/design/asset-ledger-vcenter-mvp-design.md`](docs/design/asset-ledger-vcenter-mvp-design.md)
 - 日志规范（宽事件 / 采集域事件）：[`docs/design/asset-ledger-logging-spec.md`](docs/design/asset-ledger-logging-spec.md)
+- 错误码规范（Error Codes）：[`docs/design/asset-ledger-error-codes.md`](docs/design/asset-ledger-error-codes.md)
 - 疑似重复规则（dup-rules-v1）：[`docs/design/asset-ledger-dup-rules-v1.md`](docs/design/asset-ledger-dup-rules-v1.md)
 - 概念数据模型（Conceptual Data Model）：[`docs/design/asset-ledger-data-model.md`](docs/design/asset-ledger-data-model.md)
 - 采集插件参考（开源组件优先）：[`docs/design/asset-ledger-collector-reference.md`](docs/design/asset-ledger-collector-reference.md)
@@ -119,11 +120,26 @@ List of websites that started off with Next.js TypeScript Starter:
 环境变量（服务端）：
 
 - `DATABASE_URL`：PostgreSQL 连接串（Prisma 使用）
+- `ASSET_LEDGER_ADMIN_PASSWORD`：首次启动用于初始化默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取；生产环境必须设置。
+- `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
+- `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。
+- `BCRYPT_LOG_ROUNDS`：bcrypt 成本（默认 12；值越大越安全但越慢）。
+- `PASSWORD_ENCRYPTION_KEY`：用于数据库中“Source 凭据密文”的加/解密（生产环境必须固定；否则重启后无法解密已存储的密码）。
 - `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用）
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
 - `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）
 - `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`：插件执行超时（默认 300000）
+
+生成示例：
+
+```bash
+# SECRET_KEY / JWT_SECRET_KEY（会话/JWT 签名）
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# PASSWORD_ENCRYPTION_KEY（32 bytes key，base64url）
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
 
 命令：
 
