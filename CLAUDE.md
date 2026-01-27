@@ -47,6 +47,7 @@ This is an **Asset Ledger System (资产台账系统)** for collecting and track
 ### Plugin Contract
 
 Collectors communicate via JSON stdin/stdout:
+
 - Input: `collector-request-v1` (source config, credentials, run metadata)
 - Output: `collector-response-v1` (assets, relations, stats, errors)
 - Modes: `healthcheck`, `detect`, `collect`
@@ -67,12 +68,14 @@ Collectors communicate via JSON stdin/stdout:
 ## Environment Variables
 
 Required for production:
+
 - `DATABASE_URL` - PostgreSQL connection string
 - `SECRET_KEY` - Session signing key
 - `PASSWORD_ENCRYPTION_KEY` - Source credential encryption (32 bytes, base64url)
 - `ASSET_LEDGER_ADMIN_PASSWORD` - Initial admin password (first run only)
 
 Generate secrets:
+
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"  # SECRET_KEY
 python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"  # PASSWORD_ENCRYPTION_KEY

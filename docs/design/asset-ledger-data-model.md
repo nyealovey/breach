@@ -38,12 +38,13 @@
 ### 2.2 source（来源）
 
 - `source_id`：主键
-- `name`：来源名称（唯一建议：同租户内唯一）
+- `name`：来源名称（唯一建议：同租户内对“未删除 Source”唯一）
 - `source_type`：`aliyun` / `vcenter` / `pve` / `hyperv` / `third_party` …
-- `enabled`：启用/停用
+- `enabled`：启用/停用（软删除后必须视为不可用）
 - `schedule_group_id`：调度组外键（见 2.2A；用于“分组定时触发”）
 - `config`：非敏感连接配置（JSON）
 - `credential_ref`：凭证引用（密文存储在独立实体/密钥系统）
+- `deleted_at`：软删除时间（空表示未删除；未删除才可参与调度/被手动触发）
 - `created_at` / `updated_at`
 
 ### 2.2A schedule_group（调度组/采集任务）

@@ -86,11 +86,39 @@
 
 > 编号规则：FR-XX。每条需求附“验收标准”（可用 Given/When/Then 表达）。
 
+### FR-00 认证与会话（Auth）
+
+**描述**
+
+系统提供最小可用的认证与会话能力，支持管理员登录、登出、获取当前用户、修改密码；未认证请求必须被拒绝。
+
+**验收标准**
+
+- Given 用户未登录  
+  When 访问任一需要认证的 API（例如 Sources/Runs/Assets）  
+  Then 返回 401，且不得返回任何敏感信息。
+- Given 管理员使用正确的用户名/密码登录  
+  When 登录成功  
+  Then 系统创建会话并设置 HttpOnly Session Cookie；随后访问 `me` 能获得当前用户信息（至少包含 userId/username/role）。
+- Given 管理员使用错误的用户名/密码登录  
+  When 登录  
+  Then 返回 401，并给出可读错误（不得泄漏“账号是否存在”等敏感信息）。
+- Given 管理员已登录  
+  When 登出  
+  Then 会话失效；后续请求返回 401。
+- Given 管理员已登录  
+  When 修改密码（提供 currentPassword + newPassword）  
+  Then 修改成功后，新密码立即生效；旧密码不可再用于登录。
+
 ### FR-01 来源（Source）管理
 
 **描述**
 
 系统支持管理员创建与维护采集来源 Source。每个 Source 绑定一种来源类型（如 vCenter、PVE、阿里云等）以及对应的连接信息与凭证，并可启停。
+
+**约束（D-21，已决策）**
+
+- Source 删除为“软删除”：不物理删除历史数据；删除后默认不可见且不再参与调度/触发；v1.0 不提供恢复（restore）能力。
 
 **验收标准**
 
@@ -109,6 +137,12 @@
 - Given 管理员停用某 Source  
   When 到达定时触发点  
   Then 系统不应为该 Source 自动创建新的 Run。
+- Given 管理员删除某 Source  
+  When 删除  
+  Then 系统必须执行“软删除”：Source 默认不再出现在 Source 列表，且不会再参与定时调度或被手动触发；但历史 Run/SourceRecord/资产追溯关系必须保留且仍可查询。
+- Given 管理员删除某 Source，且该 Source 当前存在活动 Run（Queued/Running）  
+  When 删除  
+  Then 系统必须拒绝删除并返回“资源冲突”（409），提示需先取消或等待该活动 Run 结束。
 
 ### FR-01.A 调度组（Schedule Group）管理
 
@@ -136,7 +170,7 @@
 - Given 管理员修改某调度组的触发时间  
   When 修改生效  
   Then 新触发时间仅影响下一次触发，不应对过去错过的触发点进行补跑。
-- Given 管理员删除某调度组，且该调度组下仍存在任一 Source  
+- Given 管理员删除某调度组，且该调度组下仍存在任一未删除 Source  
   When 删除  
   Then 系统必须拒绝删除并返回“资源冲突”（409），提示需先迁移/解绑该组下的 Source。
 - Given 管理员删除某调度组，且该调度组下不存在任何 Source  

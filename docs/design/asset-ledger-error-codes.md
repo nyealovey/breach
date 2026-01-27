@@ -52,9 +52,16 @@
 | AUTH_UNAUTHORIZED                 | web    | auth       | false     | 401              | 未登录/会话无效（无有效 session）                           |
 | AUTH_INVALID_CREDENTIALS          | web    | auth       | false     | 401              | 登录失败（用户名/密码错误）                                 |
 | AUTH_FORBIDDEN                    | web    | permission | false     | 403              | 已登录但无权限（v1.0 仅 admin；预留）                       |
+| AUTH_SESSION_EXPIRED              | web    | auth       | false     | 401              | 会话过期（session 失效）                                    |
 | CONFIG_INVALID_REQUEST            | web    | config     | false     | 400              | 请求参数校验失败（Zod/表单校验）                            |
 | CONFIG_INVALID_TIMEZONE           | web    | config     | false     | 400              | 调度组时区非法（非 IANA TZ）                                |
 | CONFIG_INVALID_HHMM               | web    | config     | false     | 400              | 调度组触发时间非法（非 `HH:mm`）                            |
+| CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                 |
+| CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                  |
+| CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                  |
+| CONFIG_SCHEDULE_GROUP_NOT_FOUND   | web    | config     | false     | 404              | 调度组不存在                                                |
+| CONFIG_DUPLICATE_NAME             | web    | config     | false     | 409              | 名称重复导致冲突                                            |
+| CONFIG_RESOURCE_CONFLICT          | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                       |
 | PLUGIN_EXEC_FAILED                | worker | unknown    | false     |                  | 插件进程无法启动（文件不存在/权限/exec 失败）               |
 | PLUGIN_TIMEOUT                    | worker | unknown    | true      |                  | 插件执行超时（超出 `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`）       |
 | PLUGIN_EXIT_NONZERO               | worker | unknown    | false     |                  | 插件退出码非 0 且 `errors[]` 不可用（缺失/无法解析）        |
@@ -65,6 +72,7 @@
 | INVENTORY_INCOMPLETE              | worker | parse      | false     |                  | collect 未提供完整清单（`inventory_complete=false`）        |
 | RAW_PERSIST_FAILED                | worker | unknown    | true      |                  | raw/元数据写入失败（raw 永久保留语义无法满足）              |
 | DB_WRITE_FAILED                   | worker | unknown    | true      |                  | 数据库写入失败（Run/source_record/relation 等持久化失败）   |
+| DB_READ_FAILED                    | worker | unknown    | true      |                  | 数据库读取失败                                              |
 | VCENTER_CONFIG_INVALID            | plugin | config     | false     |                  | vCenter 输入配置非法（endpoint 缺失/格式不合法等）          |
 | VCENTER_AUTH_FAILED               | plugin | auth       | false     |                  | vCenter 认证失败（用户名/密码错误）                         |
 | VCENTER_PERMISSION_DENIED         | plugin | permission | false     |                  | vCenter 权限不足（无法列举 inventory/读取必要字段）         |
@@ -72,6 +80,9 @@
 | VCENTER_TLS_ERROR                 | plugin | network    | false     |                  | TLS 握手/证书失败（与 v1.0“允许自签名”的实现策略相关）      |
 | VCENTER_RATE_LIMIT                | plugin | rate_limit | true      |                  | vCenter API 限流/节流                                       |
 | VCENTER_PARSE_ERROR               | plugin | parse      | false     |                  | vCenter 响应解析失败/协议不兼容                             |
+| VCENTER_API_VERSION_UNSUPPORTED   | plugin | parse      | false     |                  | vCenter API 版本/能力不支持（需升级 driver 或明确失败）     |
+| INTERNAL_ERROR                    | common | unknown    | false     | 500              | 未分类内部错误                                              |
+| INTERNAL_NOT_IMPLEMENTED          | common | unknown    | false     | 501              | 未实现功能                                                  |
 
 ## 3. 落地规则（建议）
 
@@ -115,6 +126,7 @@ export const ErrorCode = {
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: 'CONFIG_SCHEDULE_GROUP_NOT_FOUND',
   CONFIG_DUPLICATE_NAME: 'CONFIG_DUPLICATE_NAME',
+  CONFIG_RESOURCE_CONFLICT: 'CONFIG_RESOURCE_CONFLICT',
 
   // ========== Worker 层（PLUGIN_* / SCHEMA_* / DB_*）==========
   PLUGIN_EXEC_FAILED: 'PLUGIN_EXEC_FAILED',
@@ -145,25 +157,25 @@ export const ErrorCode = {
   INTERNAL_NOT_IMPLEMENTED: 'INTERNAL_NOT_IMPLEMENTED',
 } as const;
 
-export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
+export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
 ```
 
 ## 5. 错误码分配规则
 
 ### 5.1 命名规范
 
-| 前缀 | 层级 | 说明 |
-|-----|------|------|
-| `AUTH_` | Web | 认证相关（登录、会话） |
-| `CONFIG_` | Web | 配置/参数校验相关 |
-| `PLUGIN_` | Worker | 插件执行相关 |
-| `SCHEMA_` | Worker | Schema 校验相关 |
-| `DB_` | Worker | 数据库操作相关 |
-| `RAW_` | Worker | Raw 存储相关 |
-| `VCENTER_` | Plugin | vCenter 插件专用 |
-| `PVE_` | Plugin | PVE 插件专用（预留） |
-| `HYPERV_` | Plugin | Hyper-V 插件专用（预留） |
-| `INTERNAL_` | 通用 | 内部错误/未分类 |
+| 前缀        | 层级   | 说明                     |
+| ----------- | ------ | ------------------------ |
+| `AUTH_`     | Web    | 认证相关（登录、会话）   |
+| `CONFIG_`   | Web    | 配置/参数校验相关        |
+| `PLUGIN_`   | Worker | 插件执行相关             |
+| `SCHEMA_`   | Worker | Schema 校验相关          |
+| `DB_`       | Worker | 数据库操作相关           |
+| `RAW_`      | Worker | Raw 存储相关             |
+| `VCENTER_`  | Plugin | vCenter 插件专用         |
+| `PVE_`      | Plugin | PVE 插件专用（预留）     |
+| `HYPERV_`   | Plugin | Hyper-V 插件专用（预留） |
+| `INTERNAL_` | 通用   | 内部错误/未分类          |
 
 ### 5.2 新增错误码流程
 
@@ -178,17 +190,17 @@ export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
 
 > 若未来需要数字编号（用于外部系统对接），建议按以下范围分配：
 
-| 范围 | 层级 | 说明 |
-|-----|------|------|
-| 1000-1999 | Web/AUTH | 认证与权限 |
-| 2000-2999 | Web/CONFIG | 配置与参数 |
-| 3000-3999 | Worker/PLUGIN | 插件执行 |
-| 4000-4999 | Worker/SCHEMA | Schema 校验 |
-| 5000-5999 | Worker/DB | 数据库操作 |
-| 6000-6999 | Plugin/VCENTER | vCenter 插件 |
-| 7000-7999 | Plugin/PVE | PVE 插件（预留） |
-| 8000-8999 | Plugin/HYPERV | Hyper-V 插件（预留） |
-| 9000-9999 | INTERNAL | 内部错误 |
+| 范围      | 层级           | 说明                 |
+| --------- | -------------- | -------------------- |
+| 1000-1999 | Web/AUTH       | 认证与权限           |
+| 2000-2999 | Web/CONFIG     | 配置与参数           |
+| 3000-3999 | Worker/PLUGIN  | 插件执行             |
+| 4000-4999 | Worker/SCHEMA  | Schema 校验          |
+| 5000-5999 | Worker/DB      | 数据库操作           |
+| 6000-6999 | Plugin/VCENTER | vCenter 插件         |
+| 7000-7999 | Plugin/PVE     | PVE 插件（预留）     |
+| 8000-8999 | Plugin/HYPERV  | Hyper-V 插件（预留） |
+| 9000-9999 | INTERNAL       | 内部错误             |
 
 ## 6. 国际化（i18n）支持
 
@@ -198,10 +210,13 @@ export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
 /**
  * 错误消息模板（支持变量插值）
  */
-export const ErrorMessages: Record<ErrorCodeType, {
-  zh: string;
-  en: string;
-}> = {
+export const ErrorMessages: Record<
+  ErrorCodeType,
+  {
+    zh: string;
+    en: string;
+  }
+> = {
   AUTH_UNAUTHORIZED: {
     zh: '未登录或会话已失效，请重新登录',
     en: 'Not authenticated or session expired, please login again',
@@ -249,6 +264,10 @@ export const ErrorMessages: Record<ErrorCodeType, {
   CONFIG_DUPLICATE_NAME: {
     zh: '名称已存在：{{name}}',
     en: 'Name already exists: {{name}}',
+  },
+  CONFIG_RESOURCE_CONFLICT: {
+    zh: '资源冲突：{{reason}}',
+    en: 'Resource conflict: {{reason}}',
   },
   PLUGIN_EXEC_FAILED: {
     zh: '插件启动失败，请检查插件配置',
@@ -349,7 +368,7 @@ export const ErrorMessages: Record<ErrorCodeType, {
 export function formatErrorMessage(
   code: ErrorCodeType,
   locale: 'zh' | 'en' = 'zh',
-  vars: Record<string, string | number> = {}
+  vars: Record<string, string | number> = {},
 ): string {
   const template = ErrorMessages[code]?.[locale] ?? ErrorMessages.INTERNAL_ERROR[locale];
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? `{{${key}}}`));

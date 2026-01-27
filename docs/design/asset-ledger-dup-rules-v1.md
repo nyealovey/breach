@@ -98,94 +98,94 @@
 
 #### 10.1.1 `vm.machine_uuid_match`（100 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| VM-UUID-01 | 完全匹配 | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | 命中，+100 分 | 标准匹配 |
+| 用例 ID    | 场景         | 输入 A                                                 | 输入 B                                                 | 预期结果      | 说明                |
+| ---------- | ------------ | ------------------------------------------------------ | ------------------------------------------------------ | ------------- | ------------------- |
+| VM-UUID-01 | 完全匹配     | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | 命中，+100 分 | 标准匹配            |
 | VM-UUID-02 | 大小写不敏感 | `machine_uuid: "550E8400-E29B-41D4-A716-446655440000"` | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | 命中，+100 分 | UUID 应大小写不敏感 |
-| VM-UUID-03 | 一方缺失 | `machine_uuid: "550e8400-..."` | `machine_uuid: null` | 不命中 | 缺失不计分 |
-| VM-UUID-04 | 双方缺失 | `machine_uuid: null` | `machine_uuid: null` | 不命中 | 缺失不计分 |
-| VM-UUID-05 | 不匹配 | `machine_uuid: "550e8400-..."` | `machine_uuid: "660f9500-..."` | 不命中 | 不同 UUID |
-| VM-UUID-06 | 格式变体 | `machine_uuid: "550e8400e29b41d4a716446655440000"` | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | 命中，+100 分 | 应规范化后比较 |
+| VM-UUID-03 | 一方缺失     | `machine_uuid: "550e8400-..."`                         | `machine_uuid: null`                                   | 不命中        | 缺失不计分          |
+| VM-UUID-04 | 双方缺失     | `machine_uuid: null`                                   | `machine_uuid: null`                                   | 不命中        | 缺失不计分          |
+| VM-UUID-05 | 不匹配       | `machine_uuid: "550e8400-..."`                         | `machine_uuid: "660f9500-..."`                         | 不命中        | 不同 UUID           |
+| VM-UUID-06 | 格式变体     | `machine_uuid: "550e8400e29b41d4a716446655440000"`     | `machine_uuid: "550e8400-e29b-41d4-a716-446655440000"` | 命中，+100 分 | 应规范化后比较      |
 
 #### 10.1.2 `vm.mac_overlap`（90 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| VM-MAC-01 | 单 MAC 匹配 | `mac_addresses: ["00:50:56:aa:bb:cc"]` | `mac_addresses: ["00:50:56:aa:bb:cc"]` | 命中，+90 分 | 交集 = 1 |
-| VM-MAC-02 | 多 MAC 部分匹配 | `mac_addresses: ["00:50:56:aa:bb:cc", "00:50:56:dd:ee:ff"]` | `mac_addresses: ["00:50:56:aa:bb:cc", "00:50:56:11:22:33"]` | 命中，+90 分 | 交集 ≥ 1 |
-| VM-MAC-03 | 大小写不敏感 | `mac_addresses: ["00:50:56:AA:BB:CC"]` | `mac_addresses: ["00:50:56:aa:bb:cc"]` | 命中，+90 分 | MAC 应大小写不敏感 |
-| VM-MAC-04 | 格式变体 | `mac_addresses: ["00-50-56-aa-bb-cc"]` | `mac_addresses: ["00:50:56:aa:bb:cc"]` | 命中，+90 分 | 应规范化后比较 |
-| VM-MAC-05 | 无交集 | `mac_addresses: ["00:50:56:aa:bb:cc"]` | `mac_addresses: ["00:50:56:dd:ee:ff"]` | 不命中 | 交集 = 0 |
-| VM-MAC-06 | 一方空数组 | `mac_addresses: ["00:50:56:aa:bb:cc"]` | `mac_addresses: []` | 不命中 | 空数组视为缺失 |
-| VM-MAC-07 | 双方空数组 | `mac_addresses: []` | `mac_addresses: []` | 不命中 | 空数组视为缺失 |
+| 用例 ID   | 场景            | 输入 A                                                      | 输入 B                                                      | 预期结果     | 说明               |
+| --------- | --------------- | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------ | ------------------ |
+| VM-MAC-01 | 单 MAC 匹配     | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | 命中，+90 分 | 交集 = 1           |
+| VM-MAC-02 | 多 MAC 部分匹配 | `mac_addresses: ["00:50:56:aa:bb:cc", "00:50:56:dd:ee:ff"]` | `mac_addresses: ["00:50:56:aa:bb:cc", "00:50:56:11:22:33"]` | 命中，+90 分 | 交集 ≥ 1           |
+| VM-MAC-03 | 大小写不敏感    | `mac_addresses: ["00:50:56:AA:BB:CC"]`                      | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | 命中，+90 分 | MAC 应大小写不敏感 |
+| VM-MAC-04 | 格式变体        | `mac_addresses: ["00-50-56-aa-bb-cc"]`                      | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | 命中，+90 分 | 应规范化后比较     |
+| VM-MAC-05 | 无交集          | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | `mac_addresses: ["00:50:56:dd:ee:ff"]`                      | 不命中       | 交集 = 0           |
+| VM-MAC-06 | 一方空数组      | `mac_addresses: ["00:50:56:aa:bb:cc"]`                      | `mac_addresses: []`                                         | 不命中       | 空数组视为缺失     |
+| VM-MAC-07 | 双方空数组      | `mac_addresses: []`                                         | `mac_addresses: []`                                         | 不命中       | 空数组视为缺失     |
 
 #### 10.1.3 `vm.hostname_ip_overlap`（70 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| VM-HIP-01 | 完全匹配 | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | 命中，+70 分 | hostname 相同且 IP 交集 ≥ 1 |
-| VM-HIP-02 | hostname 匹配但 IP 无交集 | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | `hostname: "web-01", ip_addresses: ["10.0.0.2"]` | 不命中 | 需同时满足两个条件 |
-| VM-HIP-03 | IP 匹配但 hostname 不同 | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | `hostname: "web-02", ip_addresses: ["10.0.0.1"]` | 不命中 | 需同时满足两个条件 |
-| VM-HIP-04 | hostname 大小写不敏感 | `hostname: "WEB-01", ip_addresses: ["10.0.0.1"]` | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | 命中，+70 分 | hostname 应大小写不敏感 |
-| VM-HIP-05 | 多 IP 部分匹配 | `hostname: "web-01", ip_addresses: ["10.0.0.1", "10.0.0.2"]` | `hostname: "web-01", ip_addresses: ["10.0.0.2", "10.0.0.3"]` | 命中，+70 分 | IP 交集 ≥ 1 |
-| VM-HIP-06 | hostname 缺失 | `hostname: null, ip_addresses: ["10.0.0.1"]` | `hostname: "web-01", ip_addresses: ["10.0.0.1"]` | 不命中 | hostname 缺失不计分 |
+| 用例 ID   | 场景                      | 输入 A                                                       | 输入 B                                                       | 预期结果     | 说明                        |
+| --------- | ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------ | --------------------------- |
+| VM-HIP-01 | 完全匹配                  | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | 命中，+70 分 | hostname 相同且 IP 交集 ≥ 1 |
+| VM-HIP-02 | hostname 匹配但 IP 无交集 | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | `hostname: "web-01", ip_addresses: ["10.0.0.2"]`             | 不命中       | 需同时满足两个条件          |
+| VM-HIP-03 | IP 匹配但 hostname 不同   | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | `hostname: "web-02", ip_addresses: ["10.0.0.1"]`             | 不命中       | 需同时满足两个条件          |
+| VM-HIP-04 | hostname 大小写不敏感     | `hostname: "WEB-01", ip_addresses: ["10.0.0.1"]`             | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | 命中，+70 分 | hostname 应大小写不敏感     |
+| VM-HIP-05 | 多 IP 部分匹配            | `hostname: "web-01", ip_addresses: ["10.0.0.1", "10.0.0.2"]` | `hostname: "web-01", ip_addresses: ["10.0.0.2", "10.0.0.3"]` | 命中，+70 分 | IP 交集 ≥ 1                 |
+| VM-HIP-06 | hostname 缺失             | `hostname: null, ip_addresses: ["10.0.0.1"]`                 | `hostname: "web-01", ip_addresses: ["10.0.0.1"]`             | 不命中       | hostname 缺失不计分         |
 
 ### 10.2 Host 规则测试用例
 
 #### 10.2.1 `host.serial_match`（100 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| HOST-SN-01 | 完全匹配 | `serial_number: "CN12345678"` | `serial_number: "CN12345678"` | 命中，+100 分 | 标准匹配 |
-| HOST-SN-02 | 大小写不敏感 | `serial_number: "cn12345678"` | `serial_number: "CN12345678"` | 命中，+100 分 | 序列号应大小写不敏感 |
-| HOST-SN-03 | 一方缺失 | `serial_number: "CN12345678"` | `serial_number: null` | 不命中 | 缺失不计分 |
-| HOST-SN-04 | 不匹配 | `serial_number: "CN12345678"` | `serial_number: "CN87654321"` | 不命中 | 不同序列号 |
-| HOST-SN-05 | 空字符串 | `serial_number: ""` | `serial_number: "CN12345678"` | 不命中 | 空字符串视为缺失 |
-| HOST-SN-06 | 占位符值 | `serial_number: "To Be Filled"` | `serial_number: "To Be Filled"` | 不命中 | 应过滤已知占位符 |
+| 用例 ID    | 场景         | 输入 A                          | 输入 B                          | 预期结果      | 说明                 |
+| ---------- | ------------ | ------------------------------- | ------------------------------- | ------------- | -------------------- |
+| HOST-SN-01 | 完全匹配     | `serial_number: "CN12345678"`   | `serial_number: "CN12345678"`   | 命中，+100 分 | 标准匹配             |
+| HOST-SN-02 | 大小写不敏感 | `serial_number: "cn12345678"`   | `serial_number: "CN12345678"`   | 命中，+100 分 | 序列号应大小写不敏感 |
+| HOST-SN-03 | 一方缺失     | `serial_number: "CN12345678"`   | `serial_number: null`           | 不命中        | 缺失不计分           |
+| HOST-SN-04 | 不匹配       | `serial_number: "CN12345678"`   | `serial_number: "CN87654321"`   | 不命中        | 不同序列号           |
+| HOST-SN-05 | 空字符串     | `serial_number: ""`             | `serial_number: "CN12345678"`   | 不命中        | 空字符串视为缺失     |
+| HOST-SN-06 | 占位符值     | `serial_number: "To Be Filled"` | `serial_number: "To Be Filled"` | 不命中        | 应过滤已知占位符     |
 
 #### 10.2.2 `host.bmc_ip_match`（90 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| HOST-BMC-01 | 完全匹配 | `bmc_ip: "10.10.9.11"` | `bmc_ip: "10.10.9.11"` | 命中，+90 分 | 标准匹配 |
-| HOST-BMC-02 | 一方缺失 | `bmc_ip: "10.10.9.11"` | `bmc_ip: null` | 不命中 | 缺失不计分 |
-| HOST-BMC-03 | 不匹配 | `bmc_ip: "10.10.9.11"` | `bmc_ip: "10.10.9.12"` | 不命中 | 不同 IP |
-| HOST-BMC-04 | IPv6 匹配 | `bmc_ip: "2001:db8::1"` | `bmc_ip: "2001:db8::1"` | 命中，+90 分 | 支持 IPv6 |
+| 用例 ID     | 场景        | 输入 A                                              | 输入 B                  | 预期结果     | 说明           |
+| ----------- | ----------- | --------------------------------------------------- | ----------------------- | ------------ | -------------- |
+| HOST-BMC-01 | 完全匹配    | `bmc_ip: "10.10.9.11"`                              | `bmc_ip: "10.10.9.11"`  | 命中，+90 分 | 标准匹配       |
+| HOST-BMC-02 | 一方缺失    | `bmc_ip: "10.10.9.11"`                              | `bmc_ip: null`          | 不命中       | 缺失不计分     |
+| HOST-BMC-03 | 不匹配      | `bmc_ip: "10.10.9.11"`                              | `bmc_ip: "10.10.9.12"`  | 不命中       | 不同 IP        |
+| HOST-BMC-04 | IPv6 匹配   | `bmc_ip: "2001:db8::1"`                             | `bmc_ip: "2001:db8::1"` | 命中，+90 分 | 支持 IPv6      |
 | HOST-BMC-05 | IPv6 规范化 | `bmc_ip: "2001:0db8:0000:0000:0000:0000:0000:0001"` | `bmc_ip: "2001:db8::1"` | 命中，+90 分 | 应规范化后比较 |
 
 #### 10.2.3 `host.mgmt_ip_match`（70 分）
 
-| 用例 ID | 场景 | 输入 A | 输入 B | 预期结果 | 说明 |
-|--------|------|--------|--------|---------|------|
-| HOST-MGMT-01 | 完全匹配 | `management_ip: "10.10.1.1"` | `management_ip: "10.10.1.1"` | 命中，+70 分 | 标准匹配 |
-| HOST-MGMT-02 | 一方缺失 | `management_ip: "10.10.1.1"` | `management_ip: null` | 不命中 | 缺失不计分 |
-| HOST-MGMT-03 | 不匹配 | `management_ip: "10.10.1.1"` | `management_ip: "10.10.1.2"` | 不命中 | 不同 IP |
+| 用例 ID      | 场景     | 输入 A                       | 输入 B                       | 预期结果     | 说明       |
+| ------------ | -------- | ---------------------------- | ---------------------------- | ------------ | ---------- |
+| HOST-MGMT-01 | 完全匹配 | `management_ip: "10.10.1.1"` | `management_ip: "10.10.1.1"` | 命中，+70 分 | 标准匹配   |
+| HOST-MGMT-02 | 一方缺失 | `management_ip: "10.10.1.1"` | `management_ip: null`        | 不命中       | 缺失不计分 |
+| HOST-MGMT-03 | 不匹配   | `management_ip: "10.10.1.1"` | `management_ip: "10.10.1.2"` | 不命中       | 不同 IP    |
 
 ### 10.3 组合规则测试用例
 
-| 用例 ID | 场景 | 命中规则 | 预期分数 | 预期结果 |
-|--------|------|---------|---------|---------|
-| COMBO-01 | VM 强信号 | `vm.machine_uuid_match` | 100 | 创建候选（High） |
-| COMBO-02 | VM 双强信号 | `vm.machine_uuid_match` + `vm.mac_overlap` | 100（上限） | 创建候选（High） |
-| COMBO-03 | VM 中信号 | `vm.hostname_ip_overlap` | 70 | 创建候选（Medium） |
-| COMBO-04 | VM 无命中 | 无 | 0 | 不创建候选 |
-| COMBO-05 | Host 强信号 | `host.serial_match` | 100 | 创建候选（High） |
-| COMBO-06 | Host 双强信号 | `host.serial_match` + `host.bmc_ip_match` | 100（上限） | 创建候选（High） |
-| COMBO-07 | Host 中信号 | `host.mgmt_ip_match` | 70 | 创建候选（Medium） |
-| COMBO-08 | Host 弱组合 | `host.bmc_ip_match` + `host.mgmt_ip_match` | 100（上限） | 创建候选（High） |
+| 用例 ID  | 场景          | 命中规则                                   | 预期分数    | 预期结果           |
+| -------- | ------------- | ------------------------------------------ | ----------- | ------------------ |
+| COMBO-01 | VM 强信号     | `vm.machine_uuid_match`                    | 100         | 创建候选（High）   |
+| COMBO-02 | VM 双强信号   | `vm.machine_uuid_match` + `vm.mac_overlap` | 100（上限） | 创建候选（High）   |
+| COMBO-03 | VM 中信号     | `vm.hostname_ip_overlap`                   | 70          | 创建候选（Medium） |
+| COMBO-04 | VM 无命中     | 无                                         | 0           | 不创建候选         |
+| COMBO-05 | Host 强信号   | `host.serial_match`                        | 100         | 创建候选（High）   |
+| COMBO-06 | Host 双强信号 | `host.serial_match` + `host.bmc_ip_match`  | 100（上限） | 创建候选（High）   |
+| COMBO-07 | Host 中信号   | `host.mgmt_ip_match`                       | 70          | 创建候选（Medium） |
+| COMBO-08 | Host 弱组合   | `host.bmc_ip_match` + `host.mgmt_ip_match` | 100（上限） | 创建候选（High）   |
 
 ## 11. 边界条件与特殊场景
 
 ### 11.1 数据边界条件
 
-| 边界条件 | 处理方式 | 说明 |
-|---------|---------|------|
-| 字段值为 `null` | 视为缺失，不参与匹配 | 缺失不计分 |
-| 字段值为空字符串 `""` | 视为缺失，不参与匹配 | 空字符串等同于 null |
-| 字段值为空数组 `[]` | 视为缺失，不参与匹配 | 空数组等同于 null |
-| 字段值为占位符（如 "N/A", "Unknown", "To Be Filled"） | 视为缺失，不参与匹配 | 应维护占位符黑名单 |
-| 字段值包含前后空格 | 应 trim 后比较 | 避免空格导致误判 |
-| 字段值大小写不一致 | 应统一转换后比较 | UUID/MAC/hostname 等 |
+| 边界条件                                              | 处理方式             | 说明                 |
+| ----------------------------------------------------- | -------------------- | -------------------- |
+| 字段值为 `null`                                       | 视为缺失，不参与匹配 | 缺失不计分           |
+| 字段值为空字符串 `""`                                 | 视为缺失，不参与匹配 | 空字符串等同于 null  |
+| 字段值为空数组 `[]`                                   | 视为缺失，不参与匹配 | 空数组等同于 null    |
+| 字段值为占位符（如 "N/A", "Unknown", "To Be Filled"） | 视为缺失，不参与匹配 | 应维护占位符黑名单   |
+| 字段值包含前后空格                                    | 应 trim 后比较       | 避免空格导致误判     |
+| 字段值大小写不一致                                    | 应统一转换后比较     | UUID/MAC/hostname 等 |
 
 ### 11.2 占位符黑名单
 
@@ -194,18 +194,34 @@
 ```typescript
 const PLACEHOLDER_BLACKLIST = [
   // 通用占位符
-  'N/A', 'n/a', 'NA', 'na',
-  'Unknown', 'unknown', 'UNKNOWN',
-  'None', 'none', 'NONE',
-  'Null', 'null', 'NULL',
-  '-', '--', '---',
-  '0', '00000000-0000-0000-0000-000000000000',
+  'N/A',
+  'n/a',
+  'NA',
+  'na',
+  'Unknown',
+  'unknown',
+  'UNKNOWN',
+  'None',
+  'none',
+  'NONE',
+  'Null',
+  'null',
+  'NULL',
+  '-',
+  '--',
+  '---',
+  '0',
+  '00000000-0000-0000-0000-000000000000',
 
   // 序列号占位符
-  'To Be Filled', 'To be filled by O.E.M.',
-  'Default string', 'System Serial Number',
-  'Not Specified', 'Not Available',
-  'XXXXXXXXXX', 'xxxxxxxxxxxx',
+  'To Be Filled',
+  'To be filled by O.E.M.',
+  'Default string',
+  'System Serial Number',
+  'Not Specified',
+  'Not Available',
+  'XXXXXXXXXX',
+  'xxxxxxxxxxxx',
 
   // MAC 地址占位符
   '00:00:00:00:00:00',
@@ -217,34 +233,34 @@ const PLACEHOLDER_BLACKLIST = [
 
 #### 11.3.1 同一来源内的资产
 
-| 场景 | 处理方式 | 说明 |
-|-----|---------|------|
+| 场景                           | 处理方式     | 说明                 |
+| ------------------------------ | ------------ | -------------------- |
 | 同一 Source 内两个资产命中规则 | 正常创建候选 | 可能是来源侧数据问题 |
-| 同一 Asset 的不同 SourceLink | 不创建候选 | 已绑定到同一资产 |
+| 同一 Asset 的不同 SourceLink   | 不创建候选   | 已绑定到同一资产     |
 
 #### 11.3.2 已合并资产
 
-| 场景 | 处理方式 | 说明 |
-|-----|---------|------|
-| 一方 `status=merged` | 排除，不参与候选 | 已合并资产不再参与 |
-| 双方 `status=merged` | 排除，不参与候选 | 已合并资产不再参与 |
-| 合并后新资产与其他资产命中 | 正常创建候选 | 主资产继续参与去重 |
+| 场景                       | 处理方式         | 说明               |
+| -------------------------- | ---------------- | ------------------ |
+| 一方 `status=merged`       | 排除，不参与候选 | 已合并资产不再参与 |
+| 双方 `status=merged`       | 排除，不参与候选 | 已合并资产不再参与 |
+| 合并后新资产与其他资产命中 | 正常创建候选     | 主资产继续参与去重 |
 
 #### 11.3.3 时间窗边界
 
-| 场景 | 处理方式 | 说明 |
-|-----|---------|------|
+| 场景                           | 处理方式       | 说明         |
+| ------------------------------ | -------------- | ------------ |
 | `last_seen_at` 恰好在 N 天边界 | 包含（≤ N 天） | 边界值应包含 |
-| `last_seen_at` 超过 N 天 | 排除 | 超出时间窗 |
-| `last_seen_at` 为 null | 排除 | 无法判断时间 |
+| `last_seen_at` 超过 N 天       | 排除           | 超出时间窗   |
+| `last_seen_at` 为 null         | 排除           | 无法判断时间 |
 
 ### 11.4 性能边界
 
-| 场景 | 阈值 | 处理方式 |
-|-----|------|---------|
-| 单次 Run 产生资产数量 | > 10,000 | 分批处理，避免内存溢出 |
-| 候选计算超时 | > 5 分钟 | 记录警告，继续处理 |
-| 候选数量过多 | > 1,000 条/Run | 记录警告，建议人工介入 |
+| 场景                  | 阈值           | 处理方式               |
+| --------------------- | -------------- | ---------------------- |
+| 单次 Run 产生资产数量 | > 10,000       | 分批处理，避免内存溢出 |
+| 候选计算超时          | > 5 分钟       | 记录警告，继续处理     |
+| 候选数量过多          | > 1,000 条/Run | 记录警告，建议人工介入 |
 
 ## 12. 规则实现参考（TypeScript）
 
@@ -301,7 +317,7 @@ const DUP_RULES: DupRule[] = [
       const macsA = normalizeMacs(a.network?.mac_addresses);
       const macsB = normalizeMacs(b.network?.mac_addresses);
       if (macsA.length === 0 || macsB.length === 0) return null;
-      const overlap = macsA.filter(m => macsB.includes(m));
+      const overlap = macsA.filter((m) => macsB.includes(m));
       if (overlap.length === 0) return null;
       return {
         code: 'vm.mac_overlap',
@@ -327,7 +343,7 @@ const DUP_RULES: DupRule[] = [
       const ipsB = normalizeIps(b.network?.ip_addresses);
       if (ipsA.length === 0 || ipsB.length === 0) return null;
 
-      const overlap = ipsA.filter(ip => ipsB.includes(ip));
+      const overlap = ipsA.filter((ip) => ipsB.includes(ip));
       if (overlap.length === 0) return null;
 
       return {
@@ -409,9 +425,9 @@ const DUP_RULES: DupRule[] = [
 function calculateDupScore(
   a: NormalizedV1,
   b: NormalizedV1,
-  assetType: 'vm' | 'host'
+  assetType: 'vm' | 'host',
 ): { score: number; reasons: MatchResult[] } {
-  const applicableRules = DUP_RULES.filter(r => r.assetType === assetType);
+  const applicableRules = DUP_RULES.filter((r) => r.assetType === assetType);
   const reasons: MatchResult[] = [];
   let score = 0;
 
@@ -437,9 +453,7 @@ function normalizeUuid(uuid: string | undefined | null): string | null {
 
 function normalizeMacs(macs: string[] | undefined | null): string[] {
   if (!macs || macs.length === 0) return [];
-  return macs
-    .map(m => m.toLowerCase().replace(/[:-]/g, ''))
-    .filter(m => !isPlaceholder(m));
+  return macs.map((m) => m.toLowerCase().replace(/[:-]/g, '')).filter((m) => !isPlaceholder(m));
 }
 
 function normalizeHostname(hostname: string | undefined | null): string | null {
@@ -449,7 +463,7 @@ function normalizeHostname(hostname: string | undefined | null): string | null {
 
 function normalizeIps(ips: string[] | undefined | null): string[] {
   if (!ips || ips.length === 0) return [];
-  return ips.map(ip => normalizeIp(ip)).filter((ip): ip is string => ip !== null);
+  return ips.map((ip) => normalizeIp(ip)).filter((ip): ip is string => ip !== null);
 }
 
 function normalizeIp(ip: string | undefined | null): string | null {
@@ -465,6 +479,6 @@ function normalizeSerial(sn: string | undefined | null): string | null {
 
 function isPlaceholder(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  return PLACEHOLDER_BLACKLIST.some(p => p.toLowerCase() === normalized);
+  return PLACEHOLDER_BLACKLIST.some((p) => p.toLowerCase() === normalized);
 }
 ```

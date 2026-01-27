@@ -148,35 +148,35 @@
 
 ### 文档验收
 
-| 检查项 | 状态 | 验收人 | 日期 |
-|-------|------|-------|------|
-| `normalized-v1` schema 包含 `network.bmc_ip` | [ ] | | |
-| `network.ilo_ip` 标注为废弃别名 | [ ] | | |
-| legacy 导入映射以 Host 为中心 | [ ] | | |
-| v1 必填字段清单完整 | [ ] | | |
-| 去重候选键顺序明确 | [ ] | | |
-| collector 文档包含 `bmc_ip` | [ ] | | |
-| data-model 文档包含 `bmc_ip` | [ ] | | |
-| BMC 地址不入 `ip_addresses[]` 规则明确 | [ ] | | |
+| 检查项                                       | 状态 | 验收人 | 日期 |
+| -------------------------------------------- | ---- | ------ | ---- |
+| `normalized-v1` schema 包含 `network.bmc_ip` | [ ]  |        |      |
+| `network.ilo_ip` 标注为废弃别名              | [ ]  |        |      |
+| legacy 导入映射以 Host 为中心                | [ ]  |        |      |
+| v1 必填字段清单完整                          | [ ]  |        |      |
+| 去重候选键顺序明确                           | [ ]  |        |      |
+| collector 文档包含 `bmc_ip`                  | [ ]  |        |      |
+| data-model 文档包含 `bmc_ip`                 | [ ]  |        |      |
+| BMC 地址不入 `ip_addresses[]` 规则明确       | [ ]  |        |      |
 
 ### 实现验收（可选）
 
-| 检查项 | 状态 | 验收人 | 日期 |
-|-------|------|-------|------|
-| BMC IP 校验规则实现 | [ ] | | |
-| 导入时 BMC/IP 分离逻辑 | [ ] | | |
-| Host 列表 IP 搜索覆盖三类 IP | [ ] | | |
-| 单元测试覆盖边界条件 | [ ] | | |
+| 检查项                       | 状态 | 验收人 | 日期 |
+| ---------------------------- | ---- | ------ | ---- |
+| BMC IP 校验规则实现          | [ ]  |        |      |
+| 导入时 BMC/IP 分离逻辑       | [ ]  |        |      |
+| Host 列表 IP 搜索覆盖三类 IP | [ ]  |        |      |
+| 单元测试覆盖边界条件         | [ ]  |        |      |
 
 ### 测试验收
 
-| 测试场景 | 预期结果 | 状态 |
-|---------|---------|------|
-| 导入含 ILO 地址的 CSV | BMC IP 正确映射到 `bmc_ip` | [ ] |
-| 导入缺少 BMC IP 的记录 | 警告"弱键导入" | [ ] |
-| BMC IP 格式非法 | 校验失败，记录错误 | [ ] |
-| 搜索 BMC IP | 能找到对应 Host | [ ] |
-| 去重候选生成 | BMC IP 匹配优先于 hostname | [ ] |
+| 测试场景               | 预期结果                   | 状态 |
+| ---------------------- | -------------------------- | ---- |
+| 导入含 ILO 地址的 CSV  | BMC IP 正确映射到 `bmc_ip` | [ ]  |
+| 导入缺少 BMC IP 的记录 | 警告"弱键导入"             | [ ]  |
+| BMC IP 格式非法        | 校验失败，记录错误         | [ ]  |
+| 搜索 BMC IP            | 能找到对应 Host            | [ ]  |
+| 去重候选生成           | BMC IP 匹配优先于 hostname | [ ]  |
 
 ---
 
@@ -184,48 +184,48 @@
 
 ### 需求到设计文档映射
 
-| 需求 ID | 需求描述 | 设计文档 | 设计章节 |
-|--------|---------|---------|---------|
-| REQ-01 | Host MVP 可检索字段统一 | `asset-ledger-json-schema.md` | normalized-v1 Host 字段 |
-| REQ-02 | 去重候选键以 BMC IP 为首选 | `asset-ledger-dup-rules-v1.md` | 6. 规则列表 |
-| REQ-03 | 新增 `network.bmc_ip` 字段 | `asset-ledger-json-schema.md` | network 对象定义 |
-| REQ-04 | 废弃 `network.ilo_ip` | `asset-ledger-json-schema.md` | 废弃字段说明 |
-| REQ-05 | 磁盘指标预留 | `asset-ledger-json-schema.md` | attributes 对象定义 |
-| REQ-06 | BMC IP 校验规则 | `asset-ledger-legacy-field-mapping.md` | 5. 数据校验规则 |
-| REQ-07 | BMC 地址不入 ip_addresses | `asset-ledger-legacy-field-mapping.md` | 0. 通用清洗规则 |
+| 需求 ID | 需求描述                   | 设计文档                               | 设计章节                |
+| ------- | -------------------------- | -------------------------------------- | ----------------------- |
+| REQ-01  | Host MVP 可检索字段统一    | `asset-ledger-json-schema.md`          | normalized-v1 Host 字段 |
+| REQ-02  | 去重候选键以 BMC IP 为首选 | `asset-ledger-dup-rules-v1.md`         | 6. 规则列表             |
+| REQ-03  | 新增 `network.bmc_ip` 字段 | `asset-ledger-json-schema.md`          | network 对象定义        |
+| REQ-04  | 废弃 `network.ilo_ip`      | `asset-ledger-json-schema.md`          | 废弃字段说明            |
+| REQ-05  | 磁盘指标预留               | `asset-ledger-json-schema.md`          | attributes 对象定义     |
+| REQ-06  | BMC IP 校验规则            | `asset-ledger-legacy-field-mapping.md` | 5. 数据校验规则         |
+| REQ-07  | BMC 地址不入 ip_addresses  | `asset-ledger-legacy-field-mapping.md` | 0. 通用清洗规则         |
 
 ### 需求到测试用例映射
 
-| 需求 ID | 测试用例 ID | 测试描述 |
-|--------|------------|---------|
-| REQ-01 | TC-HOST-01 | Host 列表按 IP 搜索 |
-| REQ-01 | TC-HOST-02 | Host 列表按主机名搜索 |
-| REQ-01 | TC-HOST-03 | Host 列表按 CPU 过滤 |
-| REQ-01 | TC-HOST-04 | Host 列表按内存过滤 |
-| REQ-01 | TC-HOST-05 | Host 列表按操作系统过滤 |
-| REQ-02 | TC-DUP-01 | BMC IP 匹配生成候选 |
-| REQ-02 | TC-DUP-02 | 序列号匹配生成候选 |
-| REQ-02 | TC-DUP-03 | 管理 IP 匹配生成候选 |
-| REQ-03 | TC-SCHEMA-01 | normalized 包含 bmc_ip |
-| REQ-06 | TC-VALID-01 | BMC IP 格式校验 |
-| REQ-06 | TC-VALID-02 | BMC IP 非法值拒绝 |
-| REQ-07 | TC-CLEAN-01 | BMC IP 不入 ip_addresses |
+| 需求 ID | 测试用例 ID  | 测试描述                 |
+| ------- | ------------ | ------------------------ |
+| REQ-01  | TC-HOST-01   | Host 列表按 IP 搜索      |
+| REQ-01  | TC-HOST-02   | Host 列表按主机名搜索    |
+| REQ-01  | TC-HOST-03   | Host 列表按 CPU 过滤     |
+| REQ-01  | TC-HOST-04   | Host 列表按内存过滤      |
+| REQ-01  | TC-HOST-05   | Host 列表按操作系统过滤  |
+| REQ-02  | TC-DUP-01    | BMC IP 匹配生成候选      |
+| REQ-02  | TC-DUP-02    | 序列号匹配生成候选       |
+| REQ-02  | TC-DUP-03    | 管理 IP 匹配生成候选     |
+| REQ-03  | TC-SCHEMA-01 | normalized 包含 bmc_ip   |
+| REQ-06  | TC-VALID-01  | BMC IP 格式校验          |
+| REQ-06  | TC-VALID-02  | BMC IP 非法值拒绝        |
+| REQ-07  | TC-CLEAN-01  | BMC IP 不入 ip_addresses |
 
 ### 需求到代码模块映射
 
-| 需求 ID | 代码模块 | 文件路径（预期） |
-|--------|---------|-----------------|
-| REQ-01 | Host 列表查询 | `src/services/asset/host-query.ts` |
-| REQ-02 | 去重候选计算 | `src/services/duplicate/dup-rules.ts` |
-| REQ-03 | Schema 定义 | `src/schemas/normalized-v1.ts` |
-| REQ-06 | 校验规则 | `src/services/import/validators.ts` |
-| REQ-07 | 清洗规则 | `src/services/import/cleaners.ts` |
+| 需求 ID | 代码模块      | 文件路径（预期）                      |
+| ------- | ------------- | ------------------------------------- |
+| REQ-01  | Host 列表查询 | `src/services/asset/host-query.ts`    |
+| REQ-02  | 去重候选计算  | `src/services/duplicate/dup-rules.ts` |
+| REQ-03  | Schema 定义   | `src/schemas/normalized-v1.ts`        |
+| REQ-06  | 校验规则      | `src/services/import/validators.ts`   |
+| REQ-07  | 清洗规则      | `src/services/import/cleaners.ts`     |
 
 ---
 
 ## 变更历史
 
-| 版本 | 日期 | 变更内容 | 作者 |
-|-----|------|---------|------|
-| 1.0 | 2026-01-26 | 初始版本 | - |
-| 1.1 | 2026-01-27 | 添加验收检查清单和关联矩阵 | - |
+| 版本 | 日期       | 变更内容                   | 作者 |
+| ---- | ---------- | -------------------------- | ---- |
+| 1.0  | 2026-01-26 | 初始版本                   | -    |
+| 1.1  | 2026-01-27 | 添加验收检查清单和关联矩阵 | -    |

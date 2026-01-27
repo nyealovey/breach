@@ -97,6 +97,66 @@
 > - `error.redacted_context`（可选）：脱敏后的定位上下文（例如 `http_status/trace_id/stdout_excerpt` 等）
 > - `error.details`（可选）：参数校验细节（常用于 `CONFIG_INVALID_REQUEST`）
 
+**常见错误响应（示例）**
+
+> 注意：以下示例用于展示字段结构；具体错误码与使用场景见错误码规范：`docs/design/asset-ledger-error-codes.md`。
+
+**未认证（401）**
+
+```json
+{
+  "error": {
+    "code": "AUTH_UNAUTHORIZED",
+    "category": "auth",
+    "message": "Not authenticated",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**无权限（403）**
+
+```json
+{
+  "error": {
+    "code": "AUTH_FORBIDDEN",
+    "category": "permission",
+    "message": "Permission denied",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**资源不存在（404）**
+
+```json
+{
+  "error": {
+    "code": "CONFIG_SOURCE_NOT_FOUND",
+    "category": "config",
+    "message": "Resource not found",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**资源冲突（409）**
+
+```json
+{
+  "error": {
+    "code": "CONFIG_RESOURCE_CONFLICT",
+    "category": "config",
+    "message": "Resource conflict",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
 ### 1.5 分页参数
 
 | 参数       | 类型   | 默认值 | 说明                 |
@@ -113,19 +173,25 @@
 
 ### 1.7 HTTP 状态码
 
-| 状态码 | 含义                  | 使用场景                     |
-| ------ | --------------------- | ---------------------------- |
-| 200    | OK                    | 成功（GET/PUT/PATCH/DELETE） |
-| 201    | Created               | 创建成功（POST）             |
-| 204    | No Content            | 删除成功（无响应体）         |
-| 400    | Bad Request           | 请求参数校验失败             |
-| 401    | Unauthorized          | 未认证/会话无效              |
-| 403    | Forbidden             | 无权限                       |
-| 404    | Not Found             | 资源不存在                   |
-| 409    | Conflict              | 资源冲突（如重复创建）       |
-| 500    | Internal Server Error | 服务器内部错误               |
+| 状态码 | 含义                  | 使用场景                                     |
+| ------ | --------------------- | -------------------------------------------- |
+| 200    | OK                    | 成功（GET/PUT/PATCH/DELETE）                 |
+| 201    | Created               | 创建成功（POST）                             |
+| 204    | No Content            | 删除成功（无响应体）                         |
+| 400    | Bad Request           | 请求参数校验失败                             |
+| 401    | Unauthorized          | 未认证/会话无效                              |
+| 403    | Forbidden             | 无权限                                       |
+| 404    | Not Found             | 资源不存在                                   |
+| 409    | Conflict              | 资源冲突（如名称重复/存在依赖/存在活动 Run） |
+| 500    | Internal Server Error | 服务器内部错误                               |
 
 ## 2. 认证 API
+
+**常见错误码**
+
+- 401：`AUTH_INVALID_CREDENTIALS`（登录失败：用户名/密码错误）
+- 401：`AUTH_UNAUTHORIZED` / `AUTH_SESSION_EXPIRED`（未登录/会话失效）
+- 403：`AUTH_FORBIDDEN`（无权限；v1.0 仅 admin，预留）
 
 ### 2.1 登录
 
@@ -214,6 +280,12 @@
 
 ## 3. 调度组 API
 
+**常见错误码**
+
+- 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 404：`CONFIG_SCHEDULE_GROUP_NOT_FOUND`（调度组不存在）
+- 409：`CONFIG_RESOURCE_CONFLICT`（删除时存在未删除 Source 依赖）
+
 ### 3.1 获取调度组列表
 
 **GET** `/api/v1/schedule-groups`
@@ -292,9 +364,16 @@
 
 **DELETE** `/api/v1/schedule-groups/:groupId`
 
-**约束**：调度组下存在 Source 时不允许删除（返回 409）。
+**约束**：调度组下存在任一未删除 Source 时不允许删除（返回 409）。
 
 ## 4. Source API
+
+**常见错误码**
+
+- 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 404：`CONFIG_SOURCE_NOT_FOUND`（来源不存在）
+- 409：`CONFIG_RESOURCE_CONFLICT`（删除时存在活动 Run）
+- 409：`CONFIG_DUPLICATE_NAME`（名称重复，创建/更新冲突）
 
 ### 4.1 获取 Source 列表
 
@@ -414,6 +493,41 @@
 
 **DELETE** `/api/v1/sources/:sourceId`
 
+**语义**：软删除（不物理删除）。删除后 Source 默认不再出现在 Source 列表，且不会再参与定时调度或被手动触发；但历史 Run/SourceRecord/资产追溯关系必须保留且仍可查询。
+
+**约束**：若该 Source 存在活动 Run（`Queued`/`Running`），不允许删除（返回 409）。
+
+**成功响应**（204）：无响应体
+
+**错误响应**（404，Source 不存在）：
+
+```json
+{
+  "error": {
+    "code": "CONFIG_SOURCE_NOT_FOUND",
+    "category": "config",
+    "message": "Source not found",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**错误响应**（409，存在活动 Run）：
+
+```json
+{
+  "error": {
+    "code": "CONFIG_RESOURCE_CONFLICT",
+    "category": "config",
+    "message": "Active run exists for this source",
+    "retryable": false,
+    "redacted_context": { "sourceId": "src_123" }
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
 ### 4.7 触发 Source 采集
 
 **POST** `/api/v1/sources/:sourceId/runs`
@@ -457,6 +571,12 @@
 ```
 
 ## 5. Run API
+
+**常见错误码**
+
+- 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 404：`CONFIG_RUN_NOT_FOUND`（Run 不存在）
+- 5xx：采集/执行类错误（例如 `PLUGIN_TIMEOUT/PLUGIN_OUTPUT_INVALID_JSON/DB_WRITE_FAILED` 等，见错误码规范）
 
 ### 5.1 获取 Run 列表
 
@@ -541,6 +661,11 @@
 **约束**：仅 `Queued` 或 `Running` 状态的 Run 可取消。
 
 ## 6. Asset API
+
+**常见错误码**
+
+- 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 404：`CONFIG_ASSET_NOT_FOUND`（资产不存在）
 
 ### 6.1 获取 Asset 列表
 

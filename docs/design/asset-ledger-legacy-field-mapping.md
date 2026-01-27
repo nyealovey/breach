@@ -94,23 +94,23 @@ Schema 定义见：`docs/design/asset-ledger-json-schema.md`（已新增 `networ
 
 ### 5.1 必填字段校验
 
-| 字段 | 校验规则 | 失败处理 |
-|-----|---------|---------|
-| `identity.hostname` | 非空，长度 1-255 | 拒绝导入，记录错误 |
-| `network.bmc_ip` | 非空，合法 IPv4/IPv6 | 警告"弱键导入"，允许继续 |
-| `hardware.cpu_count` | 正整数，范围 1-1024 | 写入 `attributes.legacy_cpu_raw`，继续 |
-| `hardware.memory_bytes` | 正整数，范围 1-64TB | 写入 `attributes.legacy_memory_raw`，继续 |
-| `os.name` | 非空，长度 1-100 | 写入 `attributes.legacy_os_raw`，继续 |
+| 字段                    | 校验规则             | 失败处理                                  |
+| ----------------------- | -------------------- | ----------------------------------------- |
+| `identity.hostname`     | 非空，长度 1-255     | 拒绝导入，记录错误                        |
+| `network.bmc_ip`        | 非空，合法 IPv4/IPv6 | 警告"弱键导入"，允许继续                  |
+| `hardware.cpu_count`    | 正整数，范围 1-1024  | 写入 `attributes.legacy_cpu_raw`，继续    |
+| `hardware.memory_bytes` | 正整数，范围 1-64TB  | 写入 `attributes.legacy_memory_raw`，继续 |
+| `os.name`               | 非空，长度 1-100     | 写入 `attributes.legacy_os_raw`，继续     |
 
 ### 5.2 格式校验
 
-| 字段 | 格式要求 | 示例 |
-|-----|---------|------|
-| `network.ip_addresses[]` | 合法 IPv4/IPv6 | `10.10.1.1`, `2001:db8::1` |
-| `network.bmc_ip` | 合法 IPv4/IPv6 | `10.10.9.11` |
-| `identity.serial_number` | 字母数字，长度 1-50 | `CN12345678` |
-| `physical.fixed_asset_id` | 字母数字横杠，长度 1-50 | `FA-2025-0001` |
-| `location.cabinet` | 字母数字，长度 1-20 | `A01`, `B-12` |
+| 字段                      | 格式要求                | 示例                       |
+| ------------------------- | ----------------------- | -------------------------- |
+| `network.ip_addresses[]`  | 合法 IPv4/IPv6          | `10.10.1.1`, `2001:db8::1` |
+| `network.bmc_ip`          | 合法 IPv4/IPv6          | `10.10.9.11`               |
+| `identity.serial_number`  | 字母数字，长度 1-50     | `CN12345678`               |
+| `physical.fixed_asset_id` | 字母数字横杠，长度 1-50 | `FA-2025-0001`             |
+| `location.cabinet`        | 字母数字，长度 1-20     | `A01`, `B-12`              |
 
 ### 5.3 去重校验
 
@@ -119,19 +119,19 @@ Schema 定义见：`docs/design/asset-ledger-json-schema.md`（已新增 `networ
 ```typescript
 // 去重优先级（按顺序匹配）
 const deduplicationKeys = [
-  'network.bmc_ip',           // 优先级 1：BMC 管理地址
-  'identity.serial_number',   // 优先级 2：产品序列号
-  'identity.hostname',        // 优先级 3：主机名（弱键）
+  'network.bmc_ip', // 优先级 1：BMC 管理地址
+  'identity.serial_number', // 优先级 2：产品序列号
+  'identity.hostname', // 优先级 3：主机名（弱键）
 ];
 ```
 
 ### 5.4 校验结果分类
 
-| 级别 | 说明 | 处理方式 |
-|-----|------|---------|
-| `error` | 必填字段缺失/格式严重错误 | 拒绝该行，记录错误 |
-| `warning` | 弱键导入/格式轻微问题 | 允许导入，记录警告 |
-| `info` | 字段回填/默认值使用 | 允许导入，记录信息 |
+| 级别      | 说明                      | 处理方式           |
+| --------- | ------------------------- | ------------------ |
+| `error`   | 必填字段缺失/格式严重错误 | 拒绝该行，记录错误 |
+| `warning` | 弱键导入/格式轻微问题     | 允许导入，记录警告 |
+| `info`    | 字段回填/默认值使用       | 允许导入，记录信息 |
 
 ## 6. 迁移脚本示例
 
@@ -305,7 +305,10 @@ async function importLegacyHosts(csvContent: string): Promise<ImportResult> {
 // IP 列表解析
 function parseIpList(raw: string): { valid: string[]; invalid: string[] } {
   const separators = /[,;|、\s]+/;
-  const parts = raw.split(separators).map(s => s.trim()).filter(Boolean);
+  const parts = raw
+    .split(separators)
+    .map((s) => s.trim())
+    .filter(Boolean);
   const valid: string[] = [];
   const invalid: string[] = [];
 
@@ -346,9 +349,12 @@ function parseMemoryBytes(raw: string): number | null {
   const unit = (match[2] || 'GB').toUpperCase();
 
   const multipliers: Record<string, number> = {
-    'TB': 1024 ** 4, 'T': 1024 ** 4,
-    'GB': 1024 ** 3, 'G': 1024 ** 3,
-    'MB': 1024 ** 2, 'M': 1024 ** 2,
+    TB: 1024 ** 4,
+    T: 1024 ** 4,
+    GB: 1024 ** 3,
+    G: 1024 ** 3,
+    MB: 1024 ** 2,
+    M: 1024 ** 2,
   };
 
   const bytes = value * (multipliers[unit] || 1024 ** 3);
@@ -394,8 +400,8 @@ interface ImportTask {
   total_rows: number;
   success_count: number;
   failed_count: number;
-  created_asset_uuids: string[];  // 用于回滚
-  created_record_ids: string[];   // 用于回滚
+  created_asset_uuids: string[]; // 用于回滚
+  created_record_ids: string[]; // 用于回滚
 }
 ```
 
@@ -475,13 +481,13 @@ async function rollbackImportTask(taskId: string): Promise<RollbackResult> {
 
 ### 7.3 回滚检查清单
 
-| 步骤 | 操作 | 验证 |
-|-----|------|------|
-| 1 | 确认导入任务 ID | 任务存在且状态非 `rolled_back` |
-| 2 | 备份当前数据 | 导出受影响的 asset/source_record |
-| 3 | 执行回滚脚本 | 检查返回的删除计数 |
-| 4 | 验证数据一致性 | 确认无孤立记录 |
-| 5 | 检查审计日志 | 确认回滚事件已记录 |
+| 步骤 | 操作            | 验证                             |
+| ---- | --------------- | -------------------------------- |
+| 1    | 确认导入任务 ID | 任务存在且状态非 `rolled_back`   |
+| 2    | 备份当前数据    | 导出受影响的 asset/source_record |
+| 3    | 执行回滚脚本    | 检查返回的删除计数               |
+| 4    | 验证数据一致性  | 确认无孤立记录                   |
+| 5    | 检查审计日志    | 确认回滚事件已记录               |
 
 ### 7.4 紧急回滚 SQL（仅限 DBA）
 

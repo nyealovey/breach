@@ -16,6 +16,8 @@
 
 当前：`docs/requirements/asset-ledger-srs.md`
 
+补充（v1.0 追溯矩阵）：`docs/requirements/asset-ledger-v1.0-traceability.md`
+
 ### `docs/prds/`：PRD（Product Requirements Document）
 
 定位：某个迭代/专题（例如 vCenter MVP）的“当期范围 + 决策 + 验收闭环”。

@@ -190,14 +190,14 @@
 
 > 目标：在高流量场景下控制日志量，同时保证关键事件不丢失。
 
-| 事件类型 | 采样策略 | 说明 |
-|---------|---------|------|
-| `http.request`（成功） | 10% 采样 | 正常请求可降采样 |
-| `http.request`（失败） | 100% 保留 | 错误必须全量记录 |
-| `http.request`（慢请求 >1s） | 100% 保留 | 性能问题必须记录 |
-| `schedule_group.triggered` | 100% 保留 | 调度事件全量记录 |
-| `run.finished` | 100% 保留 | Run 事件全量记录 |
-| `run.finished`（失败） | 100% 保留 + 告警 | 失败必须告警 |
+| 事件类型                     | 采样策略         | 说明             |
+| ---------------------------- | ---------------- | ---------------- |
+| `http.request`（成功）       | 10% 采样         | 正常请求可降采样 |
+| `http.request`（失败）       | 100% 保留        | 错误必须全量记录 |
+| `http.request`（慢请求 >1s） | 100% 保留        | 性能问题必须记录 |
+| `schedule_group.triggered`   | 100% 保留        | 调度事件全量记录 |
+| `run.finished`               | 100% 保留        | Run 事件全量记录 |
+| `run.finished`（失败）       | 100% 保留 + 告警 | 失败必须告警     |
 
 ### 6.2 采样实现（TypeScript）
 
@@ -241,28 +241,19 @@ export const defaultSamplingConfig: SamplingConfig = {
 /**
  * 判断是否应该记录该事件
  */
-export function shouldLog(
-  event: LogEvent,
-  config: SamplingConfig = defaultSamplingConfig
-): boolean {
+export function shouldLog(event: LogEvent, config: SamplingConfig = defaultSamplingConfig): boolean {
   // 1. 错误事件始终保留
   if (config.forceRetain.onError && event.level === 'error') {
     return true;
   }
 
   // 2. 慢请求始终保留
-  if (
-    event.duration_ms &&
-    event.duration_ms > config.forceRetain.slowThresholdMs
-  ) {
+  if (event.duration_ms && event.duration_ms > config.forceRetain.slowThresholdMs) {
     return true;
   }
 
   // 3. 特定用户始终保留
-  if (
-    event.actor?.user_id &&
-    config.forceRetain.userIds.includes(event.actor.user_id)
-  ) {
+  if (event.actor?.user_id && config.forceRetain.userIds.includes(event.actor.user_id)) {
     return true;
   }
 
@@ -288,6 +279,7 @@ export function shouldLog(
 ```
 
 `retained_reason` 枚举值：
+
 - `sampled`：按采样率随机保留
 - `error`：因错误强制保留
 - `slow`：因慢请求强制保留
@@ -298,47 +290,47 @@ export function shouldLog(
 
 ### 7.1 告警级别定义
 
-| 级别 | 说明 | 响应时间 | 通知方式 |
-|-----|------|---------|---------|
-| P0 | 系统不可用 | 立即 | 电话 + 短信 + 邮件 |
-| P1 | 核心功能受损 | 15 分钟内 | 短信 + 邮件 |
-| P2 | 非核心功能异常 | 1 小时内 | 邮件 + IM |
-| P3 | 需关注但不紧急 | 24 小时内 | 邮件 |
+| 级别 | 说明           | 响应时间  | 通知方式           |
+| ---- | -------------- | --------- | ------------------ |
+| P0   | 系统不可用     | 立即      | 电话 + 短信 + 邮件 |
+| P1   | 核心功能受损   | 15 分钟内 | 短信 + 邮件        |
+| P2   | 非核心功能异常 | 1 小时内  | 邮件 + IM          |
+| P3   | 需关注但不紧急 | 24 小时内 | 邮件               |
 
 ### 7.2 告警规则清单
 
 #### 7.2.1 系统级告警
 
-| 告警名称 | 级别 | 触发条件 | 恢复条件 |
-|---------|------|---------|---------|
-| `system.down` | P0 | Web 服务连续 3 次健康检查失败 | 健康检查恢复 |
-| `db.connection_failed` | P0 | 数据库连接失败 | 连接恢复 |
-| `disk.usage_critical` | P1 | 磁盘使用率 > 90% | 使用率 < 85% |
-| `disk.usage_warning` | P2 | 磁盘使用率 > 80% | 使用率 < 75% |
-| `memory.usage_critical` | P1 | 内存使用率 > 90% 持续 5 分钟 | 使用率 < 85% |
+| 告警名称                | 级别 | 触发条件                      | 恢复条件     |
+| ----------------------- | ---- | ----------------------------- | ------------ |
+| `system.down`           | P0   | Web 服务连续 3 次健康检查失败 | 健康检查恢复 |
+| `db.connection_failed`  | P0   | 数据库连接失败                | 连接恢复     |
+| `disk.usage_critical`   | P1   | 磁盘使用率 > 90%              | 使用率 < 85% |
+| `disk.usage_warning`    | P2   | 磁盘使用率 > 80%              | 使用率 < 75% |
+| `memory.usage_critical` | P1   | 内存使用率 > 90% 持续 5 分钟  | 使用率 < 85% |
 
 #### 7.2.2 业务级告警
 
-| 告警名称 | 级别 | 触发条件 | 恢复条件 |
-|---------|------|---------|---------|
-| `run.failure_rate_high` | P1 | 过去 1 小时 Run 失败率 > 50% | 失败率 < 20% |
-| `run.consecutive_failures` | P1 | 同一 Source 连续 3 次 Run 失败 | Run 成功 |
-| `run.timeout_spike` | P2 | 过去 1 小时超时 Run 数量 > 5 | 超时数量 < 2 |
-| `scheduler.no_trigger` | P2 | 调度组超过预期时间未触发 | 触发恢复 |
-| `api.error_rate_high` | P1 | 过去 5 分钟 API 错误率 > 10% | 错误率 < 5% |
-| `api.latency_high` | P2 | 过去 5 分钟 P99 延迟 > 5s | P99 < 2s |
+| 告警名称                   | 级别 | 触发条件                       | 恢复条件     |
+| -------------------------- | ---- | ------------------------------ | ------------ |
+| `run.failure_rate_high`    | P1   | 过去 1 小时 Run 失败率 > 50%   | 失败率 < 20% |
+| `run.consecutive_failures` | P1   | 同一 Source 连续 3 次 Run 失败 | Run 成功     |
+| `run.timeout_spike`        | P2   | 过去 1 小时超时 Run 数量 > 5   | 超时数量 < 2 |
+| `scheduler.no_trigger`     | P2   | 调度组超过预期时间未触发       | 触发恢复     |
+| `api.error_rate_high`      | P1   | 过去 5 分钟 API 错误率 > 10%   | 错误率 < 5%  |
+| `api.latency_high`         | P2   | 过去 5 分钟 P99 延迟 > 5s      | P99 < 2s     |
 
 #### 7.2.3 安全告警
 
-| 告警名称 | 级别 | 触发条件 | 恢复条件 |
-|---------|------|---------|---------|
-| `auth.brute_force` | P1 | 同一 IP 5 分钟内登录失败 > 10 次 | 无新失败 |
-| `auth.unusual_access` | P2 | 非工作时间管理员登录 | 手动确认 |
-| `credential.exposure` | P0 | 日志中检测到疑似凭证 | 手动确认已清理 |
+| 告警名称              | 级别 | 触发条件                         | 恢复条件       |
+| --------------------- | ---- | -------------------------------- | -------------- |
+| `auth.brute_force`    | P1   | 同一 IP 5 分钟内登录失败 > 10 次 | 无新失败       |
+| `auth.unusual_access` | P2   | 非工作时间管理员登录             | 手动确认       |
+| `credential.exposure` | P0   | 日志中检测到疑似凭证             | 手动确认已清理 |
 
 ### 7.3 告警规则配置（Prometheus 格式）
 
-```yaml
+````yaml
 groups:
   - name: asset-ledger-alerts
     rules:
@@ -434,7 +426,7 @@ inhibit_rules:
     target_match:
       severity: P2
     equal: ['alertname']
-```
+````
 
 ### 7.5 告警通知模板
 
@@ -457,9 +449,9 @@ templates:
 
 ### 7.6 告警处理 SOP
 
-| 告警 | 处理步骤 |
-|-----|---------|
-| `system.down` | 1. 检查服务进程状态<br>2. 检查系统资源（CPU/内存/磁盘）<br>3. 检查数据库连接<br>4. 查看最近部署记录<br>5. 必要时回滚 |
+| 告警                       | 处理步骤                                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `system.down`              | 1. 检查服务进程状态<br>2. 检查系统资源（CPU/内存/磁盘）<br>3. 检查数据库连接<br>4. 查看最近部署记录<br>5. 必要时回滚                      |
 | `run.consecutive_failures` | 1. 查看 Run 错误详情<br>2. 检查 Source 配置（endpoint/凭证）<br>3. 测试目标系统连通性<br>4. 手动触发 healthcheck<br>5. 联系目标系统管理员 |
-| `api.error_rate_high` | 1. 查看错误日志分布<br>2. 识别错误类型（auth/db/timeout）<br>3. 检查依赖服务状态<br>4. 必要时限流或降级 |
-| `disk.usage_critical` | 1. 检查日志文件大小<br>2. 清理过期日志<br>3. 检查 raw 数据增长<br>4. 考虑扩容或归档 |
+| `api.error_rate_high`      | 1. 查看错误日志分布<br>2. 识别错误类型（auth/db/timeout）<br>3. 检查依赖服务状态<br>4. 必要时限流或降级                                   |
+| `disk.usage_critical`      | 1. 检查日志文件大小<br>2. 清理过期日志<br>3. 检查 raw 数据增长<br>4. 考虑扩容或归档                                                       |

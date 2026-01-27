@@ -15,7 +15,7 @@
 #### Core Features（v1.0）
 
 - 调度组（采集任务）管理：创建/编辑/启停；配置时区 + 固定触发时间（`HH:mm`）；Source 绑定调度组；错过触发点不补跑。
-- vCenter Source 管理：创建/编辑/启停；绑定调度组。
+- vCenter Source 管理：创建/编辑/启停/删除（软删除）；绑定调度组。
 - vCenter 凭据管理：凭据加密存储；UI 不回显；支持更新。
 - Run 管理：每日一次定时采集 + 管理员手动触发；Run 列表与详情（状态、错误、统计、driver、日志摘要）。
 - 插件化采集（子进程）：支持 `healthcheck/detect/collect`；支持目标能力探测并选择 driver。
@@ -158,7 +158,7 @@
 ### Functional Acceptance
 
 - [ ] 管理员初始化：首次启动可使用 `ASSET_LEDGER_ADMIN_PASSWORD` 初始化默认管理员（用户名 `admin`），并可在 UI 修改密码。
-- [ ] FR-01 Source 管理：可创建/编辑/启停 Source；列表展示最近一次 Run 信息。
+- [ ] FR-01 Source 管理：可创建/编辑/启停/删除（软删除） Source；列表展示最近一次 Run 信息。
 - [ ] FR-02 Run：支持每日一次定时采集与手动触发；同 Source 单飞 + 触发抑制可审计。
 - [ ] FR-03 插件化采集：支持 `healthcheck/detect/collect`；driver 选择可追溯；inventory 不完整必须失败。
 - [ ] FR-04 资产统一视图：资产详情包含 unified fields（含来源证据/冲突）与关联来源明细（normalized）。
