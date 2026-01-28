@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：16 / 17
-- 当前批次：Batch 6（Task 17：E2E）
+- 任务完成：17 / 17
+- 当前批次：已完成（v1.0 MVP）
 
 ## 任务进度（按建议执行顺序）
 
@@ -91,4 +91,5 @@
     - 产出：`/api/openapi.json` + `/api/docs`（Swagger UI）+ spec 单测
 
 17. Task 17：E2E 闭环验收（Playwright）与最小集成测试
-    - 状态：TODO
+    - 状态：DONE
+    - 产出：Playwright 配置 + `e2e/admin.spec.ts`（可跳过运行；避免与 Vitest 冲突已做隔离）

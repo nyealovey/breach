@@ -182,6 +182,7 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 - `bun run format` — Runs Prettier for all files in the `src` directory.
 - `bun run format:check` — Check Prettier list of files that need to be formatted.
 - `bun run format:ci` — Prettier check for CI.
+- `bun run e2e` — Runs Playwright E2E tests (requires `E2E_ADMIN_PASSWORD`; can set `E2E_WEB_SERVER=1` to auto-start dev server).
 
 ### Path Mapping
 
