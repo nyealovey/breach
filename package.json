@@ -23,6 +23,8 @@
     "db:studio": "prisma studio",
     "scheduler": "bun src/bin/scheduler.ts",
     "worker": "bun src/bin/worker.ts",
+    "test": "vitest",
+    "test:ci": "vitest run --coverage",
     "lint": "eslint \"src/**/*.+(ts|js|tsx)\"",
     "lint:fix": "eslint \"src/**/*.+(ts|js|tsx)\" --fix",
     "format": "prettier . --write",
@@ -47,6 +49,7 @@
     "@types/node": "25.0.10",
     "@types/react": "19.2.9",
     "@types/react-dom": "19.2.3",
+    "@vitest/coverage-v8": "4.0.18",
     "eslint": "9.39.2",
     "eslint-config-prettier": "10.1.8",
     "eslint-import-resolver-typescript": "4.4.4",
@@ -60,6 +63,7 @@
     "prettier": "3.8.1",
     "prisma": "6.19.2",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.53.1"
+    "typescript-eslint": "8.53.1",
+    "vitest": "4.0.18"
   }
 }

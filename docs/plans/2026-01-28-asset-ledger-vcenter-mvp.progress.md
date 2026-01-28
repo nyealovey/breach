@@ -18,7 +18,7 @@
 
 ## 总体进度
 
-- 任务完成：0 / 17
+- 任务完成：2 / 17
 - 当前批次：Batch 1（Task 1-3：基础设施）
 
 ## 任务进度（按建议执行顺序）
@@ -26,11 +26,11 @@
 ### Batch 1：基础设施（Task 1-3）
 
 1. Task 1：建立错误码/错误响应最小闭环（Web + Worker 共用）
-   - 状态：DOING
+   - 状态：DONE
    - 产出：`src/lib/errors/*`、`src/lib/http/*` + 最小单测占位
 
 2. Task 2：建立测试基座（Vitest）并接入最小单测
-   - 状态：TODO
+   - 状态：DONE
    - 产出：`vitest.config.ts`、`src/test/setup.ts`、timezone 单测、`bun test`
 
 3. Task 3：UI 基座（Tailwind + shadcn/ui）与通用组件选型落地
