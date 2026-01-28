@@ -34,6 +34,33 @@ enum RunStatus {
   Cancelled
 }
 
+enum UserRole {
+  admin
+  user
+}
+
+enum AssetType {
+  vm
+  host
+  cluster
+}
+
+enum AssetStatus {
+  in_service
+  offline
+  merged
+}
+
+enum RelationType {
+  runs_on
+  member_of
+}
+
+enum RelationStatus {
+  active
+  inactive
+}
+
 model ScheduleGroup {
   id                 String    @id @default(cuid())
   name               String    @unique
@@ -60,11 +87,18 @@ model Source {
   scheduleGroup   ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
 
   // Non-sensitive config (JSON). Credentials should be encrypted/kept elsewhere.
-  config    Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  config               Json?
+  credentialCiphertext String?
+  deletedAt            DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   runs Run[]
+
+  assetLinks     AssetSourceLink[]
+  sourceRecords  SourceRecord[]
+  relationRecords RelationRecord[]
+  relations      Relation[]
 
   @@index([enabled])
   @@index([scheduleGroupId])
@@ -94,7 +128,191 @@ model Run {
   source        Source         @relation(fields: [sourceId], references: [id])
   scheduleGroup ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
 
+  sourceRecords   SourceRecord[]
+  relationRecords RelationRecord[]
+  assetSnapshots  AssetRunSnapshot[]
+
   @@index([status, createdAt])
   @@index([sourceId, status, createdAt])
   @@index([scheduleGroupId, status, createdAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  role         UserRole @default(admin)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions   Session[]
+  auditEvents AuditEvent[] @relation("AuditActor")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  eventType   String
+  actorUserId String?
+  payload     Json
+  createdAt   DateTime @default(now())
+
+  actorUser User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model Asset {
+  uuid              String      @id @default(uuid()) @db.Uuid
+  assetType          AssetType
+  displayName        String?
+  status             AssetStatus @default(in_service)
+  mergedIntoAssetUuid String?    @db.Uuid
+  lastSeenAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  mergedIntoAsset Asset?  @relation("AssetMerge", fields: [mergedIntoAssetUuid], references: [uuid])
+  mergedAssets    Asset[] @relation("AssetMerge")
+
+  sourceLinks   AssetSourceLink[]
+  sourceRecords SourceRecord[]
+  runSnapshots  AssetRunSnapshot[]
+
+  outgoingRelations Relation[] @relation("RelationFrom")
+  incomingRelations Relation[] @relation("RelationTo")
+
+  @@index([assetType])
+  @@index([status])
+  @@index([lastSeenAt])
+}
+
+model AssetSourceLink {
+  id           String    @id @default(cuid())
+  assetUuid    String    @db.Uuid
+  sourceId     String
+  externalKind AssetType
+  externalId   String
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+
+  asset  Asset  @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  sourceRecords SourceRecord[]
+
+  @@unique([sourceId, externalKind, externalId])
+  @@index([assetUuid])
+  @@index([sourceId])
+}
+
+model SourceRecord {
+  id          String   @default(cuid())
+  collectedAt DateTime @default(now())
+
+  runId        String
+  sourceId     String
+  linkId       String
+  assetUuid    String    @db.Uuid
+  externalKind AssetType
+  externalId   String
+
+  normalized      Json
+  raw             Bytes
+  rawCompression  String
+  rawSizeBytes    Int
+  rawHash         String
+  rawMimeType     String?
+  rawInlineExcerpt String?
+  createdAt       DateTime @default(now())
+
+  run    Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  link   AssetSourceLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  asset  Asset         @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+
+  @@id([id, collectedAt])
+  @@index([runId])
+  @@index([linkId])
+  @@index([assetUuid, collectedAt(sort: Desc)])
+  @@index([sourceId, collectedAt(sort: Desc)])
+}
+
+model RelationRecord {
+  id          String   @default(cuid())
+  collectedAt DateTime @default(now())
+
+  runId      String
+  sourceId   String
+  relationId String?
+
+  relationType RelationType
+  fromAssetUuid String @db.Uuid
+  toAssetUuid   String @db.Uuid
+
+  raw              Bytes
+  rawCompression   String
+  rawSizeBytes     Int
+  rawHash          String
+  rawMimeType      String?
+  rawInlineExcerpt String?
+  createdAt        DateTime @default(now())
+
+  run      Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source   Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  relation Relation? @relation(fields: [relationId], references: [id], onDelete: SetNull)
+
+  @@id([id, collectedAt])
+  @@index([runId])
+  @@index([sourceId])
+  @@index([relationType, fromAssetUuid, toAssetUuid])
+  @@index([collectedAt])
+}
+
+model Relation {
+  id            String        @id @default(cuid())
+  relationType  RelationType
+  fromAssetUuid String        @db.Uuid
+  toAssetUuid   String        @db.Uuid
+  sourceId      String
+  firstSeenAt   DateTime      @default(now())
+  lastSeenAt    DateTime      @default(now())
+  status        RelationStatus @default(active)
+
+  fromAsset Asset @relation("RelationFrom", fields: [fromAssetUuid], references: [uuid], onDelete: Cascade)
+  toAsset   Asset @relation("RelationTo", fields: [toAssetUuid], references: [uuid], onDelete: Cascade)
+  source    Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  records RelationRecord[]
+
+  @@unique([relationType, fromAssetUuid, toAssetUuid, sourceId])
+  @@index([sourceId])
+  @@index([relationType, fromAssetUuid])
+  @@index([relationType, toAssetUuid])
+}
+
+model AssetRunSnapshot {
+  id        String   @id @default(cuid())
+  assetUuid String   @db.Uuid
+  runId     String
+  canonical Json
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+  run   Run   @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([assetUuid, runId])
+  @@index([runId])
 }
