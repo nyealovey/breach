@@ -1,7 +1,8 @@
-# 资产台账 vCenter MVP v1.0 执行进度
+# 资产台账 vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）执行进度
 
 - 计划来源：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`
 - 需求验收口径：`docs/requirements/asset-ledger-v1.0-traceability.md`（AC-01 ~ AC-09）
+- 增量需求：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
 - 开始日期：2026-01-28
 - 最后更新：2026-01-28
 
@@ -18,8 +19,8 @@
 
 ## 总体进度
 
-- 任务完成：17 / 17
-- 当前批次：已完成（v1.0 MVP）
+- 任务完成：17 / 26
+- 当前批次：增量未开始（凭据模块 + 调度组手动运行）
 
 ## 任务进度（按建议执行顺序）
 
@@ -93,3 +94,32 @@
 17. Task 17：E2E 闭环验收（Playwright）与最小集成测试
     - 状态：DONE
     - 产出：Playwright 配置 + `e2e/admin.spec.ts`（可跳过运行；避免与 Vitest 冲突已做隔离）
+
+### Batch 7：增量（Task 18-26，凭据模块 + 调度组手动运行）
+
+18. Task 18：扩展错误码（Credential Not Found）
+    - 状态：TODO
+
+19. Task 19：数据模型（Credential 实体 + Source 绑定）
+    - 状态：TODO
+
+20. Task 20：定义 Credential Zod Schema（按 SourceType 字段变化）
+    - 状态：TODO
+
+21. Task 21：Credentials API（CRUD + usageCount + 删除限制）
+    - 状态：TODO
+
+22. Task 22：Source API 改造（绑定 credentialId + 返回摘要 + 移除旧凭据入口）
+    - 状态：TODO
+
+23. Task 23：Worker/Scheduler 使用新 Credential（不再读取旧字段）
+    - 状态：TODO
+
+24. Task 24：调度组手动运行 API（批量 collect/manual）
+    - 状态：TODO
+
+25. Task 25：Web UI（Credentials 页面 + Source 表单绑定 + 调度组运行按钮）
+    - 状态：TODO
+
+26. Task 26：OpenAPI/Docs/E2E 更新（交付收尾）
+    - 状态：TODO
