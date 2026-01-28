@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：14 / 17
-- 当前批次：Batch 6（Task 16/15/17：日志规范 + OpenAPI + E2E）
+- 任务完成：15 / 17
+- 当前批次：Batch 6（Task 15/17：OpenAPI + E2E）
 
 ## 任务进度（按建议执行顺序）
 
@@ -83,7 +83,8 @@
 ### Batch 6：日志规范 + 交付物（Task 16/15/17）
 
 15. Task 16：日志规范落地（http.request / schedule_group.triggered / run.finished）
-    - 状态：TODO
+    - 状态：DONE
+    - 产出：结构化宽事件 logger（`src/lib/logging/logger.ts`）+ middleware/http.request + scheduler/worker 域事件 + 单测
 
 16. Task 15：OpenAPI/Swagger（openapi.json + /api/docs）
     - 状态：TODO

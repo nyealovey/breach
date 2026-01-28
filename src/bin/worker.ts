@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
+import { logEvent } from '@/lib/logging/logger';
 
 import type { AppError } from '@/lib/errors/error';
 import type { Prisma, Run, Source } from '@prisma/client';
@@ -27,11 +28,10 @@ function logRunFinished(input: {
 }) {
   const statsObj =
     typeof input.stats === 'object' && input.stats ? (input.stats as Record<string, unknown>) : undefined;
-  const event = {
-    ts: new Date().toISOString(),
+
+  logEvent({
     level: input.status === 'Failed' ? 'error' : 'info',
     service: 'worker',
-    env: process.env.NODE_ENV ?? 'development',
     event_type: 'run.finished',
     run_id: input.run.id,
     source_id: input.run.sourceId,
@@ -59,9 +59,7 @@ function logRunFinished(input: {
     warnings_count: input.warningsCount,
     errors_count: input.errorsCount,
     ...(input.error ? { error: input.error } : {}),
-  };
-
-  console.log(JSON.stringify(event));
+  });
 }
 
 function sleep(ms: number) {

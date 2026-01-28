@@ -1,35 +1,11 @@
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
+import { logEvent } from '@/lib/logging/logger';
 import { getLocalParts, localDateToUtcDateOnly } from '@/lib/timezone';
 
 function log(message: string, extra?: Record<string, unknown>) {
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
   console.log(`[scheduler] ${message}${payload}`);
-}
-
-function logScheduleGroupTriggered(input: {
-  scheduleGroupId: string;
-  timezone: string;
-  localDate: string;
-  hhmm: string;
-  queued: number;
-  skippedActive: number;
-}) {
-  const event = {
-    ts: new Date().toISOString(),
-    level: 'info',
-    service: 'scheduler',
-    env: process.env.NODE_ENV ?? 'development',
-    event_type: 'schedule_group.triggered',
-    schedule_group_id: input.scheduleGroupId,
-    timezone: input.timezone,
-    local_date: input.localDate,
-    hhmm: input.hhmm,
-    queued: input.queued,
-    skipped_active: input.skippedActive,
-  };
-
-  console.log(JSON.stringify(event));
 }
 
 async function enqueueDueGroups(now: Date) {
@@ -105,13 +81,16 @@ async function enqueueDueGroups(now: Date) {
       });
     }
 
-    logScheduleGroupTriggered({
-      scheduleGroupId: group.id,
+    logEvent({
+      level: 'info',
+      service: 'scheduler',
+      event_type: 'schedule_group.triggered',
+      schedule_group_id: group.id,
       timezone: group.timezone,
-      localDate: local.localDate,
+      local_date: local.localDate,
       hhmm: local.hhmm,
       queued: toQueue.length,
-      skippedActive: activeSet.size,
+      skipped_active: activeSet.size,
     });
   }
 }
