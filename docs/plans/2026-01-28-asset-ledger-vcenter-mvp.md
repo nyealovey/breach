@@ -252,19 +252,28 @@ git commit -m "chore: set up vitest"
 - Create: `src/components/ui/*`
 - Create: `src/lib/ui/cn.ts`
 
-**Step 1: 引入 Tailwind CSS**
+> **前置检查**：若项目已通过 `create-next-app` 初始化且选择了 Tailwind，则 `tailwind.config.*` 和 `postcss.config.*` 已存在，可跳过 Step 1-3，直接从 Step 4 (shadcn) 开始。
+
+**Step 1: 检查 Tailwind 是否已配置**
+
+Run: `ls tailwind.config.* postcss.config.* 2>/dev/null || echo "not found"`
+
+- 若已存在：跳过 Step 2-3，直接到 Step 4
+- 若不存在：继续 Step 2
+
+**Step 2: 引入 Tailwind CSS（仅当 Step 1 未找到配置时）**
 
 Run: `bun add -D tailwindcss postcss autoprefixer`
 
 Expected: `package.json` devDependencies 出现 tailwind 相关依赖。
 
-**Step 2: 初始化 Tailwind 配置**
+**Step 3: 初始化 Tailwind 配置（仅当 Step 1 未找到配置时）**
 
 Run: `bunx tailwindcss init -p`
 
 Expected: 生成 `tailwind.config.*` 与 `postcss.config.*`（以实际生成文件名为准）。
 
-**Step 3: 配置 content 与全局样式**
+**Step 4: 配置 content 与全局样式（仅当 Step 1 未找到配置时）**
 
 修改 `tailwind.config.*` 的 content 覆盖：
 
@@ -279,7 +288,7 @@ Expected: 生成 `tailwind.config.*` 与 `postcss.config.*`（以实际生成文
 @tailwind utilities;
 ```
 
-**Step 4: 初始化 shadcn/ui**
+**Step 5: 初始化 shadcn/ui**
 
 Run: `bunx shadcn@latest init`
 
@@ -292,7 +301,7 @@ Run: `bunx shadcn@latest init`
 
 Expected: 生成 `components.json`，并创建 `src/components/ui/*` 与 `src/lib/utils`（或等价文件）。
 
-**Step 5: 安装推荐组件/依赖（列表页/表单/图标/Toast）**
+**Step 6: 安装推荐组件/依赖（列表页/表单/图标/Toast）**
 
 Run:
 
@@ -302,7 +311,7 @@ Run:
 - `bun add sonner`
 - `bun add clsx tailwind-merge class-variance-authority`
 
-**Step 6: 统一 cn() 工具（若 shadcn 已生成则复用）**
+**Step 7: 统一 cn() 工具（若 shadcn 已生成则复用）**
 
 创建 `src/lib/ui/cn.ts`：
 
@@ -315,14 +324,14 @@ export function cn(...inputs: Array<unknown>) {
 }
 ```
 
-**Step 7: 全局布局预留导航区（后续页面复用）**
+**Step 8: 全局布局预留导航区（后续页面复用）**
 
 修改 `src/app/layout.tsx`：
 
 - 预留 header/sidebar 区域（后续用 shadcn `Button/DropdownMenu` 做导航）
 - 页面内容区域使用 Tailwind 布局（替换 starter 的样式依赖）
 
-**Step 8: Commit**
+**Step 9: Commit**
 
 ```bash
 git add src/app/globals.css src/app/layout.tsx src/components src/lib/ui components.json tailwind.config.* postcss.config.*
@@ -461,12 +470,13 @@ git commit -m "feat: add admin auth session and login page"
 
 ---
 
-### Task 6: 凭据加密（AES-256-GCM）与 Source 凭据更新 API（AC-02）
+### Task 6: 凭据加密（AES-256-GCM）工具（AC-02 前置）
 
 **Files:**
 - Create: `src/lib/crypto/aes-gcm.ts`
-- Modify: `src/app/api/v1/sources/[id]/credential/route.ts`（Task 8 会创建；这里先实现加密工具）
 - Test: `src/lib/crypto/aes-gcm.test.ts`
+
+> 注：本 Task 仅实现加密工具和单测；凭据更新 API 在 Task 8 中实现（依赖本 Task 的加密工具）。
 
 **Step 1: 实现 AES-256-GCM 加解密工具**
 
@@ -618,7 +628,141 @@ git commit -m "feat: add run api pages and worker run finished events"
 
 ---
 
-### Task 10: Collector 契约对齐（collector-request/response v1）+ Schema 校验（AC-04 / Q-04）
+### Task 10: vCenter Collector Plugin 实现（TypeScript）
+
+> **技术选型决策**：选择 TypeScript + vSphere REST API，理由见 `docs/design/asset-ledger-collector-reference.md` 第 10 节。
+
+**Files:**
+- Create: `plugins/vcenter/index.ts`
+- Create: `plugins/vcenter/client.ts`
+- Create: `plugins/vcenter/normalize.ts`
+- Create: `plugins/vcenter/types.ts`
+- Create: `plugins/vcenter/package.json`
+- Test: `plugins/vcenter/__tests__/normalize.test.ts`
+- Test: `plugins/vcenter/__tests__/integration.test.ts`
+
+**Step 1: 创建插件目录结构**
+
+```bash
+mkdir -p plugins/vcenter/__tests__
+```
+
+**Step 2: 初始化插件 package.json**
+
+创建 `plugins/vcenter/package.json`：
+
+```json
+{
+  "name": "@breach/vcenter-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "bun run index.ts",
+    "test": "vitest run"
+  }
+}
+```
+
+**Step 3: 实现类型定义**
+
+创建 `plugins/vcenter/types.ts`：
+
+- `CollectorRequest`（对齐 collector-request-v1）
+- `CollectorResponse`（对齐 collector-response-v1）
+- `VCenterConfig`、`VCenterCredential`
+- `NormalizedAsset`、`Relation`
+
+**Step 4: 实现 vSphere REST API Client**
+
+创建 `plugins/vcenter/client.ts`：
+
+- `createSession(endpoint, username, password): sessionToken`
+- `listVMs(endpoint, token): VmSummary[]`
+- `listHosts(endpoint, token): HostSummary[]`
+- `listClusters(endpoint, token): ClusterSummary[]`
+- `getVmDetail(endpoint, token, vmId): VmDetail`
+- `getHostDetail(endpoint, token, hostId): HostDetail`
+- TLS：跳过证书校验（v1.0 允许自签名）
+
+vSphere REST API 端点：
+- `POST /api/session` → session token
+- `GET /api/vcenter/vm` → VM 列表
+- `GET /api/vcenter/vm/{vm}` → VM 详情
+- `GET /api/vcenter/host` → Host 列表
+- `GET /api/vcenter/host/{host}` → Host 详情
+- `GET /api/vcenter/cluster` → Cluster 列表
+
+**Step 5: 实现 normalize 转换**
+
+创建 `plugins/vcenter/normalize.ts`：
+
+- `normalizeVM(raw): { external_kind, external_id, normalized, raw_payload }`
+- `normalizeHost(raw): ...`
+- `normalizeCluster(raw): ...`
+- `buildRelations(vms, hosts, clusters): Relation[]`
+
+normalized 字段映射（对齐 `docs/design/asset-ledger-json-schema.md`）：
+- VM: `identity.machine_uuid` ← `instance_uuid`，`identity.hostname` ← `guest.host_name`，`network.mac_addresses` ← `nics[].mac_address`
+- Host: `identity.serial_number` ← `hardware.system_info.serial_number`，`network.management_ip` ← 从 vnics 提取
+
+**Step 6: 实现入口（healthcheck/detect/collect）**
+
+创建 `plugins/vcenter/index.ts`：
+
+```typescript
+// 1. 读取 stdin
+const input = await Bun.stdin.text();
+const request = JSON.parse(input);
+
+// 2. 根据 mode 分发
+switch (request.request.mode) {
+  case 'healthcheck': response = await healthcheck(request); break;
+  case 'detect': response = await detect(request); break;
+  case 'collect': response = await collect(request); break;
+}
+
+// 3. 输出到 stdout
+console.log(JSON.stringify(response));
+```
+
+- `healthcheck`：尝试创建 session，成功返回空 assets/errors
+- `detect`：获取 vCenter About 信息，返回 `target_version`/`driver`
+- `collect`：拉取全量 VM/Host/Cluster，normalize，构建 relations
+
+**Step 7: 单元测试（normalize）**
+
+创建 `plugins/vcenter/__tests__/normalize.test.ts`：
+
+- 测试 `normalizeVM` 字段映射
+- 测试缺失字段处理
+- 测试 `buildRelations` 正确构建 VM→Host→Cluster
+
+**Step 8: 集成测试（Mock vCenter）**
+
+创建 `plugins/vcenter/__tests__/integration.test.ts`：
+
+- 使用 Bun 内置 HTTP server 模拟 vSphere REST API
+- 测试 healthcheck 成功/失败
+- 测试 collect 输出符合 collector-response-v1
+
+**Step 9: 配置环境变量**
+
+更新 `src/lib/env/server.ts`：
+
+- `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：默认值 `plugins/vcenter/index.ts`（开发环境）
+
+**Step 10: Commit**
+
+```bash
+git add plugins/vcenter src/lib/env/server.ts
+git commit -m "feat: add vcenter collector plugin (typescript)"
+```
+
+---
+
+### Task 11: Collector 契约对齐（collector-request/response v1）+ Schema 校验（AC-04 / Q-04）
 
 **Files:**
 - Create: `src/lib/schema/normalized-v1.schema.json`
@@ -659,7 +803,7 @@ git commit -m "feat: validate collector output with json schema"
 
 ---
 
-### Task 11: Ingest Pipeline（AC-05/AC-06）：入账、绑定、关系 upsert、生成 canonical-v1
+### Task 12: Ingest Pipeline（AC-05/AC-06）：入账、绑定、关系 upsert、生成 canonical-v1
 
 **Files:**
 - Create: `src/lib/ingest/ingest-run.ts`
@@ -717,7 +861,7 @@ git commit -m "feat: ingest assets relations and generate canonical snapshots"
 
 ---
 
-### Task 12: Asset API + UI（AC-05/AC-06）
+### Task 13: Asset API + UI（AC-05/AC-06）
 
 **Files:**
 - Create: `src/app/api/v1/assets/route.ts`
@@ -761,7 +905,7 @@ git commit -m "feat: add asset api and pages"
 
 ---
 
-### Task 13: Raw 查看入口（SourceRecord raw payload）+ 审计（admin-only）
+### Task 14: Raw 查看入口（SourceRecord raw payload）+ 审计（admin-only）
 
 **Files:**
 - Create: `src/app/api/v1/source-records/[recordId]/raw/route.ts`
@@ -810,7 +954,7 @@ git commit -m "feat: add admin raw viewer with audit"
 
 ---
 
-### Task 14: OpenAPI/Swagger 交付物（AC-08）
+### Task 15: OpenAPI/Swagger 交付物（AC-08）
 
 **Files:**
 - Create: `src/lib/openapi/spec.ts`
@@ -845,7 +989,7 @@ git commit -m "feat: add openapi json and swagger ui"
 
 ---
 
-### Task 15: 日志规范落地（Q-02）：http.request / schedule_group.triggered / run.finished
+### Task 16: 日志规范落地（Q-02）：http.request / schedule_group.triggered / run.finished
 
 **Files:**
 - Create: `src/lib/logging/logger.ts`
@@ -879,7 +1023,7 @@ git commit -m "feat: add wide event logging"
 
 ---
 
-### Task 16: E2E 闭环验收（Playwright）与最小集成测试
+### Task 17: E2E 闭环验收（Playwright）与最小集成测试
 
 **Files:**
 - Create: `playwright.config.ts`
@@ -907,4 +1051,21 @@ git commit -m "test: add playwright e2e for vcenter mvp happy path"
 
 ## 执行顺序建议（最快跑通闭环）
 
-1. Task 4（DB 模型）→ Task 5（Auth）→ Task 7/8（配置 UI/API）→ Task 9/10（Run + Collector 校验）→ Task 11/12（入账 + Asset UI）→ Task 13（raw 查看 + 审计）→ Task 15（日志）→ Task 14（OpenAPI）→ Task 16（E2E）
+**完整顺序**：
+
+```
+Task 1 → Task 2 → Task 3 → Task 4 → Task 5 → Task 6 → Task 7 → Task 8 → Task 9 → Task 10 → Task 11 → Task 12 → Task 13 → Task 14 → Task 16 → Task 15 → Task 17
+```
+
+**分阶段说明**：
+
+1. **基础设施**（Task 1-3）：错误码/响应封装 → Vitest 测试基座 → UI 基座（Tailwind + shadcn）
+2. **数据模型**（Task 4）：Prisma schema 补齐 + 分区迁移
+3. **认证与加密**（Task 5-6）：admin 登录/会话 → AES-GCM 凭据加密工具
+4. **配置管理**（Task 7-8）：调度组 API/UI → Source API/UI（含凭据更新）
+5. **采集核心**（Task 9-12）：Run API/UI → **vCenter Plugin** → Collector Schema 校验 → Ingest Pipeline
+6. **Asset 展示**（Task 13-14）：Asset API/UI → raw 查看 + 审计
+7. **日志规范**（Task 16）：结构化日志事件
+8. **交付物**（Task 15, 17）：OpenAPI/Swagger → E2E 测试
+
+> **注**：Task 16（日志）放在 Task 15（OpenAPI）之前，因为日志事件可在 E2E 中验证；OpenAPI 依赖所有 API 稳定后再生成。

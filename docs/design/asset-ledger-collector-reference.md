@@ -788,3 +788,52 @@ export class MockVCenterServer {
   }
 }
 ```
+
+## 10. vCenter Plugin 技术选型决策（v1.0）
+
+> 决策日期：2026-01-28
+
+### 10.1 选型结论
+
+**vCenter Collector Plugin 采用 TypeScript + vSphere REST API 实现**。
+
+### 10.2 备选方案对比
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| **Go + govmomi** | VMware 官方 SDK；单二进制部署；完整 SOAP API | 引入新语言，增加技术栈复杂度 |
+| **Python + pyVmomi** | VMware 官方 SDK；开发快 | 需 Python 运行时；依赖管理复杂 |
+| **TypeScript + REST API** | 与项目技术栈一致；复用工具/类型；Bun 直接运行 | 需自行封装 REST API；REST API 功能相对 SOAP 有限 |
+
+### 10.3 选择 TypeScript 的理由
+
+1. **技术栈统一**：项目主体为 Bun + TypeScript，插件使用相同技术栈可：
+   - 复用 Zod schema、错误码、工具函数
+   - 单一构建/测试流程
+   - 降低团队学习成本
+
+2. **vSphere REST API 满足 MVP 需求**：
+   - vSphere 7+ 的 REST API 已覆盖 VM/Host/Cluster 列表、详情
+   - MVP 只需 healthcheck/detect/collect，不涉及复杂操作
+
+3. **部署简单**：`bun run plugins/vcenter/index.ts` 即可运行，无需额外编译
+
+### 10.4 后续演进路径
+
+若 REST API 无法满足后续需求（例如需要 SOAP-only 的字段），可选：
+
+1. **Go 重写**：使用 govmomi 实现完整 SOAP 支持，编译为独立二进制
+2. **混合方案**：TypeScript 主体 + 调用 `govc` CLI 获取特定数据
+
+### 10.5 实现位置
+
+```
+plugins/vcenter/
+├── index.ts              # 入口（stdin → mode 分发 → stdout）
+├── client.ts             # vSphere REST API 封装
+├── normalize.ts          # raw → normalized-v1 转换
+├── types.ts              # 类型定义
+└── __tests__/            # 测试
+```
+
+详细实现步骤见：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md` Task 10。
