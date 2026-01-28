@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import { parseCollectorResponse, validateCollectorResponse } from '@/lib/collector/collector-response';
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
@@ -236,74 +237,68 @@ async function processRun(run: Run): Promise<ProcessResult> {
     return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
-  if (exitCode !== 0) {
-    const error: AppError = {
-      code: ErrorCode.PLUGIN_EXIT_NONZERO,
-      category: 'unknown',
-      message: 'plugin returned non-zero exit code',
-      retryable: false,
-      redacted_context: { exit_code: exitCode, stderr_excerpt: stderr.slice(0, 2000) },
-    };
+  const parsedResult = parseCollectorResponse(stdout);
+  if (!parsedResult.ok) {
+    const error = parsedResult.error;
     await prisma.run.update({
       where: { id: run.id },
       data: {
         status: 'Failed',
         finishedAt: new Date(),
-        errorSummary: `plugin exit code ${exitCode}`,
+        errorSummary: error.message,
         errors: [error],
       },
     });
     return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    const error: AppError = {
-      code: ErrorCode.PLUGIN_OUTPUT_INVALID_JSON,
-      category: 'parse',
-      message: 'failed to parse plugin stdout as json',
-      retryable: false,
-      redacted_context: { stdout_excerpt: stdout.slice(0, 2000), stderr_excerpt: stderr.slice(0, 2000) },
-    };
+  const response = parsedResult.response;
+
+  const validateResult = validateCollectorResponse(response);
+  if (!validateResult.ok) {
+    const error = validateResult.error;
     await prisma.run.update({
       where: { id: run.id },
       data: {
         status: 'Failed',
         finishedAt: new Date(),
-        errorSummary: 'failed to parse plugin stdout as json',
+        errorSummary: error.message,
         errors: [error],
       },
     });
     return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
-  const response = parsed as {
-    detect?: unknown;
-    stats?: unknown;
-    errors?: unknown;
-    warnings?: unknown;
-  };
-
+  const statsObj =
+    response.stats && typeof response.stats === 'object' ? (response.stats as Record<string, unknown>) : undefined;
+  const warningsValue = Array.isArray(statsObj?.warnings) ? (statsObj?.warnings as unknown[]) : [];
   const errorsValue = Array.isArray(response.errors) ? response.errors : [];
-  const warningsValue = Array.isArray(response.warnings) ? response.warnings : [];
+
+  const success = exitCode === 0 && errorsValue.length === 0;
 
   await prisma.run.update({
     where: { id: run.id },
     data: {
-      status: 'Succeeded',
+      status: success ? 'Succeeded' : 'Failed',
       finishedAt: new Date(),
       detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
       stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-      errors: errorsValue,
-      warnings: warningsValue,
-      errorSummary: null,
+      errors: errorsValue as Prisma.InputJsonValue,
+      warnings: warningsValue as Prisma.InputJsonValue,
+      errorSummary: success ? null : `plugin failed (exitCode=${exitCode})`,
     },
   });
 
   return {
-    status: 'Succeeded',
+    status: success ? 'Succeeded' : 'Failed',
+    error: success
+      ? undefined
+      : ({
+          code: ErrorCode.PLUGIN_EXIT_NONZERO,
+          category: 'unknown',
+          message: 'plugin failed',
+          retryable: false,
+        } satisfies AppError),
     errorsCount: errorsValue.length,
     warningsCount: warningsValue.length,
     pluginExitCode: exitCode,

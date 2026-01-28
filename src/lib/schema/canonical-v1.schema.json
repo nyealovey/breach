@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset-ledger/canonical-v1.schema.json",
+  "title": "asset-ledger canonical-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "asset_uuid", "asset_type", "status", "display_name", "fields", "relations"],
+  "properties": {
+    "version": { "const": "canonical-v1" },
+    "asset_uuid": { "type": "string", "minLength": 1 },
+    "asset_type": { "enum": ["vm", "host", "cluster"] },
+    "status": { "enum": ["in_service", "offline", "merged"] },
+    "display_name": { "type": "string" },
+    "last_seen_at": { "type": ["string", "null"], "format": "date-time" },
+    "fields": {
+      "$ref": "#/$defs/CanonicalObject",
+      "description": "键名建议与 normalized-v1 对齐（identity/network/os/hardware/location/ownership/service/physical）；叶子节点使用 FieldValue（含 sources/alternatives）"
+    },
+    "relations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outgoing"],
+      "properties": {
+        "outgoing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "to"],
+            "properties": {
+              "type": { "enum": ["runs_on", "member_of"] },
+              "to": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["asset_uuid", "display_name"],
+                "properties": {
+                  "asset_uuid": { "type": "string" },
+                  "display_name": { "type": "string" },
+                  "asset_type": { "enum": ["vm", "host", "cluster"] }
+                }
+              },
+              "source_id": { "type": "string" },
+              "last_seen_at": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "FieldProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "run_id"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "record_id": { "type": "string" },
+        "collected_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "FieldValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "sources"],
+      "properties": {
+        "value": { "type": ["string", "number", "boolean", "object", "array", "null"] },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/FieldProvenance" }
+        },
+        "conflict": { "type": "boolean" },
+        "alternatives": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldValue" }
+        }
+      }
+    },
+    "CanonicalNode": {
+      "anyOf": [
+        { "$ref": "#/$defs/FieldValue" },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/CanonicalNode" }
+        }
+      ]
+    },
+    "CanonicalObject": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/CanonicalNode" }
+    }
+  }
+}

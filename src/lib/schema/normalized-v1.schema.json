@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset-ledger/normalized-v1.schema.json",
+  "title": "asset-ledger normalized-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "kind"],
+  "properties": {
+    "version": { "const": "normalized-v1" },
+    "kind": { "enum": ["vm", "host", "cluster"] },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": { "type": "string", "minLength": 1 },
+        "machine_uuid": { "type": "string", "minLength": 1 },
+        "serial_number": { "type": "string", "minLength": 1 },
+        "cloud_native_id": { "type": "string", "minLength": 1 },
+        "vendor": { "type": "string" },
+        "model": { "type": "string" },
+        "product_name": { "type": "string" },
+        "caption": { "type": "string" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ip_addresses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "mac_addresses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "management_ip": { "type": "string", "minLength": 1 },
+        "bmc_ip": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Out-of-band management IP (BMC/iLO/iDRAC/IPMI). Preferred field."
+        },
+        "ilo_ip": {
+          "type": "string",
+          "minLength": 1,
+          "description": "DEPRECATED: legacy alias of bmc_ip. Please write to network.bmc_ip."
+        }
+      }
+    },
+    "os": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "fingerprint": { "type": "string" }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu_count": { "type": "integer", "minimum": 0 },
+        "memory_bytes": { "type": "integer", "minimum": 0 },
+        "disks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "size_bytes": { "type": "integer", "minimum": 0 },
+              "type": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": { "type": "string" },
+        "city": { "type": "string" },
+        "cabinet": { "type": "string" },
+        "position": { "type": "string" }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "department": { "type": "string" },
+        "owner_name": { "type": "string" },
+        "owner_email": { "type": "string" },
+        "cc_emails": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system_name": { "type": "string" },
+        "applications": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "service_level": { "type": "string" }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "description": "可选：用于承接资源规格/形态等辅助信息（不作为强制候选键），避免散落在 attributes.*",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "description": "资源规格/形态的指纹化描述（例如 instance_type / sku / 合并后的规格摘要）"
+        }
+      }
+    },
+    "physical": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fixed_asset_id": { "type": "string" },
+        "maintenance_period": { "type": "string" }
+      }
+    },
+    "comments": { "type": "string" },
+    "classification": { "type": "string" },
+    "cloud": { "type": ["boolean", "string"] },
+    "attributes": {
+      "type": "object",
+      "description": "用于承接来源特有字段/导入表格未结构化字段；建议 value 仅使用 string/number/bool",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
+    }
+  }
+}

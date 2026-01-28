@@ -43,6 +43,8 @@
     "@radix-ui/react-switch": "1.2.6",
     "@t3-oss/env-nextjs": "0.13.10",
     "@tanstack/react-table": "8.21.3",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
     "babel-plugin-react-compiler": "1.0.0",
     "bcryptjs": "3.0.3",
     "class-variance-authority": "0.7.1",
