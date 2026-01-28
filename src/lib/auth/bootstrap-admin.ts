@@ -9,8 +9,7 @@ export async function bootstrapAdmin() {
 
   const plain = serverEnv.ASSET_LEDGER_ADMIN_PASSWORD;
   if (!plain) {
-    const msg =
-      'ASSET_LEDGER_ADMIN_PASSWORD is required to bootstrap the default admin user (username=admin).';
+    const msg = 'ASSET_LEDGER_ADMIN_PASSWORD is required to bootstrap the default admin user (username=admin).';
     // In production we should fail fast; in web route handlers we surface as 500.
     console.error(msg);
     throw new Error(msg);
@@ -27,4 +26,3 @@ export async function bootstrapAdmin() {
     throw err;
   }
 }
-

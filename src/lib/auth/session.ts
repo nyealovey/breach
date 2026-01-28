@@ -95,4 +95,3 @@ export async function getSessionFromRequest(req: Request) {
 export function parseSessionCookieValue(cookieValue: string) {
   return decodeCookieValue(cookieValue);
 }
-
