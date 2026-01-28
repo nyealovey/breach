@@ -123,6 +123,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `/schedule-groups`：调度组配置
 - `/sources`：来源配置与凭据更新
 - `/runs`：采集 Run 列表与详情
+- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）
 
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）
 

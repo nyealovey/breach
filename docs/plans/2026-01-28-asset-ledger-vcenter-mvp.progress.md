@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：12 / 17
-- 当前批次：Batch 5（Task 13-14：资产展示）
+- 任务完成：13 / 17
+- 当前批次：Batch 5（Task 14：Raw 查看入口）
 
 ## 任务进度（按建议执行顺序）
 
@@ -73,7 +73,8 @@
 ### Batch 5：资产展示（Task 13-14）
 
 13. Task 13：Asset API + UI
-    - 状态：TODO
+    - 状态：DONE
+    - 产出：`/api/v1/assets*`（列表/详情/来源明细/关系）+ `/assets`（列表/详情）+ 对应 API 单测
 
 14. Task 14：Raw 查看入口 + 审计（admin-only）
     - 状态：TODO
