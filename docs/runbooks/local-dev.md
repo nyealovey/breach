@@ -36,9 +36,22 @@ docker rm breach-pg
 
 只要你能拿到一个可连的 `DATABASE_URL` 就可以（见下一节）。
 
-## 2) 配置 `.env.local`
+## 2) 配置环境变量（`.env` / `.env.local`）
 
-在仓库根目录创建 `.env.local`（不存在就新建），至少需要 `DATABASE_URL`。
+Prisma CLI（`prisma migrate dev`）默认只会从 `.env`（或 `prisma/.env`）加载环境变量，**不会自动读取** Next.js 的 `.env.local`。
+
+因此建议：
+
+- 在仓库根目录创建 `.env`（至少包含 `DATABASE_URL`，让 Prisma 命令能工作）
+- 其他本地私密配置可以继续放在 `.env.local`（Next.js 会读取；且会覆盖 `.env` 同名变量）
+
+如果你已经有 `.env.local`，最省事的做法是直接复制/软链一份给 Prisma：
+
+```bash
+cp .env.local .env
+# 或（推荐）用软链避免重复维护：
+ln -sf .env.local .env
+```
 
 推荐最小配置（用于本地完整闭环）：
 
