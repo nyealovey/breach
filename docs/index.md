@@ -8,6 +8,7 @@
 
 ## 参考文档（实现细节 / 规范）
 
+- 本地开发与测试环境启动指南：`docs/runbooks/local-dev.md`
 - API 规范：`docs/design/asset-ledger-api-spec.md`
 - UI 交互规范：`docs/design/asset-ledger-ui-spec.md`
 - 概念数据模型：`docs/design/asset-ledger-data-model.md`

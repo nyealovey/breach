@@ -98,6 +98,10 @@ List of websites that started off with Next.js TypeScript Starter:
 
 文档总览（推荐先读；需求口径以 SRS 为准）：[`docs/index.md`](docs/index.md)
 
+运行指南：
+
+- 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
+
 需求文档：
 
 - 需求规格说明书（SRS，需求口径/验收依据）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
