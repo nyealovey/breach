@@ -20,3 +20,4 @@
 
 - PRD（历史范围说明）：`docs/prds/`
 - 计划（工程任务拆分）：`docs/plans/`
+- vCenter MVP v1.0 实施进度（执行记录）：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
