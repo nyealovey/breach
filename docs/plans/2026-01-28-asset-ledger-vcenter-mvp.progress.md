@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：13 / 17
-- 当前批次：Batch 5（Task 14：Raw 查看入口）
+- 任务完成：14 / 17
+- 当前批次：Batch 6（Task 16/15/17：日志规范 + OpenAPI + E2E）
 
 ## 任务进度（按建议执行顺序）
 
@@ -77,7 +77,8 @@
     - 产出：`/api/v1/assets*`（列表/详情/来源明细/关系）+ `/assets`（列表/详情）+ 对应 API 单测
 
 14. Task 14：Raw 查看入口 + 审计（admin-only）
-    - 状态：TODO
+    - 状态：DONE
+    - 产出：`/api/v1/source-records/:recordId/raw`（admin-only + 解压 + 脱敏 + 审计）+ RawDialog 入口 + 脱敏/接口单测
 
 ### Batch 6：日志规范 + 交付物（Task 16/15/17）
 

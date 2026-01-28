@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
+import { RawDialog } from '@/components/raw/raw-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,6 +92,8 @@ export default function AssetDetailPage() {
   const [loading, setLoading] = useState(true);
 
   const [selectedNormalized, setSelectedNormalized] = useState<{ recordId: string; payload: unknown } | null>(null);
+  const [rawOpen, setRawOpen] = useState(false);
+  const [rawRecordId, setRawRecordId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -110,6 +113,8 @@ export default function AssetDetailPage() {
           setSourceRecords([]);
           setRelations([]);
           setSelectedNormalized(null);
+          setRawOpen(false);
+          setRawRecordId(null);
           setLoading(false);
         }
         return;
@@ -124,6 +129,8 @@ export default function AssetDetailPage() {
         setSourceRecords(recordsBody?.data ?? []);
         setRelations(relationsBody?.data ?? []);
         setSelectedNormalized(null);
+        setRawOpen(false);
+        setRawRecordId(null);
         setLoading(false);
       }
     };
@@ -297,13 +304,25 @@ export default function AssetDetailPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{r.runId}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedNormalized({ recordId: r.recordId, payload: r.normalized })}
-                      >
-                        查看 normalized
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedNormalized({ recordId: r.recordId, payload: r.normalized })}
+                        >
+                          查看 normalized
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setRawRecordId(r.recordId);
+                            setRawOpen(true);
+                          }}
+                        >
+                          查看 raw
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -321,6 +340,15 @@ export default function AssetDetailPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <RawDialog
+        recordId={rawRecordId}
+        open={rawOpen}
+        onOpenChange={(open) => {
+          setRawOpen(open);
+          if (!open) setRawRecordId(null);
+        }}
+      />
     </div>
   );
 }

@@ -59,6 +59,7 @@
 | CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                 |
 | CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                  |
 | CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                  |
+| CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                         |
 | CONFIG_SCHEDULE_GROUP_NOT_FOUND   | web    | config     | false     | 404              | 调度组不存在                                                |
 | CONFIG_DUPLICATE_NAME             | web    | config     | false     | 409              | 名称重复导致冲突                                            |
 | CONFIG_RESOURCE_CONFLICT          | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                       |
@@ -124,6 +125,7 @@ export const ErrorCode = {
   CONFIG_SOURCE_NOT_FOUND: 'CONFIG_SOURCE_NOT_FOUND',
   CONFIG_RUN_NOT_FOUND: 'CONFIG_RUN_NOT_FOUND',
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
+  CONFIG_SOURCE_RECORD_NOT_FOUND: 'CONFIG_SOURCE_RECORD_NOT_FOUND',
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: 'CONFIG_SCHEDULE_GROUP_NOT_FOUND',
   CONFIG_DUPLICATE_NAME: 'CONFIG_DUPLICATE_NAME',
   CONFIG_RESOURCE_CONFLICT: 'CONFIG_RESOURCE_CONFLICT',
@@ -256,6 +258,10 @@ export const ErrorMessages: Record<
   CONFIG_ASSET_NOT_FOUND: {
     zh: '资产不存在：{{asset_uuid}}',
     en: 'Asset not found: {{asset_uuid}}',
+  },
+  CONFIG_SOURCE_RECORD_NOT_FOUND: {
+    zh: '源记录不存在：{{record_id}}',
+    en: 'Source record not found: {{record_id}}',
   },
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: {
     zh: '调度组不存在：{{group_id}}',
