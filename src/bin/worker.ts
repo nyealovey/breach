@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
 
 import { parseCollectorResponse, validateCollectorResponse } from '@/lib/collector/collector-response';
+import { decryptJson } from '@/lib/crypto/aes-gcm';
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
+import { ingestCollectRun } from '@/lib/ingest/ingest-run';
 
 import type { AppError } from '@/lib/errors/error';
 import type { Prisma, Run, Source } from '@prisma/client';
@@ -176,13 +178,38 @@ async function processRun(run: Run): Promise<ProcessResult> {
     return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
   }
 
+  let credential: unknown = {};
+  if (source.credentialCiphertext) {
+    try {
+      credential = decryptJson(source.credentialCiphertext);
+    } catch (err) {
+      const error: AppError = {
+        code: ErrorCode.INTERNAL_ERROR,
+        category: 'unknown',
+        message: 'failed to decrypt source credential',
+        retryable: false,
+        redacted_context: { cause: err instanceof Error ? err.message : String(err) },
+      };
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Failed',
+          finishedAt: new Date(),
+          errorSummary: 'failed to decrypt source credential',
+          errors: [error],
+        },
+      });
+      return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+    }
+  }
+
   const pluginInput = {
     schema_version: 'collector-request-v1',
     source: {
       source_id: source.id,
       source_type: source.sourceType,
       config: source.config ?? {},
-      credential: {},
+      credential,
     },
     request: {
       run_id: run.id,
@@ -275,31 +302,181 @@ async function processRun(run: Run): Promise<ProcessResult> {
   const errorsValue = Array.isArray(response.errors) ? response.errors : [];
 
   const success = exitCode === 0 && errorsValue.length === 0;
+  const finishedAt = new Date();
+
+  if (!success) {
+    const fallbackError: AppError = {
+      code: ErrorCode.PLUGIN_EXIT_NONZERO,
+      category: 'unknown',
+      message: 'plugin failed',
+      retryable: false,
+      redacted_context: { exit_code: exitCode, stderr_excerpt: stderr.slice(0, 2000) },
+    };
+    const errorsToStore = errorsValue.length > 0 ? errorsValue : [fallbackError];
+    await prisma.run.update({
+      where: { id: run.id },
+      data: {
+        status: 'Failed',
+        finishedAt,
+        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+        errors: errorsToStore as Prisma.InputJsonValue,
+        warnings: warningsValue as Prisma.InputJsonValue,
+        errorSummary: `plugin failed (exitCode=${exitCode})`,
+      },
+    });
+
+    return {
+      status: 'Failed',
+      error: fallbackError,
+      errorsCount: errorsToStore.length,
+      warningsCount: warningsValue.length,
+      pluginExitCode: exitCode,
+      detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+      stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+    };
+  }
+
+  if (run.mode === 'collect') {
+    const inventoryComplete =
+      typeof statsObj?.inventory_complete === 'boolean'
+        ? statsObj.inventory_complete
+        : typeof statsObj?.inventoryComplete === 'boolean'
+          ? statsObj.inventoryComplete
+          : null;
+
+    if (!inventoryComplete) {
+      const error: AppError = {
+        code: ErrorCode.INVENTORY_INCOMPLETE,
+        category: 'schema',
+        message: 'inventory not complete',
+        retryable: false,
+      };
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Failed',
+          finishedAt,
+          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+          errors: [error],
+          warnings: warningsValue as Prisma.InputJsonValue,
+          errorSummary: 'inventory not complete',
+        },
+      });
+      return { status: 'Failed', error, errorsCount: 1, warningsCount: warningsValue.length, pluginExitCode: exitCode };
+    }
+
+    const assets = Array.isArray((response as any).assets) ? ((response as any).assets as any[]) : null;
+    const relations = Array.isArray((response as any).relations) ? ((response as any).relations as any[]) : [];
+    if (!assets) {
+      const error: AppError = {
+        code: ErrorCode.SCHEMA_VALIDATION_FAILED,
+        category: 'schema',
+        message: 'collector response missing assets[]',
+        retryable: false,
+      };
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Failed',
+          finishedAt,
+          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+          errors: [error],
+          warnings: warningsValue as Prisma.InputJsonValue,
+          errorSummary: 'collector response missing assets[]',
+        },
+      });
+      return { status: 'Failed', error, errorsCount: 1, warningsCount: warningsValue.length, pluginExitCode: exitCode };
+    }
+
+    try {
+      const ingestResult = await ingestCollectRun({
+        prisma,
+        runId: run.id,
+        sourceId: source.id,
+        collectedAt: finishedAt,
+        assets,
+        relations,
+      });
+
+      const mergedWarnings = [...warningsValue, ...ingestResult.warnings];
+
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Succeeded',
+          finishedAt,
+          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+          errors: [],
+          warnings: mergedWarnings as Prisma.InputJsonValue,
+          errorSummary: null,
+        },
+      });
+
+      return {
+        status: 'Succeeded',
+        errorsCount: 0,
+        warningsCount: mergedWarnings.length,
+        pluginExitCode: exitCode,
+        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+      };
+    } catch (err) {
+      const error: AppError =
+        typeof err === 'object' && err && 'code' in err && 'category' in err
+          ? (err as AppError)
+          : {
+              code: ErrorCode.DB_WRITE_FAILED,
+              category: 'db',
+              message: 'ingest failed',
+              retryable: true,
+              redacted_context: { cause: err instanceof Error ? err.message : String(err) },
+            };
+
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Failed',
+          finishedAt,
+          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+          errors: [error],
+          warnings: warningsValue as Prisma.InputJsonValue,
+          errorSummary: error.message,
+        },
+      });
+
+      return {
+        status: 'Failed',
+        error,
+        errorsCount: 1,
+        warningsCount: warningsValue.length,
+        pluginExitCode: exitCode,
+        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
+        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+      };
+    }
+  }
 
   await prisma.run.update({
     where: { id: run.id },
     data: {
-      status: success ? 'Succeeded' : 'Failed',
-      finishedAt: new Date(),
+      status: 'Succeeded',
+      finishedAt,
       detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
       stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-      errors: errorsValue as Prisma.InputJsonValue,
+      errors: [],
       warnings: warningsValue as Prisma.InputJsonValue,
-      errorSummary: success ? null : `plugin failed (exitCode=${exitCode})`,
+      errorSummary: null,
     },
   });
 
   return {
-    status: success ? 'Succeeded' : 'Failed',
-    error: success
-      ? undefined
-      : ({
-          code: ErrorCode.PLUGIN_EXIT_NONZERO,
-          category: 'unknown',
-          message: 'plugin failed',
-          retryable: false,
-        } satisfies AppError),
-    errorsCount: errorsValue.length,
+    status: 'Succeeded',
+    errorsCount: 0,
     warningsCount: warningsValue.length,
     pluginExitCode: exitCode,
     detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
