@@ -7,6 +7,31 @@ function log(message: string, extra?: Record<string, unknown>) {
   console.log(`[scheduler] ${message}${payload}`);
 }
 
+function logScheduleGroupTriggered(input: {
+  scheduleGroupId: string;
+  timezone: string;
+  localDate: string;
+  hhmm: string;
+  queued: number;
+  skippedActive: number;
+}) {
+  const event = {
+    ts: new Date().toISOString(),
+    level: 'info',
+    service: 'scheduler',
+    env: process.env.NODE_ENV ?? 'development',
+    event_type: 'schedule_group.triggered',
+    schedule_group_id: input.scheduleGroupId,
+    timezone: input.timezone,
+    local_date: input.localDate,
+    hhmm: input.hhmm,
+    queued: input.queued,
+    skipped_active: input.skippedActive,
+  };
+
+  console.log(JSON.stringify(event));
+}
+
 async function enqueueDueGroups(now: Date) {
   const groups = await prisma.scheduleGroup.findMany({
     where: { enabled: true },
@@ -45,7 +70,7 @@ async function enqueueDueGroups(now: Date) {
     if (updated.count === 0) continue;
 
     const sources = await prisma.source.findMany({
-      where: { enabled: true, scheduleGroupId: group.id },
+      where: { enabled: true, scheduleGroupId: group.id, deletedAt: null },
       select: { id: true },
     });
     const sourceIds = sources.map((s) => s.id);
@@ -80,9 +105,9 @@ async function enqueueDueGroups(now: Date) {
       });
     }
 
-    log('triggered schedule group', {
-      groupId: group.id,
-      groupName: group.name,
+    logScheduleGroupTriggered({
+      scheduleGroupId: group.id,
+      timezone: group.timezone,
       localDate: local.localDate,
       hhmm: local.hhmm,
       queued: toQueue.length,
