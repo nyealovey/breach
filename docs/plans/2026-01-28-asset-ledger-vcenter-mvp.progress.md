@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：9 / 17
-- 当前批次：Batch 3（Task 7-9：配置管理）
+- 任务完成：12 / 17
+- 当前批次：Batch 5（Task 13-14：资产展示）
 
 ## 任务进度（按建议执行顺序）
 
@@ -62,13 +62,13 @@
 ### Batch 4：采集核心（Task 10-12）
 
 10. Task 10：vCenter Collector Plugin（TypeScript）
-    - 状态：TODO
+    - 状态：DONE
 
 11. Task 11：Collector 契约对齐 + Schema 校验（Ajv）
-    - 状态：TODO
+    - 状态：DONE
 
 12. Task 12：Ingest Pipeline（raw 入账、绑定、关系 upsert、canonical-v1）
-    - 状态：TODO
+    - 状态：DONE
 
 ### Batch 5：资产展示（Task 13-14）
 
