@@ -18,7 +18,7 @@
 
 ## 总体进度
 
-- 任务完成：2 / 17
+- 任务完成：3 / 17
 - 当前批次：Batch 1（Task 1-3：基础设施）
 
 ## 任务进度（按建议执行顺序）
@@ -34,7 +34,7 @@
    - 产出：`vitest.config.ts`、`src/test/setup.ts`、timezone 单测、`bun test`
 
 3. Task 3：UI 基座（Tailwind + shadcn/ui）与通用组件选型落地
-   - 状态：TODO
+   - 状态：DONE
    - 产出：Tailwind 配置、`components.json`、`src/components/ui/*`、`src/lib/ui/cn.ts`、基础布局
 
 ### Batch 2：数据模型 + 认证/加密（Task 4-6）

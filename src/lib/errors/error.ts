@@ -36,4 +36,3 @@ export function toPublicError(err: unknown): AppError {
   if (isAppError(err)) return err;
   return { code: 'INTERNAL_ERROR', category: 'unknown', message: 'Internal error', retryable: false };
 }
-

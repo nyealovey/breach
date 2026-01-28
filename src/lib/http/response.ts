@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 
-import type { AppError } from '@/lib/errors/error';
 import { getOrCreateRequestId } from '@/lib/http/request-id';
+
+import type { AppError } from '@/lib/errors/error';
 
 export type ResponseMeta = {
   requestId: string;
@@ -33,35 +34,23 @@ function buildMeta(requestId?: string): ResponseMeta {
 export function ok<T>(data: T, options: ResponseOptions = {}) {
   const meta = buildMeta(options.requestId);
   const init = withRequestIdHeaders(meta.requestId, options.init);
-  return NextResponse.json(
-    { data, meta },
-    { ...init, status: 200 },
-  );
+  return NextResponse.json({ data, meta }, { ...init, status: 200 });
 }
 
 export function okPaginated<T>(data: T[], pagination: Pagination, options: ResponseOptions = {}) {
   const meta = buildMeta(options.requestId);
   const init = withRequestIdHeaders(meta.requestId, options.init);
-  return NextResponse.json(
-    { data, pagination, meta },
-    { ...init, status: 200 },
-  );
+  return NextResponse.json({ data, pagination, meta }, { ...init, status: 200 });
 }
 
 export function created<T>(data: T, options: ResponseOptions = {}) {
   const meta = buildMeta(options.requestId);
   const init = withRequestIdHeaders(meta.requestId, options.init);
-  return NextResponse.json(
-    { data, meta },
-    { ...init, status: 201 },
-  );
+  return NextResponse.json({ data, meta }, { ...init, status: 201 });
 }
 
 export function fail(error: AppError, status: number, options: ResponseOptions = {}) {
   const meta = buildMeta(options.requestId);
   const init = withRequestIdHeaders(meta.requestId, options.init);
-  return NextResponse.json(
-    { error, meta },
-    { ...init, status },
-  );
+  return NextResponse.json({ error, meta }, { ...init, status });
 }

@@ -7,4 +7,3 @@ describe('toPublicError', () => {
     expect(toPublicError('x').code).toBe('INTERNAL_ERROR');
   });
 });
-
