@@ -26,7 +26,7 @@
 ### Batch 1：基础设施（Task 1-3）
 
 1. Task 1：建立错误码/错误响应最小闭环（Web + Worker 共用）
-   - 状态：TODO
+   - 状态：DOING
    - 产出：`src/lib/errors/*`、`src/lib/http/*` + 最小单测占位
 
 2. Task 2：建立测试基座（Vitest）并接入最小单测
