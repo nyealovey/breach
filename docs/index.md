@@ -20,5 +20,8 @@
 ## 历史与计划（可忽略）
 
 - PRD（历史范围说明）：`docs/prds/`
+  - vCenter MVP v1.0：`docs/prds/asset-ledger-v1.0-prd.md`
+  - Host 字段模型 v1.0：`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`
+  - 凭据模块 + 调度组手动运行 v1.0：`docs/prds/asset-ledger-credential-module-and-schedule-group-manual-run-v1.0-prd.md`
 - 计划（工程任务拆分）：`docs/plans/`
 - vCenter MVP v1.0 实施进度（执行记录）：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
