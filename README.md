@@ -110,6 +110,8 @@ List of websites that started off with Next.js TypeScript Starter:
 - PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - v1.0 需求追溯矩阵（Traceability）：[`docs/requirements/asset-ledger-v1.0-traceability.md`](docs/requirements/asset-ledger-v1.0-traceability.md)
 - vCenter MVP v1.0 实施进度（执行记录）：[`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`](docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md)
+- 凭据模块 + 调度组手动运行 v1.0 实施计划：[`docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.md`](docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.md)
+- 凭据模块 + 调度组手动运行 v1.0 执行进度：[`docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.progress.md`](docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.progress.md)
 
 设计文档：
 

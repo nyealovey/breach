@@ -25,3 +25,5 @@
   - 凭据模块 + 调度组手动运行 v1.0：`docs/prds/asset-ledger-credential-module-and-schedule-group-manual-run-v1.0-prd.md`
 - 计划（工程任务拆分）：`docs/plans/`
 - vCenter MVP v1.0 实施进度（执行记录）：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
+- 凭据模块 + 调度组手动运行 v1.0 实施计划：`docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.md`
+- 凭据模块 + 调度组手动运行 v1.0 执行进度：`docs/plans/2026-01-28-asset-ledger-credential-module-and-schedule-group-manual-run.progress.md`

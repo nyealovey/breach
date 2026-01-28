@@ -62,15 +62,17 @@
 
 - 凭据明文字段仅在“创建/更新”时由管理员输入；任何查询接口均不返回明文 secret。
 - 持久化时将 payload（按 type 的字段集合）序列化为 JSON 后，用 AES-256-GCM 加密写入数据库。
-- 生产与本地环境均要求 `PASSWORD_ENCRYPTION_KEY` 为长期固定值，否则无法解密已保存凭据。
+- `PASSWORD_ENCRYPTION_KEY` 为 **base64 的 32 bytes key**（base64 解码后长度必须为 32 字节），且要求长期固定值；本期不支持 key 轮换，否则将无法解密已保存凭据。
 
 #### 1.3 CRUD 行为
 
-- 创建凭据：需要 `name`（唯一）+ `type` + `payload`（按类型字段）。
-- 编辑凭据：允许修改 `name`；允许“更新密钥/密码”（输入新的 payload 覆盖旧值），不回显旧 secret。
+- 创建凭据：需要 `name`（表内唯一）+ `type` + `payload`（按类型字段）。
+  - **唯一性约束**：`Credential.name` 在凭据表内全局唯一，不区分 `type`（不做跨资源/跨表重名限制）。
+- 编辑凭据：允许修改 `name`；允许"更新密钥/密码"（输入新的 payload 覆盖旧值），不回显旧 secret。
+  - **生效时机**：凭据更新后立即生效；已绑定的 Source 在下次采集时自动使用新凭据（无需重新绑定）。
 - 删除凭据：
-  - 若仍有任何 Source 引用该凭据：**禁止删除**（返回 409）。
-  - 仅当 `usageCount=0`（无引用）时允许删除。
+  - 若仍有任何未删除 Source（`Source.deletedAt IS NULL`）引用该凭据：**禁止删除**（返回 409，错误码 `CONFIG_RESOURCE_CONFLICT`）。
+  - 仅当 `usageCount=0`（无引用，且仅统计 `Source.deletedAt IS NULL`）时允许删除。
 
 #### 1.4 Source 绑定行为
 
@@ -110,11 +112,19 @@ Source 创建/编辑时可选绑定 `credentialId`（可为空）。
 
 #### 3.1 Credentials API（admin-only）
 
-- `GET /api/v1/credentials`：列表（建议支持按 `type` 过滤、按 `name` 搜索；返回不含明文 secret）
+- `GET /api/v1/credentials`：列表
+  - **查询参数**：
+    - `type`：按凭据类型过滤（vcenter/pve/hyperv/aliyun/third_party）
+    - `q`：按 `name` 模糊搜索（不区分大小写，包含匹配）
+    - `page`：页码，默认 `1`（从 1 开始）
+    - `pageSize`：每页条数，默认 `20`（最大 100）
+    - `sortBy`：排序字段，默认 `updatedAt`（可选：`name`/`type`/`usageCount`/`createdAt`/`updatedAt`）
+    - `sortOrder`：排序方向，默认 `desc`（可选：`asc`/`desc`）
+  - **响应**：返回不含明文 secret；包含 `pagination` 对象
 - `POST /api/v1/credentials`：创建（写入加密 payload）
-- `GET /api/v1/credentials/:id`：详情（包含 `usageCount`，不含明文）
+- `GET /api/v1/credentials/:id`：详情（包含 `usageCount`，仅统计 `Source.deletedAt IS NULL` 的引用；不含明文）
 - `PUT /api/v1/credentials/:id`：更新（可改 `name`；可覆盖更新 payload）
-- `DELETE /api/v1/credentials/:id`：删除（usageCount>0 返回 409）
+- `DELETE /api/v1/credentials/:id`：删除（usageCount>0 返回 409，错误码 `CONFIG_RESOURCE_CONFLICT`）
 
 #### 3.2 Source API 变更（admin-only）
 
@@ -126,6 +136,7 @@ Source 创建/编辑时可选绑定 `credentialId`（可为空）。
 
 - `POST /api/v1/schedule-groups/:id/runs`
   - 批量创建 Run（collect/manual）
+  - **并发控制**：使用数据库事务 + `FOR UPDATE SKIP LOCKED` 确保并发安全；同一 Source 的活动 Run 检查与新 Run 创建在同一事务内完成，避免竞态条件导致重复入队。
   - 返回：`queued`、`skipped_active`、`skipped_missing_credential`、`message?`
 
 ### 4) Web UI
@@ -199,7 +210,31 @@ Source 创建/编辑时可选绑定 `credentialId`（可为空）。
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-28  
-**Clarification Rounds**: 5  
+**Document Version**: 1.2
+**Created**: 2026-01-28
+**Updated**: 2026-01-28
+**Clarification Rounds**: 7
 **Quality Score**: 100/100
+
+### Appendix: Clarification Summary
+
+本次补充澄清了以下细节：
+
+#### v1.0 → v1.1
+
+| 维度 | 原状态 | 补充内容 |
+|------|--------|----------|
+| 凭据名称唯一性 | 仅说明"唯一" | 明确为"全局唯一"，与 `schedule_group.name` 一致 |
+| 凭据更新生效时机 | 未说明 | 明确"立即生效，已绑定 Source 下次采集自动使用新凭据" |
+| API 分页参数 | 仅说明"建议支持" | 明确 `page=1`、`pageSize=20`（最大 100）、`sortBy=updatedAt`、`sortOrder=desc` |
+| API 排序字段 | 未说明 | 明确可选字段：`name/type/usageCount/createdAt/updatedAt` |
+| 并发控制 | 未说明 | 明确使用事务 + `FOR UPDATE SKIP LOCKED` 避免竞态条件 |
+| 错误码 | 仅说明"返回 409" | 明确错误码为 `CONFIG_RESOURCE_CONFLICT`，与 API 规范对齐 |
+
+#### v1.1 → v1.2
+
+| 维度 | v1.1 状态 | v1.2 补充内容 |
+|------|----------|--------------|
+| 凭据名称唯一性口径 | 误写为“跨表全局唯一” | 更正为“仅 Credential 表内唯一，不做跨资源/跨表重名限制” |
+| usageCount/删除限制口径 | 未说明是否排除软删除 Source | 明确只统计 `Source.deletedAt IS NULL` 的引用 |
+| 加密 key 规格 | 仅说明“长期固定” | 明确 `PASSWORD_ENCRYPTION_KEY` 为 base64 的 32 bytes key，且本期不支持轮换 |
