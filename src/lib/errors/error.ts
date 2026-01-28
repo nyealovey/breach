@@ -1,6 +1,23 @@
 import type { ErrorCodeType } from '@/lib/errors/error-codes';
 
-export type ErrorCategory = 'auth' | 'permission' | 'network' | 'rate_limit' | 'parse' | 'config' | 'unknown';
+/**
+ * JSON value type that is compatible with Prisma `InputJsonValue`.
+ *
+ * NOTE: Keep this type Prisma-free so it can be shared by both Web and Worker code.
+ */
+export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
+export type ErrorCategory =
+  | 'auth'
+  | 'permission'
+  | 'config'
+  | 'network'
+  | 'rate_limit'
+  | 'parse'
+  | 'schema'
+  | 'db'
+  | 'raw'
+  | 'unknown';
 
 export type ErrorDetail = {
   field?: string;
@@ -13,7 +30,7 @@ export type AppError = {
   category: ErrorCategory;
   message: string;
   retryable: boolean;
-  redacted_context?: Record<string, unknown>;
+  redacted_context?: Record<string, JsonValue>;
   details?: ErrorDetail[];
 };
 

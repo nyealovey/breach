@@ -1,9 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-import { serverEnv } from '@/lib/env/server';
-
 function requireKeyBytes(keyB64Url?: string) {
-  const raw = keyB64Url ?? serverEnv.PASSWORD_ENCRYPTION_KEY;
+  // Avoid importing serverEnv here: tests and other isolated utilities should be able to
+  // use this helper by passing an explicit key without requiring full env validation.
+  const raw = keyB64Url ?? process.env.PASSWORD_ENCRYPTION_KEY;
   if (!raw) throw new Error('PASSWORD_ENCRYPTION_KEY is required');
 
   const key = Buffer.from(raw, 'base64url');
