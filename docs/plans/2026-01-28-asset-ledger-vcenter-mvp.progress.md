@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：6 / 17
-- 当前批次：Batch 1（Task 1-3：基础设施）
+- 任务完成：9 / 17
+- 当前批次：Batch 3（Task 7-9：配置管理）
 
 ## 任务进度（按建议执行顺序）
 
@@ -51,13 +51,13 @@
 ### Batch 3：配置管理（Task 7-9）
 
 7. Task 7：调度组 API + UI（含 scheduler 事件）
-   - 状态：TODO
+   - 状态：DONE
 
 8. Task 8：Source API + UI（软删除、最近 Run 摘要、凭据更新）
-   - 状态：TODO
+   - 状态：DONE
 
 9. Task 9：Run API + UI（手动触发、列表/详情、单飞抑制审计；不做 cancel）
-   - 状态：TODO
+   - 状态：DONE
 
 ### Batch 4：采集核心（Task 10-12）
 

@@ -29,6 +29,7 @@
 ### Task 1: 建立错误码/错误响应的最小闭环（Web + Worker 共用）
 
 **Files:**
+
 - Create: `src/lib/errors/error-codes.ts`
 - Create: `src/lib/errors/error.ts`
 - Create: `src/lib/http/response.ts`
@@ -103,24 +104,15 @@ import { NextResponse } from 'next/server';
 import type { AppError } from '@/lib/errors/error';
 
 export function ok<T>(data: T, init?: ResponseInit) {
-  return NextResponse.json(
-    { data, meta: { timestamp: new Date().toISOString() } },
-    { status: 200, ...init },
-  );
+  return NextResponse.json({ data, meta: { timestamp: new Date().toISOString() } }, { status: 200, ...init });
 }
 
 export function created<T>(data: T, init?: ResponseInit) {
-  return NextResponse.json(
-    { data, meta: { timestamp: new Date().toISOString() } },
-    { status: 201, ...init },
-  );
+  return NextResponse.json({ data, meta: { timestamp: new Date().toISOString() } }, { status: 201, ...init });
 }
 
 export function fail(error: AppError, status: number, init?: ResponseInit) {
-  return NextResponse.json(
-    { error, meta: { timestamp: new Date().toISOString() } },
-    { status, ...init },
-  );
+  return NextResponse.json({ error, meta: { timestamp: new Date().toISOString() } }, { status, ...init });
 }
 ```
 
@@ -164,6 +156,7 @@ git commit -m "feat: add shared error model and api response helpers"
 ### Task 2: 建立测试基座（Vitest）并接入最小单测
 
 **Files:**
+
 - Modify: `package.json`
 - Create: `vitest.config.ts`
 - Create: `src/test/setup.ts`
@@ -246,6 +239,7 @@ git commit -m "chore: set up vitest"
 ### Task 3: UI 基座（Tailwind + shadcn/ui）与通用组件选型落地
 
 **Files:**
+
 - Modify: `src/app/globals.css`
 - Modify: `src/app/layout.tsx`
 - Create: `components.json`
@@ -343,6 +337,7 @@ git commit -m "chore: add tailwind and shadcn ui foundation"
 ### Task 4: Prisma 数据模型补齐 v1.0（User/Session/Audit/Asset/Record/Relation）与分区迁移脚手架
 
 **Files:**
+
 - Modify: `prisma/schema.prisma`
 - Create: `prisma/migrations/*`（Prisma 自动生成 + 手写 SQL 分区）
 - Create: `src/lib/auth/password.ts`
@@ -399,6 +394,7 @@ git commit -m "feat: extend prisma schema for vcenter mvp domain"
 ### Task 5: 认证与会话（AC-01 / FR-00）：admin 初始化、登录、登出、改密
 
 **Files:**
+
 - Create: `src/lib/auth/bootstrap-admin.ts`
 - Create: `src/lib/auth/session.ts`
 - Create: `src/lib/auth/password.ts`
@@ -473,6 +469,7 @@ git commit -m "feat: add admin auth session and login page"
 ### Task 6: 凭据加密（AES-256-GCM）工具（AC-02 前置）
 
 **Files:**
+
 - Create: `src/lib/crypto/aes-gcm.ts`
 - Test: `src/lib/crypto/aes-gcm.test.ts`
 
@@ -505,6 +502,7 @@ git commit -m "feat: add aes-256-gcm helper for credential encryption"
 ### Task 7: 调度组 API + UI（AC-03 部分）
 
 **Files:**
+
 - Create: `src/app/api/v1/schedule-groups/route.ts`
 - Create: `src/app/api/v1/schedule-groups/[id]/route.ts`
 - Create: `src/app/schedule-groups/page.tsx`
@@ -541,6 +539,7 @@ git commit -m "feat: add schedule group api and pages"
 ### Task 8: Source API + UI（AC-02）含软删除、最近 Run 摘要、凭据更新
 
 **Files:**
+
 - Create: `src/app/api/v1/sources/route.ts`
 - Create: `src/app/api/v1/sources/[id]/route.ts`
 - Create: `src/app/api/v1/sources/[id]/credential/route.ts`
@@ -582,6 +581,7 @@ git commit -m "feat: add source api and pages with encrypted credential update"
 ### Task 9: Run API + UI（AC-03/AC-04）：手动触发、列表/详情、单飞抑制审计（不做 cancel）
 
 **Files:**
+
 - Create: `src/app/api/v1/runs/route.ts`
 - Create: `src/app/api/v1/runs/[id]/route.ts`
 - Create: `src/app/api/v1/sources/[id]/runs/route.ts`
@@ -633,6 +633,7 @@ git commit -m "feat: add run api pages and worker run finished events"
 > **技术选型决策**：选择 TypeScript + vSphere REST API，理由见 `docs/design/asset-ledger-collector-reference.md` 第 10 节。
 
 **Files:**
+
 - Create: `plugins/vcenter/index.ts`
 - Create: `plugins/vcenter/client.ts`
 - Create: `plugins/vcenter/normalize.ts`
@@ -687,6 +688,7 @@ mkdir -p plugins/vcenter/__tests__
 - TLS：跳过证书校验（v1.0 允许自签名）
 
 vSphere REST API 端点：
+
 - `POST /api/session` → session token
 - `GET /api/vcenter/vm` → VM 列表
 - `GET /api/vcenter/vm/{vm}` → VM 详情
@@ -704,6 +706,7 @@ vSphere REST API 端点：
 - `buildRelations(vms, hosts, clusters): Relation[]`
 
 normalized 字段映射（对齐 `docs/design/asset-ledger-json-schema.md`）：
+
 - VM: `identity.machine_uuid` ← `instance_uuid`，`identity.hostname` ← `guest.host_name`，`network.mac_addresses` ← `nics[].mac_address`
 - Host: `identity.serial_number` ← `hardware.system_info.serial_number`，`network.management_ip` ← 从 vnics 提取
 
@@ -718,9 +721,15 @@ const request = JSON.parse(input);
 
 // 2. 根据 mode 分发
 switch (request.request.mode) {
-  case 'healthcheck': response = await healthcheck(request); break;
-  case 'detect': response = await detect(request); break;
-  case 'collect': response = await collect(request); break;
+  case 'healthcheck':
+    response = await healthcheck(request);
+    break;
+  case 'detect':
+    response = await detect(request);
+    break;
+  case 'collect':
+    response = await collect(request);
+    break;
 }
 
 // 3. 输出到 stdout
@@ -765,6 +774,7 @@ git commit -m "feat: add vcenter collector plugin (typescript)"
 ### Task 11: Collector 契约对齐（collector-request/response v1）+ Schema 校验（AC-04 / Q-04）
 
 **Files:**
+
 - Create: `src/lib/schema/normalized-v1.schema.json`
 - Create: `src/lib/schema/canonical-v1.schema.json`
 - Create: `src/lib/schema/validate.ts`
@@ -806,6 +816,7 @@ git commit -m "feat: validate collector output with json schema"
 ### Task 12: Ingest Pipeline（AC-05/AC-06）：入账、绑定、关系 upsert、生成 canonical-v1
 
 **Files:**
+
 - Create: `src/lib/ingest/ingest-run.ts`
 - Create: `src/lib/ingest/raw.ts`
 - Create: `src/lib/ingest/canonical.ts`
@@ -826,7 +837,7 @@ git commit -m "feat: validate collector output with json schema"
 
 - 事务内处理：对每个 plugin asset
   - upsert `AssetSourceLink`（不存在则创建新 Asset + link）
-  - 写入 `SourceRecord`（含 normalized + raw bytes + raw_* 元数据 + collectedAt/runId/sourceId/linkId）
+  - 写入 `SourceRecord`（含 normalized + raw bytes + raw\_\* 元数据 + collectedAt/runId/sourceId/linkId）
 
 **Step 3: RelationRecord + Relation upsert**
 
@@ -864,6 +875,7 @@ git commit -m "feat: ingest assets relations and generate canonical snapshots"
 ### Task 13: Asset API + UI（AC-05/AC-06）
 
 **Files:**
+
 - Create: `src/app/api/v1/assets/route.ts`
 - Create: `src/app/api/v1/assets/[uuid]/route.ts`
 - Create: `src/app/api/v1/assets/[uuid]/relations/route.ts`
@@ -908,6 +920,7 @@ git commit -m "feat: add asset api and pages"
 ### Task 14: Raw 查看入口（SourceRecord raw payload）+ 审计（admin-only）
 
 **Files:**
+
 - Create: `src/app/api/v1/source-records/[recordId]/raw/route.ts`
 - Modify: `src/app/assets/[uuid]/page.tsx`
 - Create: `src/components/raw/raw-dialog.tsx`
@@ -957,6 +970,7 @@ git commit -m "feat: add admin raw viewer with audit"
 ### Task 15: OpenAPI/Swagger 交付物（AC-08）
 
 **Files:**
+
 - Create: `src/lib/openapi/spec.ts`
 - Create: `src/app/api/openapi.json/route.ts`
 - Create: `src/app/api/docs/page.tsx`（或 `src/app/api/docs/route.ts`）
@@ -992,6 +1006,7 @@ git commit -m "feat: add openapi json and swagger ui"
 ### Task 16: 日志规范落地（Q-02）：http.request / schedule_group.triggered / run.finished
 
 **Files:**
+
 - Create: `src/lib/logging/logger.ts`
 - Modify: `src/middleware.ts`
 - Modify: `src/bin/scheduler.ts`
@@ -1026,6 +1041,7 @@ git commit -m "feat: add wide event logging"
 ### Task 17: E2E 闭环验收（Playwright）与最小集成测试
 
 **Files:**
+
 - Create: `playwright.config.ts`
 - Create: `e2e/admin.spec.ts`
 - (Optional) Create: `src/test/db.ts`（测试库创建/清理）

@@ -117,6 +117,13 @@ List of websites that started off with Next.js TypeScript Starter:
 - normalized/canonical JSON Schema：[`docs/design/asset-ledger-json-schema.md`](docs/design/asset-ledger-json-schema.md)
 - 旧字段映射（导入/对齐）：[`docs/design/asset-ledger-legacy-field-mapping.md`](docs/design/asset-ledger-legacy-field-mapping.md)
 
+### MVP UI 页面（持续完善）
+
+- `/login`：管理员登录
+- `/schedule-groups`：调度组配置
+- `/sources`：来源配置与凭据更新
+- `/runs`：采集 Run 列表与详情
+
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）
 
 环境变量（服务端）：

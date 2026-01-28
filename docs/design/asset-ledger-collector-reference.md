@@ -799,10 +799,10 @@ export class MockVCenterServer {
 
 ### 10.2 备选方案对比
 
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| **Go + govmomi** | VMware 官方 SDK；单二进制部署；完整 SOAP API | 引入新语言，增加技术栈复杂度 |
-| **Python + pyVmomi** | VMware 官方 SDK；开发快 | 需 Python 运行时；依赖管理复杂 |
+| 方案                      | 优点                                          | 缺点                                             |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------ |
+| **Go + govmomi**          | VMware 官方 SDK；单二进制部署；完整 SOAP API  | 引入新语言，增加技术栈复杂度                     |
+| **Python + pyVmomi**      | VMware 官方 SDK；开发快                       | 需 Python 运行时；依赖管理复杂                   |
 | **TypeScript + REST API** | 与项目技术栈一致；复用工具/类型；Bun 直接运行 | 需自行封装 REST API；REST API 功能相对 SOAP 有限 |
 
 ### 10.3 选择 TypeScript 的理由
