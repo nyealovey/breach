@@ -18,8 +18,8 @@
 
 ## 总体进度
 
-- 任务完成：15 / 17
-- 当前批次：Batch 6（Task 15/17：OpenAPI + E2E）
+- 任务完成：16 / 17
+- 当前批次：Batch 6（Task 17：E2E）
 
 ## 任务进度（按建议执行顺序）
 
@@ -87,7 +87,8 @@
     - 产出：结构化宽事件 logger（`src/lib/logging/logger.ts`）+ middleware/http.request + scheduler/worker 域事件 + 单测
 
 16. Task 15：OpenAPI/Swagger（openapi.json + /api/docs）
-    - 状态：TODO
+    - 状态：DONE
+    - 产出：`/api/openapi.json` + `/api/docs`（Swagger UI）+ spec 单测
 
 17. Task 17：E2E 闭环验收（Playwright）与最小集成测试
     - 状态：TODO
