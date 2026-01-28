@@ -144,7 +144,7 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 
 #### 2.3.2 子进程退出码
 
-**错误信号主判据（D-09，已决策）**
+**错误信号主判据**
 
 - 子进程以退出码判定成功（0 成功，非 0 失败）；`errors[]` 用于解释与分类。
 
@@ -152,7 +152,7 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 
 采集过程可能出现“已采集部分资产，但中途失败”的情况。
 
-**部分成功落库（D-10，已决策）**
+**部分成功落库**
 
 - 允许落库已采集的 `source_record/raw` 用于排障，但该 Run 仍标记为 Failed；核心不得据此推进 missing/last_seen/关系 last_seen（仅成功 Run 才能推进）。
 
@@ -289,14 +289,14 @@ flowchart TD
 
 ### 6.2 核心侧 raw 存储形态（必须）
 
-> 说明：此处属于核心实现/运维决策，但会影响插件契约（例如是否需要输出 raw_ref），因此在此记录。
+> 说明：此处会影响插件契约（例如是否需要输出 raw_ref），因此在此明确。
 
-**raw_payload 落库方案（D-11，已决策）**
+**raw_payload 落库方案**
 
 - 单机 PG-only：raw 以 **zstd** 压缩后内联存 PostgreSQL（`bytea`），并对高增长表做按月分区。
 - raw 元数据固定为：`raw_ref/raw_hash/raw_size_bytes/raw_compression`（`raw_compression=zstd`）；`raw_ref` 固定为记录主键（`record_id`/`relation_record_id`）。
 
-### 6.3 压缩策略（已决策）
+### 6.3 压缩策略
 
 - 默认启用压缩并记录到 `raw_compression`：固定为 `zstd`。
 
@@ -306,13 +306,6 @@ flowchart TD
 - **插件超时配置**：环境变量 `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`，默认值 `300000`（5 分钟），可配置范围 `60000~1800000`（1~30 分钟）。
   - 超时后核心会终止插件进程并标记 Run 失败（错误码 `PLUGIN_TIMEOUT`）。
   - 建议根据 Source 规模调整：小规模（< 500 资产）可用默认值；大规模（> 5000 资产）建议增加到 10~15 分钟。
-
-## 决策记录（Decision Log，已确认）
-
-- **D-09（错误信号主判据）**：退出码为主判据；`errors[]` 用于解释与分类。
-- **D-10（部分成功落库语义）**：允许落库排障证据，但 Run 失败不推进 missing/last_seen/关系 last_seen 等语义。
-- **D-11（raw_payload 落库方案）**：单机 PG-only：raw 以 zstd 压缩后内联 PostgreSQL（bytea）；保留 `raw_ref/raw_hash/raw_size_bytes/raw_compression` 元数据。
-- **D-12（压缩策略）**：压缩算法固定为 `zstd`。
 
 ## 8. 插件开发快速指南
 

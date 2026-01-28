@@ -138,7 +138,7 @@
 
 **分区策略**
 
-> 与 `relation_record` 共享相同的分区策略，详见 2.7 节的 **D-08（分区策略）**。
+> 与 `relation_record` 共享相同的分区策略，详见 2.7 节的“分区策略”说明。
 
 - **分区键**：`collected_at`
 - **分区粒度**：按月分区
@@ -180,7 +180,7 @@
 
 - 索引：`(run_id)`、`(source_id)`、`(relation_type, from_asset_uuid, to_asset_uuid)`
 
-**分区策略（D-08，已决策）**
+**分区策略**
 
 > 目标：控制高增长表的查询性能与维护成本，同时满足"永久保留"语义。
 
@@ -263,11 +263,11 @@
 - 索引：`(actor_user_id, occurred_at desc)`（按人追溯）
 - 索引：`(event_type, occurred_at desc)`（按事件类型审计）
 
-**审计落库形态（D-05，已决策）**
+**审计落库形态**
 
 - 仅使用 `audit_event` 统一承载所有审计（包括字段值变更）。
 
-**subject 外键策略（D-06，已决策）**
+**subject 外键策略**
 
 - 为常见对象增加可选 typed FK 列（`asset_uuid/source_id/run_id/candidate_id/...`），同时保留 `subject_type + subject_id`，以获得参照完整性与查询性能。
 
@@ -503,7 +503,7 @@ stateDiagram-v2
 
 合并后的历史：当 asset B 合并进 asset A 时，B 的历史不应丢失；展示层可将 B 的 `source_record` 与 `audit_event` 归并到 A 的时间线中，同时保留“来源于被合并资产 B”的标识。
 
-**历史快照形态（D-07，已决策）**
+**历史快照形态**
 
 - 物化 `asset_run_snapshot` 持久化“每次 Run 的展示快照/摘要”，以稳定口径并提升读性能。
 
@@ -515,14 +515,6 @@ stateDiagram-v2
   - 由可见性汇总得到的 `asset.status`（in_service/offline）
 - `mode=detect/healthcheck` 的 Run 不推进缺失/下线/关系失活语义（仅记录探测/连通性结果）。
 - **Failed/Cancelled** 的 Run 可持久化错误与部分采集结果（用于排障），但不得作为“缺失/下线/关系失活”的依据。
-
-## 决策记录（Decision Log，已确认）
-
-- **D-05（审计落库形态）**：仅使用 `audit_event` 统一承载所有审计（append-only）。
-- **D-06（subject 外键策略）**：对常见对象增加可选 typed FK 列，同时保留 `subject_type + subject_id`。
-- **D-07（历史快照形态）**：物化 `asset_run_snapshot` 持久化"按 Run 的展示快照/摘要"。
-- **D-08（分区策略）**：`source_record` 与 `relation_record` 按 `collected_at` 月分区，永久保留，允许历史分区迁移到低成本存储。
-- raw 存储方案：见 `docs/design/asset-ledger-collector-reference.md` 的 **D-11**（raw_payload 落库方案）与 **D-12**（压缩策略）。
 
 ## 7. 索引策略详解
 

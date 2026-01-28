@@ -25,7 +25,7 @@
 - 排除：任一方 `asset.status=merged` 的资产不参与候选。
 - 可包含：`vm` / `host`（`cluster` 默认不生成候选，除非后续明确需要）。
 
-## 3. 候选时间窗（D-01，已决策）
+## 3. 候选时间窗
 
 - 候选范围：在管（in_service）+ 最近 `N` 天内出现过（`last_seen_at` within N days）的离线资产。
 - 参数：`N = 7`（天；常量固化，不提供 UI 配置）。
@@ -39,7 +39,7 @@
   - `90-100`：高（High）
   - `70-89`：中（Medium）
 
-## 5. 阈值固定（D-02，已决策）
+## 5. 阈值固定
 
 - 固定阈值：创建 `score >= 70`；High `score >= 90`。不提供配置项。
 
@@ -56,7 +56,7 @@
 | `host.bmc_ip_match`      | host     | 90   | `bmc_ip` 存在且完全相同                                     | 强信号：OOB 管理地址通常稳定；仍需注意 IP 复用 |
 | `host.mgmt_ip_match`     | host     | 70   | `management_ip` 存在且完全相同                              | 中信号：网段复用会误报                         |
 
-## 7. 候选键集合（D-03，已决策）
+## 7. 候选键集合
 
 - 最小集合：`machine_uuid`、`serial_number`、`mac_addresses`、`hostname`、`ip_addresses`、`bmc_ip`（host）
 - 可选：`management_ip`（host，in-band；仅来源可稳定提供时使用）
@@ -87,7 +87,7 @@
 
 基础要求：支持“永久忽略”。
 
-### ignored 抑制策略（D-04，已决策）
+### ignored 抑制策略
 
 - 处理：保持 `status=ignored` 不变；再次命中仅更新 `last_observed_at`，默认不再提示。
 - 不提供 `reopen` 能力：ignored 为终态。

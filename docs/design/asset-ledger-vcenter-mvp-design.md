@@ -15,15 +15,6 @@
 - 插件契约参考：`docs/design/asset-ledger-collector-reference.md`
 - normalized/canonical schema：`docs/design/asset-ledger-json-schema.md`
 
-## 0. 已确认决策（本项目）
-
-- 部署：单机自建
-- 采集：子进程调用插件（stdin 输入 JSON，stdout 输出 JSON）
-- 存储：仅 PostgreSQL（raw 也落在 PG）
-- ORM：Prisma
-- 调度：按“采集任务/调度组”配置固定触发时间（HH:mm）+ 时区；错过触发点不补跑（skip）
-- 不引入：对象存储、Redis 队列（除非后续有明确证据需要）
-
 ## 1. 架构概览（建议）
 
 以"Web 不阻塞采集"为核心原则，拆成三块：
@@ -152,7 +143,7 @@ sequenceDiagram
 
 - 插件契约：沿用 `collector-reference`；重点保证 `errors[]` 结构化、可读、可脱敏。
 - API：以“UI 所需最小集合”为边界，优先稳定可用；OpenAPI/Swagger 作为交付物。
-  - **OpenAPI（D-14，已决策）**：以 Zod schema 为单一真相生成 OpenAPI JSON（避免手写漂移）。
+  - **OpenAPI**：以 Zod schema 为单一真相生成 OpenAPI JSON（避免手写漂移）。
   - 交付形态：提供 OpenAPI JSON（例如 `/api/openapi.json`）与 Swagger UI（例如 `/api/docs`；生产环境建议仅管理员可访问）。
 
 ## 7. 安全（建议）
@@ -164,7 +155,7 @@ sequenceDiagram
   - 管理员密码使用 bcrypt 哈希存储，成本由 `BCRYPT_LOG_ROUNDS` 控制（默认 12）。
   - 认证采用 session（HttpOnly Cookie）维持登录态；`SECRET_KEY` 用于会话签名；v1.0 不使用 JWT（`JWT_SECRET_KEY` 预留给后续迭代）。
 - Secrets 管理：生产优先使用 Secret Manager（KMS/Cloud provider secrets）托管主密钥；MVP 可用环境变量（见 `README.md` 的环境变量章节；需制定轮转策略）。
-- raw：v1.0 不提供 UI/API 的 raw 查看入口（仅内部排障）；如未来开放 admin-only raw 查看入口，必须配套审计（见 SRS/FR-10）。
+- raw：v1.0 提供 admin-only 的 raw 查看入口（UI/API）；必须脱敏且访问动作必须记录审计（见 SRS/FR-10）。
 
 ## 8. 可观测性（建议）
 

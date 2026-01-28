@@ -96,13 +96,13 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ### 资产台账系统文档
 
-文档总览（建议先读，解释 PRD vs SRS 的分层与优先级）：[`docs/index.md`](docs/index.md)
+文档总览（推荐先读；需求口径以 SRS 为准）：[`docs/index.md`](docs/index.md)
 
 需求文档：
 
-- PRD（vCenter MVP v1.0）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
-- PRD（Host 字段模型 v1.0）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
-- 需求规格说明书（SRS）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
+- 需求规格说明书（SRS，需求口径/验收依据）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
+- PRD（vCenter MVP v1.0，历史范围说明）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
+- PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - v1.0 需求追溯矩阵（Traceability）：[`docs/requirements/asset-ledger-v1.0-traceability.md`](docs/requirements/asset-ledger-v1.0-traceability.md)
 
 设计文档：

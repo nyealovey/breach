@@ -1,6 +1,6 @@
 # 资产台账系统（vCenter MVP）- 产品需求文档（PRD）
 
-> 本 PRD 基于 `docs/requirements/*` 与需求澄清结果生成；若与 SRS/概念模型存在冲突，以本 PRD 的 v1.0 决策为准。
+> 本 PRD 仅用于描述 vCenter MVP 的范围与验收；完整需求口径请以 `docs/requirements/asset-ledger-srs.md` 为准。
 
 ## Requirements Description
 
@@ -28,29 +28,6 @@
 
 - **In Scope（v1.0）**：`FR-01~FR-05` + Web UI（Source/Run/Asset/关系链）+ OpenAPI/Swagger + 日志系统。
 - **Out of Scope（v1.0）**：`FR-06~FR-11`（自定义字段、重复中心/候选、人工合并、导出、历史时间线等）；多来源（仅 vCenter）；旧台账导入；对象存储 raw；备份/恢复方案（暂不纳入验收）。
-
-#### 与 SRS 的差异（v1.0 决策）
-
-- 角色：仅 admin（SRS 中的 user 角色推后）。
-- 来源：仅 vCenter（SRS 的多来源推后）。
-- raw 可见性：v1.0 **不提供** UI/API 的 raw 查看入口（仅内部排障）；因此 SRS 中关于 raw 可查看与访问审计（FR-10/NFR-07）的条款对 v1.0 不作为验收项；raw 的具体存储实现见技术设计文档。
-- 资产状态/last_seen：v1.0 **不实现** FR-09（下线语义）与 FR-11 的 `status/last_seen_at` 相关要求；资产列表不提供 `status` 过滤与 `last_seen_at` 排序。
-
-#### v1.0 与 SRS 差异汇总表
-
-| SRS 条款                | SRS 要求                       | v1.0 决策              | 说明              |
-| ----------------------- | ------------------------------ | ---------------------- | ----------------- |
-| 角色权限                | admin + user 两类角色          | **仅 admin**           | user 角色推后迭代 |
-| FR-01 来源类型          | 阿里云/Hyper-V/vCenter/PVE     | **仅 vCenter**         | 其他来源推后迭代  |
-| FR-06 自定义字段        | 管理员可新增/停用自定义字段    | **不实现**             | 推后迭代          |
-| FR-07 疑似重复候选      | 系统生成疑似重复候选           | **不实现**             | 推后迭代          |
-| FR-08 人工合并          | 管理员可合并重复资产           | **不实现**             | 推后迭代          |
-| FR-09 软删除/下线语义   | 来源消失标记为"未发现/下线"    | **不实现**             | 推后迭代          |
-| FR-10 raw 可查看        | 管理员可查看 raw payload       | **不提供 UI/API 入口** | 仅内部排障        |
-| FR-11 资产导出          | 管理员可导出全量台账           | **不实现**             | 推后迭代          |
-| FR-11 status 过滤       | 资产列表支持 status 过滤       | **不实现**             | 推后迭代          |
-| FR-11 last_seen_at 排序 | 资产列表支持 last_seen_at 排序 | **不实现**             | 推后迭代          |
-| NFR-07 raw 访问审计     | raw 访问需记录审计             | **不作为验收项**       | 无 UI/API 入口    |
 
 ### User Scenarios
 
@@ -129,13 +106,6 @@
 - `source_record`：含 `normalized`（schema 校验）+ `raw`（每条一份 raw，永久保留）。
 - `relation` / `relation_record`：关系边与每次关系 raw 快照。
 - `audit_event`：只增不改，永久保留。
-
-#### Raw 与分区策略（v1.0 决策）
-
-- raw 统一存 PostgreSQL，永久保留；并记录 raw 元数据：`raw_ref/raw_hash/raw_size_bytes/raw_compression`（raw 压缩算法固定为 `zstd`）。
-- `source_record` / `relation_record` 必须为按月分区表。
-- raw 不提供 UI/API 入口；仅用于内部排障。
-- raw 的具体存储形态固定为 **zstd 压缩 `bytea`**；分区/索引细节见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
 
 #### 数据校验
 

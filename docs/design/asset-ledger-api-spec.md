@@ -656,9 +656,7 @@
 
 ### 5.3 取消 Run
 
-**POST** `/api/v1/runs/:runId/cancel`
-
-**约束**：仅 `Queued` 或 `Running` 状态的 Run 可取消。
+v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:runId/cancel` 并补充“运行中中断插件进程/一致性回滚”的语义与实现。
 
 ## 6. Asset API
 
@@ -673,13 +671,21 @@
 
 **查询参数**：
 
-| 参数        | 类型   | 说明                                               |
-| ----------- | ------ | -------------------------------------------------- |
-| `assetType` | string | 按类型过滤（vm/host/cluster）                      |
-| `sourceId`  | string | 按来源过滤                                         |
-| `q`         | string | 关键字搜索（匹配 asset_uuid/hostname/external_id） |
-| `sortBy`    | string | 排序字段（displayName/createdAt）                  |
-| `sortOrder` | string | 排序方向（asc/desc）                               |
+| 参数        | 类型   | 说明                                                                                                                                    |
+| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `assetType` | string | 按类型过滤（vm/host/cluster）                                                                                                           |
+| `sourceId`  | string | 按来源过滤                                                                                                                              |
+| `q`         | string | 关键字搜索（覆盖资产列表页展示字段；空格分词 AND；不区分大小写；模糊包含匹配；仅文本字段 + 枚举展示文案；不做中文分词/同义词/拼写容错） |
+| `sortBy`    | string | 排序字段（displayName/createdAt）                                                                                                       |
+| `sortOrder` | string | 排序方向（asc/desc）                                                                                                                    |
+
+**关键字搜索（q）语义**：
+
+- 空格分词：将 `q` 按空白字符切分为多个词（连续空白视为一个分隔）。
+- AND：每个词都必须命中。
+- 匹配方式：不区分大小写的“包含”匹配（substring）。
+- 范围：仅对资产列表页展示字段中的文本类字段与枚举展示文案生效。
+- 空值处理：`q` 为空或仅包含空白时，视为未提供该参数。
 
 **成功响应**（200）：
 
@@ -835,6 +841,34 @@
 ```
 
 > 注意：`missing` 数组用于说明缺边原因（如 "来源不提供"/"权限不足"）。
+
+### 6.5 获取 SourceRecord raw payload（管理员）
+
+**GET** `/api/v1/source-records/:recordId/raw`
+
+**权限**：仅管理员可访问；访问动作必须记录审计（audit_event）。
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "recordId": "rec_001",
+    "runId": "run_456",
+    "sourceId": "src_123",
+    "collectedAt": "2026-01-26T02:15:00Z",
+    "rawMeta": {
+      "rawHash": "sha256:...",
+      "rawCompression": "zstd",
+      "rawSizeBytes": 12345
+    },
+    "rawPayload": { "opaque": "json" }
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+> 注意：raw 展示必须脱敏可能的敏感字段（例如 `password/token/secret` 等），且不得包含任何来源凭证明文。
 
 ## 7. OpenAPI 文档
 
