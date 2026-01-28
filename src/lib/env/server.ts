@@ -19,7 +19,7 @@ export const serverEnv = createEnv({
     ASSET_LEDGER_WORKER_BATCH_SIZE: z.coerce.number().int().positive().default(1),
     ASSET_LEDGER_PLUGIN_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
 
-    ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).optional(),
+    ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).default('plugins/vcenter/index.ts'),
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

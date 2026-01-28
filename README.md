@@ -134,7 +134,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。
 - `BCRYPT_LOG_ROUNDS`：bcrypt 成本（默认 12；值越大越安全但越慢）。
 - `PASSWORD_ENCRYPTION_KEY`：用于数据库中“Source 凭据密文”的加/解密（生产环境必须固定；否则重启后无法解密已存储的密码）。
-- `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用）
+- `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用；默认 `plugins/vcenter/index.ts`）
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
 - `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）
