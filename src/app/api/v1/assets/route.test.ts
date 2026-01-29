@@ -21,14 +21,14 @@ vi.mock('@/lib/db/prisma', () => {
 
 describe('GET /api/v1/assets', () => {
   it('returns okPaginated with request id header', async () => {
-    vi.mocked(requireAdmin).mockResolvedValue({
+    (requireAdmin as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },
     } as any);
 
-    vi.mocked(prisma.asset.count).mockResolvedValue(1);
-    vi.mocked(prisma.asset.findMany).mockResolvedValue([
+    (prisma.asset.count as any).mockResolvedValue(1);
+    (prisma.asset.findMany as any).mockResolvedValue([
       {
         uuid: '550e8400-e29b-41d4-a716-446655440000',
         assetType: 'vm',

@@ -13,13 +13,13 @@ vi.mock('@/lib/db/prisma', () => {
 
 describe('GET /api/v1/assets/:uuid/source-records', () => {
   it('returns normalized source records for asset', async () => {
-    vi.mocked(requireAdmin).mockResolvedValue({
+    (requireAdmin as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },
     } as any);
-    vi.mocked(prisma.asset.findUnique).mockResolvedValue({ uuid: '550e8400-e29b-41d4-a716-446655440000' } as any);
-    vi.mocked(prisma.sourceRecord.findMany).mockResolvedValue([
+    (prisma.asset.findUnique as any).mockResolvedValue({ uuid: '550e8400-e29b-41d4-a716-446655440000' } as any);
+    (prisma.sourceRecord.findMany as any).mockResolvedValue([
       {
         id: 'rec_1',
         collectedAt: new Date('2026-01-28T00:00:00.000Z'),

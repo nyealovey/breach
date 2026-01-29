@@ -15,13 +15,13 @@ vi.mock('@/lib/ingest/raw', () => ({ decompressRaw: vi.fn() }));
 
 describe('GET /api/v1/source-records/:recordId/raw', () => {
   it('returns redacted raw payload and writes audit event', async () => {
-    vi.mocked(requireAdmin).mockResolvedValue({
+    (requireAdmin as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },
     } as any);
 
-    vi.mocked(prisma.sourceRecord.findFirst).mockResolvedValue({
+    (prisma.sourceRecord.findFirst as any).mockResolvedValue({
       id: 'rec_1',
       raw: new Uint8Array([1, 2, 3]),
       rawHash: 'hash_1',
@@ -33,12 +33,12 @@ describe('GET /api/v1/source-records/:recordId/raw', () => {
       collectedAt: new Date('2026-01-28T00:00:00.000Z'),
     } as any);
 
-    vi.mocked(decompressRaw).mockResolvedValue({
+    (decompressRaw as any).mockResolvedValue({
       password: 'p',
       nested: { token: 't', safe: 'ok' },
     });
 
-    vi.mocked(prisma.auditEvent.create).mockResolvedValue({ id: 'ae_1' } as any);
+    (prisma.auditEvent.create as any).mockResolvedValue({ id: 'ae_1' } as any);
 
     const req = new Request('http://localhost/api/v1/source-records/rec_1/raw');
     const res = await GET(req, { params: Promise.resolve({ recordId: 'rec_1' }) });
