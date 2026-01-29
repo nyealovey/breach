@@ -11,7 +11,7 @@ const SourceUpdateSchema = z.object({
   name: z.string().min(1),
   sourceType: z.nativeEnum(SourceType),
   enabled: z.boolean().optional(),
-  scheduleGroupId: z.string().min(1),
+  scheduleGroupId: z.string().min(1).nullable().optional(),
   config: z.object({
     endpoint: z.string().min(1),
   }),
@@ -94,18 +94,21 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
-  const group = await prisma.scheduleGroup.findUnique({ where: { id: body.scheduleGroupId } });
-  if (!group) {
-    return fail(
-      {
-        code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
-        category: 'config',
-        message: 'Schedule group not found',
-        retryable: false,
-      },
-      404,
-      { requestId: auth.requestId },
-    );
+  const scheduleGroupId = body.scheduleGroupId === undefined ? existing.scheduleGroupId : body.scheduleGroupId;
+  if (scheduleGroupId !== null && scheduleGroupId !== undefined) {
+    const group = await prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } });
+    if (!group) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
+          category: 'config',
+          message: 'Schedule group not found',
+          retryable: false,
+        },
+        404,
+        { requestId: auth.requestId },
+      );
+    }
   }
 
   const credentialId = body.credentialId === undefined ? existing.credentialId : body.credentialId;
@@ -144,7 +147,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       name: body.name,
       sourceType: body.sourceType,
       enabled: body.enabled ?? true,
-      scheduleGroupId: body.scheduleGroupId,
+      scheduleGroupId: scheduleGroupId ?? null,
       config: body.config,
       credentialId: credentialId ?? null,
     },

@@ -12,6 +12,7 @@ const ScheduleGroupSchema = z.object({
   runAtHhmm: z.string().min(1),
   enabled: z.boolean().optional(),
   maxParallelSources: z.number().int().positive().optional().nullable(),
+  sourceIds: z.array(z.string().min(1)).min(1),
 });
 
 function isValidTimezone(timezone: string) {
@@ -105,14 +106,42 @@ export async function POST(request: Request) {
   }
 
   try {
-    const group = await prisma.scheduleGroup.create({
-      data: {
-        name: body.name,
-        timezone: body.timezone,
-        runAtHhmm: body.runAtHhmm,
-        enabled: body.enabled ?? true,
-        maxParallelSources: body.maxParallelSources ?? null,
-      },
+    const sourceIds = Array.from(new Set(body.sourceIds));
+    const sources = await prisma.source.findMany({
+      where: { id: { in: sourceIds }, deletedAt: null, enabled: true },
+      select: { id: true },
+    });
+    if (sources.length !== sourceIds.length) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'Invalid sourceIds (only enabled sources can be selected)',
+          retryable: false,
+          redacted_context: { requested: sourceIds.length, valid: sources.length },
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+
+    const group = await prisma.$transaction(async (tx) => {
+      const group = await tx.scheduleGroup.create({
+        data: {
+          name: body.name,
+          timezone: body.timezone,
+          runAtHhmm: body.runAtHhmm,
+          enabled: body.enabled ?? true,
+          maxParallelSources: body.maxParallelSources ?? null,
+        },
+      });
+
+      await tx.source.updateMany({
+        where: { id: { in: sourceIds }, deletedAt: null, enabled: true },
+        data: { scheduleGroupId: group.id },
+      });
+
+      return group;
     });
 
     return created(

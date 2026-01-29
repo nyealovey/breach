@@ -12,13 +12,11 @@ import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
 
-type ScheduleGroup = { groupId: string; name: string };
 type SourceDetail = {
   sourceId: string;
   name: string;
   sourceType: string;
   enabled: boolean;
-  scheduleGroupId: string | null;
   credential: { credentialId: string; name: string; type: string } | null;
   config?: { endpoint?: string };
 };
@@ -32,23 +30,14 @@ export default function EditSourcePage() {
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
-  const [scheduleGroupId, setScheduleGroupId] = useState('');
   const [enabled, setEnabled] = useState(true);
-  const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [credentialId, setCredentialId] = useState('');
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const [groupRes, sourceRes] = await Promise.all([
-        fetch('/api/v1/schedule-groups?pageSize=100'),
-        fetch(`/api/v1/sources/${params.id}`),
-      ]);
-      if (groupRes.ok) {
-        const body = (await groupRes.json()) as { data: ScheduleGroup[] };
-        if (active) setGroups(body.data ?? []);
-      }
+      const sourceRes = await fetch(`/api/v1/sources/${params.id}`);
       if (sourceRes.ok) {
         const body = (await sourceRes.json()) as { data: SourceDetail };
         const source = body.data;
@@ -56,7 +45,6 @@ export default function EditSourcePage() {
           setName(source.name);
           setSourceType(source.sourceType);
           setEndpoint(source.config?.endpoint ?? '');
-          setScheduleGroupId(source.scheduleGroupId ?? '');
           setEnabled(source.enabled);
           setCredentialId(source.credential?.credentialId ?? '');
         }
@@ -100,7 +88,6 @@ export default function EditSourcePage() {
           name,
           sourceType,
           enabled,
-          scheduleGroupId,
           config: { endpoint },
           credentialId: credentialId ? credentialId : null,
         }),
@@ -169,22 +156,6 @@ export default function EditSourcePage() {
             <div className="space-y-2">
               <Label htmlFor="endpoint">Endpoint</Label>
               <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="scheduleGroupId">调度组</Label>
-              <select
-                id="scheduleGroupId"
-                className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
-                value={scheduleGroupId}
-                onChange={(e) => setScheduleGroupId(e.target.value)}
-              >
-                <option value="">请选择</option>
-                {groups.map((group) => (
-                  <option key={group.groupId} value={group.groupId}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="credentialId">选择凭据</Label>

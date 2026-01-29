@@ -12,6 +12,7 @@ const ScheduleGroupSchema = z.object({
   runAtHhmm: z.string().min(1),
   enabled: z.boolean().optional(),
   maxParallelSources: z.number().int().positive().optional().nullable(),
+  sourceIds: z.array(z.string().min(1)).optional(),
 });
 
 function isValidTimezone(timezone: string) {
@@ -97,16 +98,54 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
+  const sourceIds = body.sourceIds ? Array.from(new Set(body.sourceIds)) : null;
+  if (sourceIds) {
+    const sources = await prisma.source.findMany({
+      where: { id: { in: sourceIds }, deletedAt: null, enabled: true },
+      select: { id: true },
+    });
+    if (sources.length !== sourceIds.length) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'Invalid sourceIds (only enabled sources can be selected)',
+          retryable: false,
+          redacted_context: { requested: sourceIds.length, valid: sources.length },
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  }
+
   try {
-    const group = await prisma.scheduleGroup.update({
-      where: { id },
-      data: {
-        name: body.name,
-        timezone: body.timezone,
-        runAtHhmm: body.runAtHhmm,
-        enabled: body.enabled ?? true,
-        maxParallelSources: body.maxParallelSources ?? null,
-      },
+    const group = await prisma.$transaction(async (tx) => {
+      const group = await tx.scheduleGroup.update({
+        where: { id },
+        data: {
+          name: body.name,
+          timezone: body.timezone,
+          runAtHhmm: body.runAtHhmm,
+          enabled: body.enabled ?? true,
+          maxParallelSources: body.maxParallelSources ?? null,
+        },
+      });
+
+      if (sourceIds) {
+        // Only manage enabled sources for selection; disabled sources remain untouched.
+        await tx.source.updateMany({
+          where: { scheduleGroupId: id, deletedAt: null, enabled: true, id: { notIn: sourceIds } },
+          data: { scheduleGroupId: null },
+        });
+
+        await tx.source.updateMany({
+          where: { id: { in: sourceIds }, deletedAt: null, enabled: true },
+          data: { scheduleGroupId: id },
+        });
+      }
+
+      return group;
     });
 
     return ok(

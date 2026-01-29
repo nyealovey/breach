@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -12,24 +12,58 @@ import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
 
+type SourceItem = {
+  sourceId: string;
+  name: string;
+  sourceType: string;
+  enabled: boolean;
+  scheduleGroupId: string | null;
+  scheduleGroupName: string | null;
+};
+
 export default function NewScheduleGroupPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [runAtHhmm, setRunAtHhmm] = useState('02:00');
   const [enabled, setEnabled] = useState(true);
+  const [sources, setSources] = useState<SourceItem[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadSources = async () => {
+      const res = await fetch('/api/v1/sources?enabled=true&pageSize=100');
+      if (!res.ok) {
+        if (active) setSources([]);
+        return;
+      }
+      const body = (await res.json()) as { data: SourceItem[] };
+      if (active) setSources(body.data ?? []);
+    };
+    void loadSources();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+    if (selectedSourceIds.length === 0) {
+      toast.error('请至少选择 1 个来源');
+      return;
+    }
     setSubmitting(true);
 
     try {
       const res = await fetch('/api/v1/schedule-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, timezone, runAtHhmm, enabled }),
+        body: JSON.stringify({ name, timezone, runAtHhmm, enabled, sourceIds: selectedSourceIds }),
       });
 
       if (!res.ok) {
@@ -70,6 +104,36 @@ export default function NewScheduleGroupPage() {
               <div className="text-xs text-muted-foreground">启用后会按设定时间触发 Run</div>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+          <div className="space-y-2">
+            <Label>选择来源（多选，必须为启用状态）</Label>
+            {sources.length === 0 ? (
+              <div className="text-sm text-muted-foreground">暂无可选来源（仅展示 enabled=true 的来源）。</div>
+            ) : (
+              <div className="space-y-2 rounded border p-3">
+                {sources.map((s) => {
+                  const checked = selectedSet.has(s.sourceId);
+                  const hint = s.scheduleGroupName ? `（当前：${s.scheduleGroupName}）` : '';
+                  return (
+                    <label key={s.sourceId} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={checked}
+                        onChange={(e) => {
+                          setSelectedSourceIds((prev) => {
+                            if (e.target.checked) return [...prev, s.sourceId];
+                            return prev.filter((id) => id !== s.sourceId);
+                          });
+                        }}
+                      />
+                      <span className="font-medium">{s.name}</span>
+                      <span className="text-xs text-muted-foreground">{hint}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <Button type="submit" disabled={submitting}>
             {submitting ? '保存中…' : '保存'}

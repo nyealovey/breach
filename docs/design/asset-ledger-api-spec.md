@@ -329,7 +329,9 @@
   "name": "每日凌晨采集",
   "timezone": "Asia/Shanghai",
   "runAtHhmm": "02:00",
-  "enabled": true
+  "enabled": true,
+  "maxParallelSources": null,
+  "sourceIds": ["src_123", "src_456"]
 }
 ```
 
@@ -343,14 +345,15 @@
     "enabled": true,
     "timezone": "Asia/Shanghai",
     "runAtHhmm": "02:00",
-    "sourceCount": 0,
-    "lastTriggeredOn": null,
+    "maxParallelSources": null,
     "createdAt": "2026-01-27T12:00:00Z",
     "updatedAt": "2026-01-27T12:00:00Z"
   },
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
+
+> 注意：创建调度组时必须选择 1+ 个 `sourceIds`（且仅允许 `enabled=true` 的来源）。若来源已属于其他调度组，将被移动到新调度组（通过更新其 `scheduleGroupId` 实现）。
 
 ### 3.3 获取调度组详情
 
@@ -426,14 +429,12 @@
 {
   "name": "vcenter-prod",
   "sourceType": "vcenter",
-  "scheduleGroupId": "sg_123",
+  "enabled": true,
   "config": {
     "endpoint": "https://vcenter.example.com"
   },
-  "credential": {
-    "username": "admin@vsphere.local",
-    "password": "********"
-  }
+  "credentialId": "cred_123",
+  "scheduleGroupId": null
 }
 ```
 
@@ -446,7 +447,12 @@
     "name": "vcenter-prod",
     "sourceType": "vcenter",
     "enabled": true,
-    "scheduleGroupId": "sg_123",
+    "scheduleGroupId": null,
+    "credential": {
+      "credentialId": "cred_123",
+      "name": "vcenter-prod-admin",
+      "type": "vcenter"
+    },
     "config": {
       "endpoint": "https://vcenter.example.com"
     },
@@ -457,7 +463,7 @@
 }
 ```
 
-> 注意：响应中不包含 `credential`，凭证不回显。
+> 注意：响应中不包含凭据明文（payload 不回显），仅返回 `credential` 摘要信息。
 
 ### 4.3 获取 Source 详情
 

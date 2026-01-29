@@ -127,7 +127,7 @@
   Then 系统阻止保存并提示缺失字段。
 - Given 管理员创建 Source  
   When 保存  
-  Then 必须绑定一个调度组（Schedule Group），用于“分组定时触发”（见 FR-02）。
+  Then Source 允许先不绑定调度组；若未绑定调度组，则该 Source 不参与定时触发；管理员可在调度组管理中为其绑定/解绑调度组（见 FR-01.A、FR-02）。
 - Given 管理员创建或更新 Source 时填写/更新凭证  
   When 保存成功  
   Then 系统必须安全存储凭证（加密/密文）；任何 API/日志/页面不得回显明文凭证。
@@ -158,6 +158,12 @@
 - Given 管理员创建调度组  
   When 保存  
   Then 触发时间必须为合法 `HH:mm`，时区必须为 IANA TZ（例如 `Asia/Shanghai`）。
+- Given 管理员创建调度组并选择来源  
+  When 保存  
+  Then 必须至少选择 1 个 Source（多选），且仅允许选择 `enabled=true` 的来源；被选中的来源会被绑定到该调度组（若来源原本属于其他调度组，则会被迁移到新调度组）。
+- Given 管理员编辑调度组并调整来源选择  
+  When 保存  
+  Then 系统应按选择结果更新该调度组下来源归属（仅管理 `enabled=true` 的来源；disabled 来源不自动解绑）。
 - Given 调度组时区存在夏令时切换，且在某个 `local_date` 当天该时区的本地时间不存在所配置的 `HH:mm`（spring forward）  
   When 到达该日并执行定时调度  
   Then 系统应跳过该日（不创建 Run），且不得补跑。

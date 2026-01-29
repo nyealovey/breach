@@ -98,6 +98,12 @@ List of websites that started off with Next.js TypeScript Starter:
 
 文档总览（推荐先读；需求口径以 SRS 为准）：[`docs/index.md`](docs/index.md)
 
+配置顺序（vCenter MVP）：
+
+1. 新建凭据（Credentials，可选；来源若启用但未绑定凭据，会提示无法参与运行/调度）
+2. 新建来源（Sources；创建/编辑来源时不需要选择调度组）
+3. 新建调度组（Schedule Groups；创建调度组时必须选择 1+ 个来源，且为多选；调度组成员调整在调度组编辑页完成）
+
 运行指南：
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)

@@ -36,15 +36,6 @@ test.describe('admin happy path (vCenter MVP)', () => {
     await page.getByRole('button', { name: '登录' }).click();
     await page.waitForURL('/');
 
-    // Create schedule group (API)
-    const groupName = `e2e_group_${Date.now()}`;
-    const groupRes = await page.request.post('/api/v1/schedule-groups', {
-      data: { name: groupName, timezone: 'Asia/Shanghai', runAtHhmm: '02:00', enabled: true },
-    });
-    expect(groupRes.ok()).toBe(true);
-    const groupBody = (await groupRes.json()) as any;
-    const groupId = groupBody.data.groupId as string;
-
     // Create credential (API). Secrets never get returned by API.
     const credentialName = `e2e_cred_${Date.now()}`;
     const credentialRes = await page.request.post('/api/v1/credentials', {
@@ -61,14 +52,13 @@ test.describe('admin happy path (vCenter MVP)', () => {
     const credentialBody = (await credentialRes.json()) as any;
     const credentialId = credentialBody.data.credentialId as string;
 
-    // Create source (API)
+    // Create source (API, no schedule group; schedule group binds sources).
     const sourceName = `e2e_source_${Date.now()}`;
     const sourceRes = await page.request.post('/api/v1/sources', {
       data: {
         name: sourceName,
         sourceType: 'vcenter',
         enabled: true,
-        scheduleGroupId: groupId,
         config: { endpoint: vcenterEndpoint || 'https://example.invalid' },
         credentialId,
       },
@@ -84,12 +74,28 @@ test.describe('admin happy path (vCenter MVP)', () => {
         name: sourceNameNoCred,
         sourceType: 'vcenter',
         enabled: true,
-        scheduleGroupId: groupId,
         config: { endpoint: vcenterEndpoint || 'https://example.invalid' },
         credentialId: null,
       },
     });
     expect(sourceResNoCred.ok()).toBe(true);
+    const sourceBodyNoCred = (await sourceResNoCred.json()) as any;
+    const sourceIdNoCred = sourceBodyNoCred.data.sourceId as string;
+
+    // Create schedule group (API, binds sources).
+    const groupName = `e2e_group_${Date.now()}`;
+    const groupRes = await page.request.post('/api/v1/schedule-groups', {
+      data: {
+        name: groupName,
+        timezone: 'Asia/Shanghai',
+        runAtHhmm: '02:00',
+        enabled: true,
+        sourceIds: [sourceId, sourceIdNoCred],
+      },
+    });
+    expect(groupRes.ok()).toBe(true);
+    const groupBody = (await groupRes.json()) as any;
+    const groupId = groupBody.data.groupId as string;
 
     // Trigger collect runs via Schedule Group UI button.
     await page.goto('/schedule-groups');

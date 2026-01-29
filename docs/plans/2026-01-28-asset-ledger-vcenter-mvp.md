@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 实现 vCenter MVP（PRD v1.0）端到端闭环，并补齐增量能力（Credential 模块复用 + 调度组一键手动运行）：管理员登录 → 配置调度组/Source/Credential → healthcheck/collect → 查看 Run → 浏览 Asset（统一视图/来源明细）→ 查看 VM→Host→Cluster 关系链，并交付 OpenAPI/Swagger。
+**Goal:** 实现 vCenter MVP（PRD v1.0）端到端闭环，并补齐增量能力（Credential 模块复用 + 调度组一键手动运行）：管理员登录 → 配置 Credential → 配置 Source（无需选择调度组）→ 创建调度组（选择来源，多选）→ healthcheck/collect → 查看 Run → 浏览 Asset（统一视图/来源明细）→ 查看 VM→Host→Cluster 关系链，并交付 OpenAPI/Swagger。
 
 **Architecture:** Next.js Web/API（App Router）+ 独立 Scheduler/Worker 进程（PG 队列：Run 表）+ 子进程 Collector Plugin（stdin/stdout JSON 契约）；采集落库为 SourceRecord/RelationRecord（raw zstd 压缩永久保留）→ 绑定到 Asset（asset_source_link）→ 生成 canonical-v1（用于 UI 展示）。
 
@@ -515,15 +515,15 @@ git commit -m "feat: add aes-256-gcm helper for credential encryption"
 **Step 1: ScheduleGroup CRUD API（对齐 API spec 第 3 章）**
 
 - `GET /api/v1/schedule-groups`：分页列表
-- `POST /api/v1/schedule-groups`：创建（校验 timezone IANA、HH:mm）
+- `POST /api/v1/schedule-groups`：创建（校验 timezone IANA、HH:mm；`sourceIds` 多选且必填；仅允许 `enabled=true` 的 Source；创建后批量将所选 Source 绑定到该调度组）
 - `GET /api/v1/schedule-groups/:id`
-- `PUT /api/v1/schedule-groups/:id`
+- `PUT /api/v1/schedule-groups/:id`：更新（同样支持 `sourceIds` 多选；若传入则按选择结果调整该组下 Source 归属；仅管理 `enabled=true` 的来源，disabled 来源不自动解绑）
 - `DELETE /api/v1/schedule-groups/:id`：若仍绑定 Source 返回 409
 
 **Step 2: UI 页面**
 
 - 列表：name/enabled/timezone/runAtHhmm/sourceCount
-- 新建/编辑：表单校验；启停开关
+- 新建/编辑：表单校验；启停开关；选择来源（多选，创建时必选 1+ 个，且仅展示 `enabled=true` 的来源）
 
 **Step 3: Scheduler 日志事件对齐（schedule_group.triggered）**
 
@@ -552,23 +552,21 @@ git commit -m "feat: add schedule group api and pages"
 **Step 1: Source CRUD API（对齐 API spec 第 4 章）**
 
 - `GET /api/v1/sources`：默认排除 deleted；返回 `latestRun` 摘要（status/finishedAt/mode）
-- `POST /api/v1/sources`：必填 name/sourceType/scheduleGroupId/config.endpoint；不允许回显 credential
+- `POST /api/v1/sources`：必填 name/sourceType/config.endpoint；`scheduleGroupId` 可空/可不传（默认不绑定调度组）；不允许回显凭据明文
 - `PUT /api/v1/sources/:id`：更新非敏感字段
 - `DELETE /api/v1/sources/:id`：软删除；若存在活动 Run（Queued/Running）返回 409
 
-**Step 2: 凭据更新 API**
+**Step 2:（历史/已废弃）Source 凭据更新 API**
 
-实现 `PUT /api/v1/sources/:id/credential`：
+`PUT /api/v1/sources/:id/credential` 在增量“凭据模块”上线后被废弃：
 
-- body: `{ username, password }`
-- 使用 Task 6 的 AES-GCM 加密后写入 `Source.credentialCiphertext`
-- 响应不返回密文；UI 显示 “已设置/已更新”
+- 当前实现返回 410（Gone），提示使用 `/api/v1/credentials` 创建凭据并在 Source 上绑定 `credentialId`
+- 备注：保留 route 仅用于兼容旧 UI/旧调用路径，避免 silent failure
 
 **Step 3: UI 页面**
 
 - Source 列表：name/type/enabled/scheduleGroup/最新 Run 状态
-- 新建/编辑：endpoint + schedule group 选择 + enable 开关
-- 凭据更新：单独表单；不回显 password；提交前二次确认
+- 新建/编辑：endpoint + 凭据下拉选择 + enable 开关（**不**在 Source 表单里选择调度组；调度组成员关系在 Task 7 的调度组新建/编辑页管理）
 - 删除：确认弹窗（对齐 UI spec 操作确认）
 
 **Step 4: Commit**
@@ -1056,7 +1054,7 @@ Run: `bun add -D @playwright/test`
 
 `e2e/admin.spec.ts` 覆盖：
 
-- 登录 → 创建调度组 → 创建 Source → 更新凭据 → healthcheck → 手动 collect → 进入 Run 详情 → Asset 列表/详情 → 关系链展示
+- 登录 → 创建凭据 → 创建 Source（不绑定调度组） → 创建调度组并选择来源（多选） → 调度组手动运行（批量 collect） → 进入 Run 详情 → Asset 列表/详情 → 关系链展示
 
 **Step 3: Commit**
 
@@ -1694,7 +1692,8 @@ Modify `e2e/admin.spec.ts`：
 - 不再调用 `/api/v1/sources/:id/credential`
 - 改为：
   - POST `/api/v1/credentials` 创建凭据（若环境变量提供 vCenter 凭据则使用；否则可创建 dummy 并验证 skip_missing_credential）
-  - Source create/update 绑定 `credentialId`
+  - Source create/update 绑定 `credentialId`（不要求/不提交 `scheduleGroupId`）
+  - POST `/api/v1/schedule-groups` 创建调度组时传 `sourceIds` 多选绑定来源
   - 触发：优先覆盖 `/api/v1/schedule-groups/:id/runs`（或 UI 点击行内「运行」）
 
 **Step 4: 全量质量门槛**

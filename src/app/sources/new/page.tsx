@@ -12,7 +12,6 @@ import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
 
-type ScheduleGroup = { groupId: string; name: string };
 type CredentialItem = { credentialId: string; name: string; type: string };
 
 export default function NewSourcePage() {
@@ -20,26 +19,10 @@ export default function NewSourcePage() {
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
-  const [scheduleGroupId, setScheduleGroupId] = useState('');
   const [enabled, setEnabled] = useState(true);
-  const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [credentialId, setCredentialId] = useState('');
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const loadGroups = async () => {
-      const res = await fetch('/api/v1/schedule-groups?pageSize=100');
-      if (!res.ok) return;
-      const body = (await res.json()) as { data: ScheduleGroup[] };
-      if (active) setGroups(body.data ?? []);
-    };
-    void loadGroups();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -69,7 +52,6 @@ export default function NewSourcePage() {
         body: JSON.stringify({
           name,
           sourceType,
-          scheduleGroupId,
           enabled,
           config: { endpoint },
           credentialId: credentialId ? credentialId : null,
@@ -119,22 +101,6 @@ export default function NewSourcePage() {
           <div className="space-y-2">
             <Label htmlFor="endpoint">Endpoint</Label>
             <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scheduleGroupId">调度组</Label>
-            <select
-              id="scheduleGroupId"
-              className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
-              value={scheduleGroupId}
-              onChange={(e) => setScheduleGroupId(e.target.value)}
-            >
-              <option value="">请选择</option>
-              {groups.map((group) => (
-                <option key={group.groupId} value={group.groupId}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="credentialId">选择凭据</Label>
