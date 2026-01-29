@@ -89,16 +89,24 @@ type VmRaw = {
 
 /**
  * vSphere Host API response types
- * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/host/host/get/
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/host/get/
+ *
+ * Note: vSphere REST API has limited Host information.
+ * For full Host details (ESXi version, hardware model, CPU type),
+ * SOAP API (govmomi/pyVmomi) is required.
  */
 type HostRaw = {
   /** Host identifier */
   host: string;
   /** Host display name */
   name?: string;
-  /** Cluster this host belongs to */
+  /** Cluster this host belongs to (from list API filter or injected) */
   cluster?: string;
-  /** Hardware information */
+  /** Connection state: CONNECTED | DISCONNECTED | NOT_RESPONDING */
+  connection_state?: string;
+  /** Power state: POWERED_ON | POWERED_OFF | STANDBY */
+  power_state?: string;
+  /** Hardware information (from detail API, may not be available) */
   hardware?: {
     system_info?: {
       serial_number?: string;
@@ -106,7 +114,7 @@ type HostRaw = {
       model?: string;
     };
   };
-  /** Virtual NICs for management network */
+  /** Virtual NICs for management network (from detail API, may not be available) */
   vnics?: Array<{
     ip?: {
       ip_address?: string;
@@ -132,6 +140,8 @@ type NormalizedV1 = {
     hostname?: string;
     machine_uuid?: string;
     serial_number?: string;
+    vendor?: string;
+    model?: string;
     caption?: string;
   };
   network?: {
@@ -282,6 +292,8 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
       identity: {
         hostname: raw.name,
         serial_number: raw.hardware?.system_info?.serial_number,
+        vendor: raw.hardware?.system_info?.vendor,
+        model: raw.hardware?.system_info?.model,
       },
       network: {
         management_ip: mgmtIp,

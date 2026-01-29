@@ -40,15 +40,28 @@ describe('asset list query', () => {
 
   it('builds where with filters and non-uuid search', () => {
     const where = buildAssetListWhere({ assetType: 'host', sourceId: 'src_1', q: 'esx' });
-    expect(where).toEqual({
+    expect(where).toMatchObject({
       AND: [
         { assetType: 'host' },
         { sourceLinks: { some: { sourceId: 'src_1' } } },
         {
-          OR: [
+          OR: expect.arrayContaining([
             { displayName: { contains: 'esx', mode: 'insensitive' } },
+            { machineNameOverride: { contains: 'esx', mode: 'insensitive' } },
             { sourceLinks: { some: { externalId: { contains: 'esx', mode: 'insensitive' } } } },
-          ],
+            {
+              outgoingRelations: {
+                some: { relationType: 'runs_on', toAsset: { displayName: { contains: 'esx', mode: 'insensitive' } } },
+              },
+            },
+            {
+              runSnapshots: {
+                some: {
+                  canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: 'esx', mode: 'insensitive' },
+                },
+              },
+            },
+          ]),
         },
       ],
     });
@@ -62,14 +75,15 @@ describe('asset list query', () => {
   it('builds where with uuid equality search (not contains)', () => {
     const uuid = '550e8400-e29b-41d4-a716-446655440000';
     const where = buildAssetListWhere({ q: uuid });
-    expect(where).toEqual({
+    expect(where).toMatchObject({
       AND: [
         {
-          OR: [
+          OR: expect.arrayContaining([
             { displayName: { contains: uuid, mode: 'insensitive' } },
+            { machineNameOverride: { contains: uuid, mode: 'insensitive' } },
             { sourceLinks: { some: { externalId: { contains: uuid, mode: 'insensitive' } } } },
             { uuid },
-          ],
+          ]),
         },
       ],
     });

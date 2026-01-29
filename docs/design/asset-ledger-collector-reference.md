@@ -84,67 +84,67 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 
 **VM 详情 API** (`GET /api/vcenter/vm/{vm}`)：
 
-| vSphere API 字段 | 类型 | 说明 |
-|------------------|------|------|
-| `name` | string | VM 显示名称 |
-| `guest_OS` | string | 操作系统标识（如 `RHEL_8_64`、`WINDOWS_9_64`） |
-| `power_state` | enum | 电源状态：`POWERED_ON` \| `POWERED_OFF` \| `SUSPENDED` |
-| `identity.instance_uuid` | string | 实例 UUID（首选标识） |
-| `identity.bios_uuid` | string | BIOS UUID（备选标识） |
-| `identity.name` | string | 身份名称 |
-| `cpu.count` | integer | CPU 核心数 |
-| `cpu.cores_per_socket` | integer | 每插槽核心数 |
-| `memory.size_MiB` | integer | 内存大小（MiB） |
-| `disks` | object | 虚拟磁盘（key 为磁盘 ID，如 `"2000"`） |
-| `disks[id].label` | string | 磁盘标签（如 `"Hard disk 1"`） |
-| `disks[id].capacity` | integer | 磁盘容量（字节） |
-| `nics` | object | 网络适配器（key 为 NIC ID，如 `"4000"`） |
-| `nics[id].mac_address` | string | MAC 地址 |
-| `nics[id].label` | string | NIC 标签 |
+| vSphere API 字段         | 类型    | 说明                                                   |
+| ------------------------ | ------- | ------------------------------------------------------ |
+| `name`                   | string  | VM 显示名称                                            |
+| `guest_OS`               | string  | 操作系统标识（如 `RHEL_8_64`、`WINDOWS_9_64`）         |
+| `power_state`            | enum    | 电源状态：`POWERED_ON` \| `POWERED_OFF` \| `SUSPENDED` |
+| `identity.instance_uuid` | string  | 实例 UUID（首选标识）                                  |
+| `identity.bios_uuid`     | string  | BIOS UUID（备选标识）                                  |
+| `identity.name`          | string  | 身份名称                                               |
+| `cpu.count`              | integer | CPU 核心数                                             |
+| `cpu.cores_per_socket`   | integer | 每插槽核心数                                           |
+| `memory.size_MiB`        | integer | 内存大小（MiB）                                        |
+| `disks`                  | object  | 虚拟磁盘（key 为磁盘 ID，如 `"2000"`）                 |
+| `disks[id].label`        | string  | 磁盘标签（如 `"Hard disk 1"`）                         |
+| `disks[id].capacity`     | integer | 磁盘容量（字节）                                       |
+| `nics`                   | object  | 网络适配器（key 为 NIC ID，如 `"4000"`）               |
+| `nics[id].mac_address`   | string  | MAC 地址                                               |
+| `nics[id].label`         | string  | NIC 标签                                               |
 
 **Guest Networking API** (`GET /api/vcenter/vm/{vm}/guest/networking`)：
 
 > 注意：此 API 需要 VMware Tools 在 VM 中运行，否则返回空或错误。
 
-| vSphere API 字段 | 类型 | 说明 |
-|------------------|------|------|
-| `dns_values.host_name` | string | **Guest hostname（VM 内部的机器名）** |
-| `dns_values.domain_name` | string | Guest 域名 |
+| vSphere API 字段         | 类型   | 说明                                  |
+| ------------------------ | ------ | ------------------------------------- |
+| `dns_values.host_name`   | string | **Guest hostname（VM 内部的机器名）** |
+| `dns_values.domain_name` | string | Guest 域名                            |
 
 **Guest Networking Interfaces API** (`GET /api/vcenter/vm/{vm}/guest/networking/interfaces`)：
 
 > 注意：此 API 需要 VMware Tools 在 VM 中运行，否则返回空或错误。
 
-| vSphere API 字段 | 类型 | 说明 |
-|------------------|------|------|
-| `mac_address` | string | 接口 MAC 地址 |
-| `nic` | string | 关联的 NIC 设备 key |
-| `ip.ip_addresses[]` | array | IP 地址列表 |
-| `ip.ip_addresses[].ip_address` | string | IP 地址（IPv4 或 IPv6） |
-| `ip.ip_addresses[].prefix_length` | integer | 子网前缀长度 |
-| `ip.ip_addresses[].origin` | string | IP 来源（DHCP、STATIC 等） |
+| vSphere API 字段                  | 类型    | 说明                       |
+| --------------------------------- | ------- | -------------------------- |
+| `mac_address`                     | string  | 接口 MAC 地址              |
+| `nic`                             | string  | 关联的 NIC 设备 key        |
+| `ip.ip_addresses[]`               | array   | IP 地址列表                |
+| `ip.ip_addresses[].ip_address`    | string  | IP 地址（IPv4 或 IPv6）    |
+| `ip.ip_addresses[].prefix_length` | integer | 子网前缀长度               |
+| `ip.ip_addresses[].origin`        | string  | IP 来源（DHCP、STATIC 等） |
 
 **字段映射到 normalized-v1**：
 
-| vSphere 字段 | normalized-v1 字段 | 转换说明 |
-|--------------|-------------------|----------|
-| `identity.instance_uuid` / `identity.bios_uuid` | `identity.machine_uuid` | 优先 instance_uuid |
-| `guest_networking_info.dns_values.host_name` | `identity.hostname` | **Guest hostname（VM 内部机器名）** |
-| `cpu.count` | `hardware.cpu_count` | 直接映射 |
-| `memory.size_MiB` | `hardware.memory_bytes` | MiB × 1024 × 1024 |
-| `disks[*].capacity` | `hardware.disks[].size_bytes` | 直接映射 |
-| `nics[*].mac_address` | `network.mac_addresses[]` | 提取所有 MAC |
-| `guest_networking[*].ip.ip_addresses[*].ip_address` | `network.ip_addresses[]` | **仅提取 IPv4 地址** |
-| `guest_OS` | `os.fingerprint` | 直接映射 |
-| `power_state` | `runtime.power_state` | 转换：`POWERED_ON` → `poweredOn` |
+| vSphere 字段                                        | normalized-v1 字段            | 转换说明                            |
+| --------------------------------------------------- | ----------------------------- | ----------------------------------- |
+| `identity.instance_uuid` / `identity.bios_uuid`     | `identity.machine_uuid`       | 优先 instance_uuid                  |
+| `guest_networking_info.dns_values.host_name`        | `identity.hostname`           | **Guest hostname（VM 内部机器名）** |
+| `cpu.count`                                         | `hardware.cpu_count`          | 直接映射                            |
+| `memory.size_MiB`                                   | `hardware.memory_bytes`       | MiB × 1024 × 1024                   |
+| `disks[*].capacity`                                 | `hardware.disks[].size_bytes` | 直接映射                            |
+| `nics[*].mac_address`                               | `network.mac_addresses[]`     | 提取所有 MAC                        |
+| `guest_networking[*].ip.ip_addresses[*].ip_address` | `network.ip_addresses[]`      | **仅提取 IPv4 地址**                |
+| `guest_OS`                                          | `os.fingerprint`              | 直接映射                            |
+| `power_state`                                       | `runtime.power_state`         | 转换：`POWERED_ON` → `poweredOn`    |
 
 **关系类型**：
 
-| 关系类型 | 方向 | 说明 |
-|----------|------|------|
-| `runs_on` | VM → Host | VM 运行在哪个 Host 上 |
-| `hosts_vm` | Host → VM | Host 托管了哪些 VM（反向关系） |
-| `member_of` | Host → Cluster | Host 属于哪个 Cluster |
+| 关系类型    | 方向           | 说明                           |
+| ----------- | -------------- | ------------------------------ |
+| `runs_on`   | VM → Host      | VM 运行在哪个 Host 上          |
+| `hosts_vm`  | Host → VM      | Host 托管了哪些 VM（反向关系） |
+| `member_of` | Host → Cluster | Host 属于哪个 Cluster          |
 
 **VM-Host 关系获取**：
 
@@ -157,6 +157,7 @@ GET /api/vcenter/vm?hosts={host_id}
 ```
 
 **实现策略**：
+
 1. 先获取所有 Host 列表 (`GET /api/vcenter/host`)
 2. 对每个 Host，调用 `GET /api/vcenter/vm?hosts={host_id}` 获取该 Host 上的 VM 列表
 3. 构建 VM → Host 的映射关系

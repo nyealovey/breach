@@ -88,13 +88,39 @@ export async function getVmDetail(
   return result.data;
 }
 
-export async function listHosts(endpoint: string, token: SessionToken): Promise<Array<{ host: string }>> {
+/** Host summary from list API */
+export type HostSummary = {
+  host: string;
+  name?: string;
+  connection_state?: string;
+  power_state?: string;
+};
+
+export async function listHosts(endpoint: string, token: SessionToken): Promise<HostSummary[]> {
   const url = joinUrl(endpoint, '/api/vcenter/host');
-  const result = await fetchJson<Array<{ host: string }>>(url, {
+  const result = await fetchJson<HostSummary[]>(url, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listHosts', status: result.status, bodyText: result.bodyText });
+  return result.data;
+}
+
+/**
+ * List Hosts filtered by cluster
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/host/get/
+ */
+export async function listHostsByCluster(
+  endpoint: string,
+  token: SessionToken,
+  clusterId: string,
+): Promise<HostSummary[]> {
+  const url = joinUrl(endpoint, `/api/vcenter/host?clusters=${encodeURIComponent(clusterId)}`);
+  const result = await fetchJson<HostSummary[]>(url, {
+    method: 'GET',
+    headers: { 'vmware-api-session-id': token },
+  });
+  if (!result.ok) throw makeHttpError({ op: 'listHostsByCluster', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
 

@@ -6,7 +6,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
@@ -14,8 +23,14 @@ type AssetListItem = {
   assetUuid: string;
   assetType: string;
   status: string;
+  machineName: string | null;
+  machineNameOverride: string | null;
+  machineNameCollected: string | null;
+  machineNameMismatch: boolean;
   hostName: string | null;
   vmName: string | null;
+  os: string | null;
+  vmPowerState: string | null;
   ip: string | null;
   cpuCount: number | null;
   memoryBytes: number | null;
@@ -31,9 +46,17 @@ type Pagination = {
 
 type SourceOption = { sourceId: string; name: string };
 
-function statusBadgeVariant(status: string): React.ComponentProps<typeof Badge>['variant'] {
-  if (status === 'in_service') return 'default';
-  if (status === 'offline') return 'secondary';
+function powerStateLabel(powerState: string) {
+  if (powerState === 'poweredOn') return '运行';
+  if (powerState === 'poweredOff') return '关机';
+  if (powerState === 'suspended') return '挂起';
+  return powerState;
+}
+
+function powerStateBadgeVariant(powerState: string): React.ComponentProps<typeof Badge>['variant'] {
+  if (powerState === 'poweredOn') return 'default';
+  if (powerState === 'poweredOff') return 'secondary';
+  if (powerState === 'suspended') return 'outline';
   return 'outline';
 }
 
@@ -66,6 +89,11 @@ export default function AssetsPage() {
 
   const [page, setPage] = useState(1);
   const pageSize = 20;
+
+  const [editMachineNameOpen, setEditMachineNameOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<AssetListItem | null>(null);
+  const [editMachineNameValue, setEditMachineNameValue] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   const query = useMemo(() => {
     return {
@@ -140,7 +168,7 @@ export default function AssetsPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center">
           <div className="flex flex-1 items-center gap-2">
             <Input
-              placeholder="搜索（displayName / externalId / uuid）"
+              placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/externalId/uuid）"
               value={qInput}
               onChange={(e) => {
                 setPage(1);
@@ -198,8 +226,10 @@ export default function AssetsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>主机名</TableHead>
+                  <TableHead>机器名</TableHead>
                   <TableHead>虚拟机名</TableHead>
+                  <TableHead>宿主机名</TableHead>
+                  <TableHead>操作系统</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead className="text-right">CPU</TableHead>
                   <TableHead className="text-right">内存</TableHead>
@@ -211,8 +241,23 @@ export default function AssetsPage() {
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.assetUuid}>
-                    <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{item.machineName ?? ''}</span>
+                        {item.machineNameOverride ? (
+                          item.machineNameMismatch ? (
+                            <Badge variant="destructive">覆盖≠采集</Badge>
+                          ) : (
+                            <Badge variant="secondary">覆盖</Badge>
+                          )
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
+                    <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
+                    <TableCell className="max-w-[240px] whitespace-normal break-words text-sm">
+                      {item.os ?? '-'}
+                    </TableCell>
                     <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
                       {item.ip ?? '-'}
                     </TableCell>
@@ -220,12 +265,31 @@ export default function AssetsPage() {
                     <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
                     <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
+                      {item.vmPowerState ? (
+                        <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
+                          {powerStateLabel(item.vmPowerState)}
+                        </Badge>
+                      ) : (
+                        '-'
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/assets/${item.assetUuid}`}>查看</Link>
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditTarget(item);
+                            setEditMachineNameValue(item.machineNameOverride ?? '');
+                            setEditMachineNameOpen(true);
+                          }}
+                        >
+                          编辑机器名
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/assets/${item.assetUuid}`}>查看</Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -252,6 +316,96 @@ export default function AssetsPage() {
             </div>
           </>
         )}
+
+        <Dialog
+          open={editMachineNameOpen}
+          onOpenChange={(open) => {
+            setEditMachineNameOpen(open);
+            if (!open) {
+              setEditTarget(null);
+              setEditMachineNameValue('');
+              setEditSaving(false);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>编辑机器名</DialogTitle>
+              <DialogDescription>机器名优先展示“覆盖值”，采集值仍会持续入库。</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="machineNameOverride">机器名（覆盖显示）</Label>
+                <Input
+                  id="machineNameOverride"
+                  value={editMachineNameValue}
+                  placeholder="留空表示不覆盖"
+                  onChange={(e) => setEditMachineNameValue(e.target.value)}
+                />
+              </div>
+
+              <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                <div className="text-muted-foreground">采集到的机器名</div>
+                <div className="mt-1 font-mono">{editTarget?.machineNameCollected ?? '暂无'}</div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={editSaving}
+                onClick={() => {
+                  setEditMachineNameOpen(false);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                disabled={!editTarget || editSaving}
+                onClick={async () => {
+                  if (!editTarget) return;
+                  setEditSaving(true);
+
+                  const nextOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
+                  const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ machineNameOverride: nextOverride }),
+                  });
+
+                  if (!res.ok) {
+                    setEditSaving(false);
+                    return;
+                  }
+
+                  setItems((prev) =>
+                    prev.map((it) => {
+                      if (it.assetUuid !== editTarget.assetUuid) return it;
+
+                      const machineNameCollected = it.machineNameCollected;
+                      const machineName = nextOverride ?? machineNameCollected;
+                      const machineNameMismatch =
+                        nextOverride !== null && machineNameCollected !== null && nextOverride !== machineNameCollected;
+
+                      return {
+                        ...it,
+                        machineNameOverride: nextOverride,
+                        machineName,
+                        machineNameMismatch,
+                      };
+                    }),
+                  );
+
+                  setEditSaving(false);
+                  setEditMachineNameOpen(false);
+                }}
+              >
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

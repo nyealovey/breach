@@ -37,6 +37,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   let hostDetailNotFound = false;
   const server = createServer((req, res) => {
     const url = req.url ?? '';
+    const parsedUrl = new URL(url, 'http://localhost');
+    const pathname = parsedUrl.pathname;
+    const searchParams = parsedUrl.searchParams;
     const method = req.method ?? 'GET';
 
     // Minimal Basic auth check for POST /api/session.
@@ -62,34 +65,70 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && url === '/api/vcenter/vm') {
+    if (method === 'GET' && pathname === '/api/vcenter/vm' && searchParams.get('hosts') === 'host-1') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify([{ vm: 'vm-1' }]));
       return;
     }
-    if (method === 'GET' && url === '/api/vcenter/vm/vm-1') {
+
+    if (method === 'GET' && pathname === '/api/vcenter/vm' && !searchParams.has('hosts')) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify([{ vm: 'vm-1' }]));
+      return;
+    }
+    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
           vm: 'vm-1',
           instance_uuid: 'uuid-1',
-          guest: { host_name: 'vm1.local' },
-          nics: [{ mac_address: 'aa:bb:cc:dd:ee:ff' }],
-          host: 'host-1',
+          name: 'vm-1-name',
+          power_state: 'poweredOn',
         }),
       );
       return;
     }
 
-    if (method === 'GET' && url === '/api/vcenter/host') {
+    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking/interfaces') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify([
+          {
+            mac_address: 'aa:bb:cc:dd:ee:ff',
+            ip: { ip_addresses: [{ ip_address: '10.10.100.106' }, { ip_address: 'fe80::1' }] },
+          },
+        ]),
+      );
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ dns_values: { host_name: 'vm1.local' } }));
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/vcenter/host' && searchParams.get('clusters') === 'domain-c7') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify([{ host: 'host-1' }]));
       return;
     }
-    if (method === 'GET' && url === '/api/vcenter/host/host-1') {
+
+    if (method === 'GET' && pathname === '/api/vcenter/host' && !searchParams.has('clusters')) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify([{ host: 'host-1', name: 'esxi-01', connection_state: 'CONNECTED', power_state: 'POWERED_ON' }]),
+      );
+      return;
+    }
+    if (method === 'GET' && pathname === '/api/vcenter/host/host-1') {
       if (hostDetailNotFound) {
         res.statusCode = 404;
         res.setHeader('Content-Type', 'application/json');
@@ -109,7 +148,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && url === '/api/vcenter/cluster') {
+    if (method === 'GET' && pathname === '/api/vcenter/cluster') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify([{ cluster: 'domain-c7', name: 'Cluster A' }]));
@@ -198,8 +237,8 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(parsed.schema_version).toBe('collector-response-v1');
     expect(parsed.errors ?? []).toEqual([]);
     expect(parsed.assets).toHaveLength(3);
-    expect(parsed.relations).toHaveLength(2);
-    expect(parsed.stats).toEqual({ assets: 3, relations: 2, inventory_complete: true, warnings: [] });
+    expect(parsed.relations).toHaveLength(3);
+    expect(parsed.stats).toEqual({ assets: 3, relations: 3, inventory_complete: true, warnings: [] });
     expect(parsed.assets.map((a) => a.normalized.version)).toEqual(['normalized-v1', 'normalized-v1', 'normalized-v1']);
   });
 
@@ -231,7 +270,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       expect(parsed.schema_version).toBe('collector-response-v1');
       expect(parsed.errors ?? []).toEqual([]);
       expect(parsed.assets.length).toBe(3);
-      expect(parsed.relations.length).toBe(1);
+      expect(parsed.relations.length).toBe(3);
       expect(parsed.stats.inventory_complete).toBe(true);
       expect(parsed.stats.warnings.length).toBe(1);
     } finally {

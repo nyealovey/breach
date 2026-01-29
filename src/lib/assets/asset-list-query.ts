@@ -50,7 +50,39 @@ export function buildAssetListWhere(query: {
     const q = query.q;
     const or: Prisma.AssetWhereInput[] = [
       { displayName: { contains: q, mode: 'insensitive' } },
+      { machineNameOverride: { contains: q, mode: 'insensitive' } },
       { sourceLinks: { some: { externalId: { contains: q, mode: 'insensitive' } } } },
+      // 宿主机名：VM --runs_on--> Host 的 displayName
+      {
+        outgoingRelations: {
+          some: { relationType: 'runs_on', toAsset: { displayName: { contains: q, mode: 'insensitive' } } },
+        },
+      },
+      // 操作系统/机器名/虚拟机名（caption）：从 canonical JSON 中做简单 substring 匹配（任意历史快照命中即可）
+      {
+        runSnapshots: {
+          some: { canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: q, mode: 'insensitive' } },
+        },
+      },
+      {
+        runSnapshots: {
+          some: { canonical: { path: ['fields', 'os', 'version', 'value'], string_contains: q, mode: 'insensitive' } },
+        },
+      },
+      {
+        runSnapshots: {
+          some: {
+            canonical: { path: ['fields', 'identity', 'hostname', 'value'], string_contains: q, mode: 'insensitive' },
+          },
+        },
+      },
+      {
+        runSnapshots: {
+          some: {
+            canonical: { path: ['fields', 'identity', 'caption', 'value'], string_contains: q, mode: 'insensitive' },
+          },
+        },
+      },
     ];
 
     // Avoid UUID contains search; UUID columns do not support LIKE without casting.

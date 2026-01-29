@@ -15,7 +15,7 @@ type FieldValue = {
 type CanonicalNode = FieldValue | { [key: string]: CanonicalNode };
 
 export type CanonicalOutgoingRelation = {
-  type: 'runs_on' | 'member_of';
+  type: 'runs_on' | 'member_of' | 'hosts_vm';
   to: { asset_uuid: string; display_name: string; asset_type?: 'vm' | 'host' | 'cluster' };
   source_id?: string;
   last_seen_at?: string | null;
@@ -47,10 +47,11 @@ function toCanonicalNode(value: unknown, provenance: FieldProvenance): Canonical
 function deriveDisplayName(normalized: Record<string, unknown>, fallback: string) {
   const identity = normalized.identity;
   if (identity && typeof identity === 'object') {
-    const hostname = (identity as Record<string, unknown>).hostname;
-    if (typeof hostname === 'string' && hostname.trim().length > 0) return hostname;
+    // Prefer platform/resource name when available (e.g. VM name from vCenter), fall back to guest hostname.
     const caption = (identity as Record<string, unknown>).caption;
     if (typeof caption === 'string' && caption.trim().length > 0) return caption;
+    const hostname = (identity as Record<string, unknown>).hostname;
+    if (typeof hostname === 'string' && hostname.trim().length > 0) return hostname;
   }
   return fallback;
 }

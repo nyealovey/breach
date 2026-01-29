@@ -27,10 +27,11 @@ function key(kind: string, id: string) {
 function deriveAssetDisplayName(normalized: Record<string, unknown>): string | null {
   const identity = normalized.identity;
   if (identity && typeof identity === 'object') {
-    const hostname = (identity as Record<string, unknown>).hostname;
-    if (typeof hostname === 'string' && hostname.trim().length > 0) return hostname;
+    // Prefer platform/resource name when available (e.g. VM name from vCenter), fall back to guest hostname.
     const caption = (identity as Record<string, unknown>).caption;
     if (typeof caption === 'string' && caption.trim().length > 0) return caption;
+    const hostname = (identity as Record<string, unknown>).hostname;
+    if (typeof hostname === 'string' && hostname.trim().length > 0) return hostname;
   }
   return null;
 }

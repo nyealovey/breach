@@ -8,6 +8,7 @@ import {
   getVmGuestNetworkingInfo,
   listClusters,
   listHosts,
+  listHostsByCluster,
   listVMsByHost,
 } from './client';
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from './normalize';
@@ -109,6 +110,18 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     // First, get hosts and clusters
     const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
 
+    // Build Host-to-Cluster mapping by querying Hosts per cluster
+    // This is the only way to get Host-Cluster relationships via vSphere REST API
+    const hostToClusterMap = new Map<string, string>();
+    await Promise.all(
+      clusters.map(async (cluster) => {
+        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster);
+        for (const host of hostsInCluster) {
+          hostToClusterMap.set(host.host, cluster.cluster);
+        }
+      }),
+    );
+
     // Build VM-to-Host mapping by querying VMs per host
     // This is the only way to get VM-Host relationships via vSphere REST API
     // @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/get/
@@ -143,11 +156,19 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       }),
     );
 
+    // Get Host details with cluster info injected
     const hostDetails = await Promise.all(
-      hostSummaries.map(async (host) => {
+      hostSummaries.map(async (hostSummary) => {
         try {
-          const detail = await getHostDetail(endpoint, token, host.host);
-          return { ...detail, host: host.host };
+          const detail = await getHostDetail(endpoint, token, hostSummary.host);
+          return {
+            ...detail,
+            host: hostSummary.host,
+            name: hostSummary.name ?? (detail as Record<string, unknown>).name,
+            cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship
+            connection_state: hostSummary.connection_state,
+            power_state: hostSummary.power_state,
+          };
         } catch (err) {
           const status =
             typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
@@ -158,9 +179,12 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
               code: 'VCENTER_HOST_DETAIL_NOT_FOUND',
               category: 'network',
               message: 'host detail endpoint not found; using host summary',
-              redacted_context: { host_id: host.host },
+              redacted_context: { host_id: hostSummary.host },
             });
-            return host as unknown as Record<string, unknown>;
+            return {
+              ...hostSummary,
+              cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship
+            } as Record<string, unknown>;
           }
 
           throw err;

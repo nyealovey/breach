@@ -333,7 +333,7 @@ canonical-v1 采用“值 + 来源证据”的封装结构（`field`）：
             "additionalProperties": false,
             "required": ["type", "to"],
             "properties": {
-              "type": { "enum": ["runs_on", "member_of"] },
+              "type": { "enum": ["runs_on", "member_of", "hosts_vm"] },
               "to": {
                 "type": "object",
                 "additionalProperties": false,

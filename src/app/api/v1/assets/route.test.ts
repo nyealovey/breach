@@ -34,6 +34,7 @@ describe('GET /api/v1/assets', () => {
         assetType: 'vm',
         status: 'in_service',
         displayName: 'vm-01',
+        machineNameOverride: 'vm-guest-override',
         createdAt: new Date('2026-01-28T00:00:00.000Z'),
         runSnapshots: [
           {
@@ -45,11 +46,19 @@ describe('GET /api/v1/assets', () => {
               display_name: 'vm-01',
               last_seen_at: '2026-01-28T00:00:00.000Z',
               fields: {
+                identity: {
+                  hostname: { value: 'vm-guest-collected', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  caption: { value: 'vm-01', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
                 network: {
                   ip_addresses: {
                     value: ['10.10.100.106'],
                     sources: [{ source_id: 'src_1', run_id: 'run_1' }],
                   },
+                },
+                os: {
+                  name: { value: 'Ubuntu', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  version: { value: '20.04', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
                 },
                 hardware: {
                   cpu_count: { value: 4, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
@@ -58,6 +67,9 @@ describe('GET /api/v1/assets', () => {
                     value: [{ name: 'Hard disk 1', size_bytes: 53687091200, type: 'thin' }],
                     sources: [{ source_id: 'src_1', run_id: 'run_1' }],
                   },
+                },
+                runtime: {
+                  power_state: { value: 'poweredOn', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
                 },
               },
               relations: {
@@ -87,8 +99,14 @@ describe('GET /api/v1/assets', () => {
         assetUuid: '550e8400-e29b-41d4-a716-446655440000',
         assetType: 'vm',
         status: 'in_service',
-        hostName: '10.10.103.36',
+        machineName: 'vm-guest-override',
+        machineNameOverride: 'vm-guest-override',
+        machineNameCollected: 'vm-guest-collected',
+        machineNameMismatch: true,
         vmName: 'vm-01',
+        hostName: '10.10.103.36',
+        os: 'Ubuntu 20.04',
+        vmPowerState: 'poweredOn',
         ip: '10.10.100.106',
         cpuCount: 4,
         memoryBytes: 8589934592,

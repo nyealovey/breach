@@ -54,6 +54,7 @@ enum AssetStatus {
 enum RelationType {
   runs_on
   member_of
+  hosts_vm
 }
 
 enum RelationStatus {
@@ -192,6 +193,8 @@ model Asset {
   uuid              String      @id @default(uuid()) @db.Uuid
   assetType          AssetType
   displayName        String?
+  // Manual override for "机器名" display; does not block canonical collection from being stored.
+  machineNameOverride String?
   status             AssetStatus @default(in_service)
   mergedIntoAssetUuid String?    @db.Uuid
   lastSeenAt         DateTime?

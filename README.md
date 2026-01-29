@@ -139,7 +139,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `/sources`：来源配置（绑定凭据）
 - `/credentials`：凭据管理（创建/编辑/删除；不回显 secret）
 - `/runs`：采集 Run 列表与详情
-- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：主机名/虚拟机名/IP/CPU/内存/总分配磁盘（不展示 Last Seen/来源）
+- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：机器名（支持覆盖显示）/虚拟机名/宿主机名/操作系统/IP/CPU/内存/总分配磁盘/状态（VM 是否运行）（不展示 Last Seen/来源）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
 
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）

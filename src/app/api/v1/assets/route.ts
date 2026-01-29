@@ -70,6 +70,37 @@ function pickRunsOnHostName(canonical: unknown): string | null {
   return typeof displayName === 'string' && displayName.trim().length > 0 ? displayName.trim() : null;
 }
 
+function pickVmName(fields: unknown): string | null {
+  const caption = getCanonicalFieldValue(fields, ['identity', 'caption']);
+  if (typeof caption === 'string' && caption.trim().length > 0) return caption.trim();
+  return null;
+}
+
+function pickMachineNameCollected(fields: unknown): string | null {
+  const hostname = getCanonicalFieldValue(fields, ['identity', 'hostname']);
+  if (typeof hostname === 'string' && hostname.trim().length > 0) return hostname.trim();
+  return null;
+}
+
+function pickOs(fields: unknown): string | null {
+  const name = getCanonicalFieldValue(fields, ['os', 'name']);
+  const version = getCanonicalFieldValue(fields, ['os', 'version']);
+
+  const nameStr = typeof name === 'string' ? name.trim() : '';
+  const versionStr = typeof version === 'string' ? version.trim() : '';
+
+  if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
+  if (nameStr) return nameStr;
+  if (versionStr) return versionStr;
+  return null;
+}
+
+function pickVmPowerState(fields: unknown): string | null {
+  const powerState = getCanonicalFieldValue(fields, ['runtime', 'power_state']);
+  if (typeof powerState === 'string' && powerState.trim().length > 0) return powerState.trim();
+  return null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
@@ -104,12 +135,27 @@ export async function GET(request: Request) {
       const cpuCount = getCanonicalFieldValue(fields, ['hardware', 'cpu_count']);
       const memoryBytes = getCanonicalFieldValue(fields, ['hardware', 'memory_bytes']);
 
+      const machineNameOverride = asset.machineNameOverride?.trim() ? asset.machineNameOverride.trim() : null;
+      const machineNameCollected = pickMachineNameCollected(fields);
+      const machineName = machineNameOverride ?? machineNameCollected;
+      const machineNameMismatch =
+        machineNameOverride !== null && machineNameCollected !== null && machineNameOverride !== machineNameCollected;
+
+      const vmName = asset.assetType === 'vm' ? (pickVmName(fields) ?? asset.displayName ?? asset.uuid) : null;
+      const hostName = asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : (asset.displayName ?? asset.uuid);
+
       return {
         assetUuid: asset.uuid,
         assetType: asset.assetType,
         status: asset.status,
-        hostName: asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : (asset.displayName ?? asset.uuid),
-        vmName: asset.assetType === 'vm' ? (asset.displayName ?? asset.uuid) : null,
+        machineName,
+        machineNameOverride,
+        machineNameCollected,
+        machineNameMismatch,
+        vmName,
+        hostName,
+        os: pickOs(fields),
+        vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         ip: pickPrimaryIp(fields),
         cpuCount: typeof cpuCount === 'number' ? cpuCount : null,
         memoryBytes: typeof memoryBytes === 'number' ? memoryBytes : null,

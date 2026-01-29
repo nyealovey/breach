@@ -45,8 +45,14 @@ const AssetListItemSchema = z.object({
   assetUuid: z.string(),
   assetType: z.string(),
   status: z.string(),
+  machineName: z.string().nullable(),
+  machineNameOverride: z.string().nullable(),
+  machineNameCollected: z.string().nullable(),
+  machineNameMismatch: z.boolean(),
   hostName: z.string().nullable(),
   vmName: z.string().nullable(),
+  os: z.string().nullable(),
+  vmPowerState: z.string().nullable(),
   ip: z.string().nullable(),
   cpuCount: z.number().int().nullable(),
   memoryBytes: z.number().int().nullable(),
@@ -217,6 +223,7 @@ registry.registerPath({
               assetType: z.string(),
               status: z.string(),
               displayName: z.string().nullable(),
+              machineNameOverride: z.string().nullable(),
               lastSeenAt: z.string().nullable(),
               latestSnapshot: z
                 .object({
@@ -230,6 +237,36 @@ registry.registerPath({
         },
       },
     },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/assets/{uuid}',
+  tags: ['assets'],
+  request: {
+    params: z.object({ uuid: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ machineNameOverride: z.string().nullable().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(z.object({ assetUuid: z.string(), machineNameOverride: z.string().nullable() })),
+        },
+      },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
     404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
   },
 });
