@@ -19,13 +19,14 @@ function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
 }
 
 function pickPrimaryIp(fields: unknown): string | null {
-  const managementIp = getCanonicalFieldValue(fields, ['network', 'management_ip']);
-  if (typeof managementIp === 'string' && managementIp.trim().length > 0) return managementIp.trim();
-
   const ips = getCanonicalFieldValue(fields, ['network', 'ip_addresses']);
   if (Array.isArray(ips)) {
-    const first = ips.find((ip) => typeof ip === 'string' && ip.trim().length > 0);
-    if (typeof first === 'string') return first.trim();
+    const cleaned = ips
+      .filter((ip) => typeof ip === 'string')
+      .map((ip) => ip.trim())
+      .filter((ip) => ip.length > 0);
+
+    if (cleaned.length > 0) return Array.from(new Set(cleaned)).join(', ');
   }
 
   return null;

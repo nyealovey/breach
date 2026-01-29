@@ -45,9 +45,12 @@ const AssetListItemSchema = z.object({
   assetUuid: z.string(),
   assetType: z.string(),
   status: z.string(),
-  displayName: z.string().nullable(),
-  lastSeenAt: z.string().nullable(),
-  sources: z.array(z.object({ sourceId: z.string(), name: z.string() })),
+  hostName: z.string().nullable(),
+  vmName: z.string().nullable(),
+  ip: z.string().nullable(),
+  cpuCount: z.number().int().nullable(),
+  memoryBytes: z.number().int().nullable(),
+  totalDiskBytes: z.number().int().nullable(),
 });
 
 const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
@@ -72,6 +75,7 @@ registry.registerPath({
       q: z.string().optional(),
       asset_type: z.string().optional(),
       source_id: z.string().optional(),
+      exclude_asset_type: z.string().optional(),
     }),
   },
   responses: {

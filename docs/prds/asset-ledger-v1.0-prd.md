@@ -54,7 +54,7 @@
 - 凭据管理：仅可设置/更新，不回显明文；更新需审计（事件级别）。
 - Run 列表页：按 Source 过滤；展示 `mode`、`trigger_type`、`status`、开始/结束时间、driver、统计摘要。
 - Run 详情页：展示 detect 结果、统计、errors/warnings（脱敏）、（可选）插件 stdout/stderr 摘要。
-- 资产列表页：分页；支持关键字搜索（至少 `asset_uuid/hostname/external_id`）；支持过滤（至少 `asset_type/source_id`）；支持排序（至少 `display_name`）。
+- 资产列表页：分页；支持关键字搜索（至少 `asset_uuid/hostname/external_id`）；支持过滤（至少 `asset_type/source_id`）；支持排序（至少 `display_name`）；默认展示盘点列：主机名/虚拟机名/IP/CPU/内存/总分配磁盘/状态/操作（不展示 Last Seen/来源）；“全部类型”默认不展示 cluster（仅筛选为 cluster 时出现）。
 - 资产详情页：
   - unified fields（canonical-v1 结构，含 sources/alternatives/conflict）
   - 关联来源明细（normalized-v1）
@@ -133,6 +133,7 @@
 - [ ] FR-03 插件化采集：支持 `healthcheck/detect/collect`；driver 选择可追溯；inventory 不完整必须失败。
 - [ ] FR-04 资产统一视图：资产详情包含 unified fields（含来源证据/冲突）与关联来源明细（normalized）。
 - [ ] FR-05 关系链：资产详情可展示 VM→Host→Cluster 关系链（允许缺边）。
+- [ ] 资产列表盘点列：列表默认展示主机名/虚拟机名/IP/CPU/内存/总分配磁盘/状态/操作；IP 取 `ip_addresses` 全量；内存/磁盘单位使用 GiB/TiB（1024）；“全部类型”默认不展示 cluster（仅筛选为 cluster 时出现）。
 - [ ] Web UI：Source/凭据/Run 列表与详情/资产列表与详情均可用，权限仅 admin。
 - [ ] OpenAPI/Swagger：提供 OpenAPI JSON 与 Swagger UI，并覆盖 UI 所需 API。
 

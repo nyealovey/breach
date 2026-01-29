@@ -80,6 +80,7 @@
 13. Task 13：Asset API + UI
     - 状态：DONE
     - 产出：`/api/v1/assets*`（列表/详情/来源明细/关系）+ `/assets`（列表/详情）+ 对应 API 单测
+    - 补充修正（2026-01-29）：资产列表改为“盘点列”展示（主机名/虚拟机名/IP/CPU/内存/总分配磁盘），不展示 Last Seen/来源；“全部类型”默认不展示 cluster；IP 取 `ip_addresses` 全量；单位使用 GiB/TiB（1024）。对应 PRD：`docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`
 
 14. Task 14：Raw 查看入口 + 审计（admin-only）
     - 状态：DONE

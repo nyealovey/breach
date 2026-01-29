@@ -893,10 +893,10 @@ git commit -m "feat: ingest assets relations and generate canonical snapshots"
 
 实现 `GET /api/v1/assets`：
 
-- filters: `asset_type`、`source_id`
-- search: `q` 覆盖 `asset_uuid/hostname/external_id`（v1.0 最小）
+- filters: `asset_type`、`source_id`、`exclude_asset_type`（用于“全部类型”默认隐藏 cluster）
+- search: `q` 覆盖 `asset_uuid/display_name/external_id`（v1.0 最小）
 - sort: `display_name`
-- 返回：asset_uuid/asset_type/status/display_name/last_seen_at/source 摘要
+- 返回（列表盘点列）：`asset_uuid/asset_type/status/hostName/vmName/ip/cpuCount/memoryBytes/totalDiskBytes`（不返回 Last Seen/来源）
 
 **Step 2: Asset 详情 API**
 
@@ -911,7 +911,7 @@ git commit -m "feat: ingest assets relations and generate canonical snapshots"
 
 **Step 4: UI 页面**
 
-- Asset 列表：分页、搜索、过滤
+- Asset 列表：分页、搜索、过滤；默认展示盘点列（主机名/虚拟机名/IP/CPU/内存/总分配磁盘/状态/操作）；“全部类型”默认不展示 cluster
 - Asset 详情：渲染 canonical.fields（冲突标记按 UI spec 4）+ 来源明细（normalized 对比）+ 关系链（UI spec 5）
 
 **Step 5: Commit**

@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 
 export type AssetListQuery = {
   assetType: AssetType | undefined;
+  excludeAssetType: AssetType | undefined;
   sourceId: string | undefined;
   q: string | undefined;
 };
@@ -23,6 +24,7 @@ function parseOptionalString(input: string | null): string | undefined {
 export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
   return {
     assetType: parseAssetType(params.get('asset_type')),
+    excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
     q: parseOptionalString(params.get('q')),
   };
@@ -34,12 +36,14 @@ export function isUuid(input: string): boolean {
 
 export function buildAssetListWhere(query: {
   assetType?: AssetType;
+  excludeAssetType?: AssetType;
   sourceId?: string;
   q?: string;
 }): Prisma.AssetWhereInput {
   const and: Prisma.AssetWhereInput[] = [];
 
   if (query.assetType) and.push({ assetType: query.assetType });
+  if (query.excludeAssetType) and.push({ assetType: { not: query.excludeAssetType } });
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
 
   if (query.q) {

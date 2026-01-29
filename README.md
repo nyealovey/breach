@@ -115,6 +115,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - PRD（vCenter MVP v1.0，历史范围说明）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
 - PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：[`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`](docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md)
 - PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.1）：[`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`](docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md)
+- PRD（资产列表盘点列展示 v1.0）：[`docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`](docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md)
 - PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - v1.0 需求追溯矩阵（Traceability）：[`docs/requirements/asset-ledger-v1.0-traceability.md`](docs/requirements/asset-ledger-v1.0-traceability.md)
 - vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施计划：[`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`](docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md)

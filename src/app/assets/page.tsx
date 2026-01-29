@@ -71,6 +71,7 @@ export default function AssetsPage() {
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
       assetType: assetTypeInput === 'all' ? undefined : assetTypeInput,
+      excludeAssetType: assetTypeInput === 'all' ? ('cluster' as const) : undefined,
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
       page,
       pageSize,
@@ -101,6 +102,7 @@ export default function AssetsPage() {
       params.set('pageSize', String(query.pageSize));
       if (query.q) params.set('q', query.q);
       if (query.assetType) params.set('asset_type', query.assetType);
+      if (query.excludeAssetType) params.set('exclude_asset_type', query.excludeAssetType);
       if (query.sourceId) params.set('source_id', query.sourceId);
 
       const res = await fetch(`/api/v1/assets?${params.toString()}`);
@@ -211,7 +213,9 @@ export default function AssetsPage() {
                   <TableRow key={item.assetUuid}>
                     <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
                     <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
-                    <TableCell className="font-mono text-xs">{item.ip ?? '-'}</TableCell>
+                    <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
+                      {item.ip ?? '-'}
+                    </TableCell>
                     <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
                     <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
                     <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>

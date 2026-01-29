@@ -5,12 +5,32 @@ import { buildAssetListWhere, isUuid, parseAssetListQuery } from '@/lib/assets/a
 describe('asset list query', () => {
   it('parses supported query params and trims q', () => {
     const params = new URLSearchParams({ asset_type: 'vm', source_id: 'src_1', q: '  host-01  ' });
-    expect(parseAssetListQuery(params)).toEqual({ assetType: 'vm', sourceId: 'src_1', q: 'host-01' });
+    expect(parseAssetListQuery(params)).toEqual({
+      assetType: 'vm',
+      excludeAssetType: undefined,
+      sourceId: 'src_1',
+      q: 'host-01',
+    });
   });
 
   it('treats unknown asset_type as undefined', () => {
     const params = new URLSearchParams({ asset_type: 'nope' });
-    expect(parseAssetListQuery(params)).toEqual({ assetType: undefined, sourceId: undefined, q: undefined });
+    expect(parseAssetListQuery(params)).toEqual({
+      assetType: undefined,
+      excludeAssetType: undefined,
+      sourceId: undefined,
+      q: undefined,
+    });
+  });
+
+  it('parses exclude_asset_type', () => {
+    const params = new URLSearchParams({ exclude_asset_type: 'cluster' });
+    expect(parseAssetListQuery(params)).toEqual({
+      assetType: undefined,
+      excludeAssetType: 'cluster',
+      sourceId: undefined,
+      q: undefined,
+    });
   });
 
   it('detects uuid strings', () => {
@@ -32,6 +52,11 @@ describe('asset list query', () => {
         },
       ],
     });
+  });
+
+  it('builds where with exclude_asset_type', () => {
+    const where = buildAssetListWhere({ excludeAssetType: 'cluster' });
+    expect(where).toEqual({ AND: [{ assetType: { not: 'cluster' } }] });
   });
 
   it('builds where with uuid equality search (not contains)', () => {
