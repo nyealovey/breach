@@ -4,7 +4,7 @@
 - 需求验收口径：`docs/requirements/asset-ledger-v1.0-traceability.md`（AC-01 ~ AC-09）
 - 增量需求：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
 - 开始日期：2026-01-28
-- 最后更新：2026-01-28
+- 最后更新：2026-01-29
 
 ## 状态约定
 
@@ -19,8 +19,8 @@
 
 ## 总体进度
 
-- 任务完成：17 / 26
-- 当前批次：增量未开始（凭据模块 + 调度组手动运行）
+- 任务完成：20 / 26
+- 当前批次：Batch 7（增量进行中：凭据模块 + 调度组手动运行）
 
 ## 任务进度（按建议执行顺序）
 
@@ -98,13 +98,13 @@
 ### Batch 7：增量（Task 18-26，凭据模块 + 调度组手动运行）
 
 18. Task 18：扩展错误码（Credential Not Found）
-    - 状态：TODO
+    - 状态：DONE
 
 19. Task 19：数据模型（Credential 实体 + Source 绑定）
-    - 状态：TODO
+    - 状态：DONE
 
 20. Task 20：定义 Credential Zod Schema（按 SourceType 字段变化）
-    - 状态：TODO
+    - 状态：DONE
 
 21. Task 21：Credentials API（CRUD + usageCount + 删除限制）
     - 状态：TODO
