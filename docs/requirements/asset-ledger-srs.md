@@ -277,11 +277,17 @@
 
 关系由采集插件输出并随 Run 更新；允许缺边。
 
+> 说明：这里的“允许缺边”指**单个资产**可以缺少边（例如某些 VM 无法映射到宿主 Host）。  
+> 但对 vCenter 等虚拟化平台，若采集结果出现 `relations=0`（完全无任何关系边），应视为采集失败（避免资产页关系链不可用）。
+
 **验收标准**
 
 - Given vCenter/PVE/Hyper-V 插件能采集到宿主/集群信息  
   When Run 完成  
   Then 资产详情中可查看到 VM→Host→Cluster 的关系链。
+- Given vCenter 插件 Run 成功  
+  When Run 完成  
+  Then `relations[]` 至少包含一条关系边（`runs_on` 或 `member_of`）。
 - Given 阿里云来源通常无法提供宿主信息  
   When Run 完成  
   Then VM 仍可入账；其 runs_on 关系允许为空；Cluster 为空（不做映射）。
@@ -387,7 +393,7 @@ Run 历史、SourceRecord raw 数据、合并与字段变更等审计信息永�
 
 - Given 任一用户访问资产列表  
   When 展示  
-  Then 必须支持分页；支持按 `asset_type`、`status`、`source` 等过滤；支持关键字搜索（覆盖资产列表页展示列中的可搜索字段：仅文本类字段 + 枚举展示文案；支持空格分词并采用 AND 语义；每个词使用不区分大小写的“模糊包含”匹配；不做中文分词/同义词/拼写容错）。
+  Then 必须支持分页；支持按 `asset_type`、`status`、`source` 等过滤；资产列表默认展示列包含：主机名、虚拟机名、IP、CPU、内存、总分配磁盘、状态、操作；**不展示** last_seen 与 来源；支持关键字搜索（覆盖：主机名/虚拟机名、externalId、uuid 等文本字段；支持空格分词并采用 AND 语义；每个词使用不区分大小写的“模糊包含”匹配；不做中文分词/同义词/拼写容错）。
 - Given 用户在资产列表输入关键字 `q="foo bar"`  
   When 执行搜索  
   Then 系统仅返回同时命中 `foo` 与 `bar` 的资产（AND）。

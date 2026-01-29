@@ -409,8 +409,8 @@ VM: vm-app-01
 <table className="hidden sm:table lg:hidden">
   <thead>
     <tr>
-      <th>名称</th>
-      <th>类型</th>
+      <th>主机名</th>
+      <th>虚拟机名</th>
       <th>状态</th>
       <th>操作</th>
     </tr>
@@ -421,11 +421,12 @@ VM: vm-app-01
 <table className="hidden lg:table">
   <thead>
     <tr>
-      <th>名称</th>
-      <th>类型</th>
-      <th>IP 地址</th>
-      <th>来源</th>
-      <th>最后采集</th>
+      <th>主机名</th>
+      <th>虚拟机名</th>
+      <th>IP</th>
+      <th>CPU</th>
+      <th>内存</th>
+      <th>总分配磁盘</th>
       <th>状态</th>
       <th>操作</th>
     </tr>

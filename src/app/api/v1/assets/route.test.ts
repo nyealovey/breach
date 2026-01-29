@@ -34,12 +34,41 @@ describe('GET /api/v1/assets', () => {
         assetType: 'vm',
         status: 'in_service',
         displayName: 'vm-01',
-        lastSeenAt: new Date('2026-01-28T00:00:00.000Z'),
         createdAt: new Date('2026-01-28T00:00:00.000Z'),
-        sourceLinks: [
+        runSnapshots: [
           {
-            sourceId: 'src_1',
-            source: { id: 'src_1', name: 'vcenter-1' },
+            canonical: {
+              version: 'canonical-v1',
+              asset_uuid: '550e8400-e29b-41d4-a716-446655440000',
+              asset_type: 'vm',
+              status: 'in_service',
+              display_name: 'vm-01',
+              last_seen_at: '2026-01-28T00:00:00.000Z',
+              fields: {
+                network: {
+                  ip_addresses: {
+                    value: ['10.10.100.106'],
+                    sources: [{ source_id: 'src_1', run_id: 'run_1' }],
+                  },
+                },
+                hardware: {
+                  cpu_count: { value: 4, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  memory_bytes: { value: 8589934592, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  disks: {
+                    value: [{ name: 'Hard disk 1', size_bytes: 53687091200, type: 'thin' }],
+                    sources: [{ source_id: 'src_1', run_id: 'run_1' }],
+                  },
+                },
+              },
+              relations: {
+                outgoing: [
+                  {
+                    type: 'runs_on',
+                    to: { asset_uuid: 'host_1', asset_type: 'host', display_name: '10.10.103.36' },
+                  },
+                ],
+              },
+            },
           },
         ],
       },
@@ -58,9 +87,12 @@ describe('GET /api/v1/assets', () => {
         assetUuid: '550e8400-e29b-41d4-a716-446655440000',
         assetType: 'vm',
         status: 'in_service',
-        displayName: 'vm-01',
-        lastSeenAt: '2026-01-28T00:00:00.000Z',
-        sources: [{ sourceId: 'src_1', name: 'vcenter-1' }],
+        hostName: '10.10.103.36',
+        vmName: 'vm-01',
+        ip: '10.10.100.106',
+        cpuCount: 4,
+        memoryBytes: 8589934592,
+        totalDiskBytes: 53687091200,
       },
     ]);
   });

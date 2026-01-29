@@ -14,9 +14,12 @@ type AssetListItem = {
   assetUuid: string;
   assetType: string;
   status: string;
-  displayName: string | null;
-  lastSeenAt: string | null;
-  sources: Array<{ sourceId: string; name: string }>;
+  hostName: string | null;
+  vmName: string | null;
+  ip: string | null;
+  cpuCount: number | null;
+  memoryBytes: number | null;
+  totalDiskBytes: number | null;
 };
 
 type Pagination = {
@@ -28,17 +31,26 @@ type Pagination = {
 
 type SourceOption = { sourceId: string; name: string };
 
-function formatAssetType(input: string) {
-  if (input === 'vm') return 'VM';
-  if (input === 'host') return 'Host';
-  if (input === 'cluster') return 'Cluster';
-  return input;
-}
-
 function statusBadgeVariant(status: string): React.ComponentProps<typeof Badge>['variant'] {
   if (status === 'in_service') return 'default';
   if (status === 'offline') return 'secondary';
   return 'outline';
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null) return '-';
+  if (!Number.isFinite(bytes) || bytes < 0) return '-';
+
+  const gib = bytes / 1024 ** 3;
+  if (gib >= 1024) return `${(gib / 1024).toFixed(1)} TiB`;
+  if (gib >= 10) return `${Math.round(gib)} GiB`;
+  if (gib >= 1) return `${gib.toFixed(1)} GiB`;
+
+  const mib = bytes / 1024 ** 2;
+  if (mib >= 10) return `${Math.round(mib)} MiB`;
+  if (mib >= 1) return `${mib.toFixed(1)} MiB`;
+
+  return `${bytes} B`;
 }
 
 export default function AssetsPage() {
@@ -184,25 +196,27 @@ export default function AssetsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>类型</TableHead>
+                  <TableHead>主机名</TableHead>
+                  <TableHead>虚拟机名</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead className="text-right">CPU</TableHead>
+                  <TableHead className="text-right">内存</TableHead>
+                  <TableHead className="text-right">总分配磁盘</TableHead>
                   <TableHead>状态</TableHead>
-                  <TableHead>Last Seen</TableHead>
-                  <TableHead>来源</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.assetUuid}>
-                    <TableCell className="font-medium">{item.displayName ?? item.assetUuid}</TableCell>
-                    <TableCell>{formatAssetType(item.assetType)}</TableCell>
+                    <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
+                    <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
+                    <TableCell className="font-mono text-xs">{item.ip ?? '-'}</TableCell>
+                    <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
+                    <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
+                    <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>
                     <TableCell>
                       <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
-                    </TableCell>
-                    <TableCell>{item.lastSeenAt ?? '-'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {item.sources.length === 0 ? '-' : item.sources.map((s) => s.name).join(', ')}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="outline">

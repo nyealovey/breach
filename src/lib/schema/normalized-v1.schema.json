@@ -72,7 +72,10 @@
             "properties": {
               "name": { "type": "string" },
               "size_bytes": { "type": "integer", "minimum": 0 },
-              "type": { "type": "string" }
+              "type": {
+                "enum": ["thin", "thick", "eagerZeroedThick"],
+                "description": "Disk provisioning type (vCenter): thin/thick/eagerZeroedThick."
+              }
             }
           }
         }

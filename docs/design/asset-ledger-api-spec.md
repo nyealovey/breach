@@ -677,20 +677,20 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 **查询参数**：
 
-| 参数        | 类型   | 说明                                                                                                                                    |
-| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `assetType` | string | 按类型过滤（vm/host/cluster）                                                                                                           |
-| `sourceId`  | string | 按来源过滤                                                                                                                              |
-| `q`         | string | 关键字搜索（覆盖资产列表页展示字段；空格分词 AND；不区分大小写；模糊包含匹配；仅文本字段 + 枚举展示文案；不做中文分词/同义词/拼写容错） |
-| `sortBy`    | string | 排序字段（displayName/createdAt）                                                                                                       |
-| `sortOrder` | string | 排序方向（asc/desc）                                                                                                                    |
+| 参数         | 类型   | 说明                                                                                                                                     |
+| ------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `page`       | number | 分页页码（从 1 开始）                                                                                                                    |
+| `pageSize`   | number | 每页条数                                                                                                                                 |
+| `asset_type` | string | 按类型过滤（vm/host/cluster）                                                                                                            |
+| `source_id`  | string | 按来源过滤                                                                                                                               |
+| `q`          | string | 关键字搜索（覆盖：主机名/虚拟机名、externalId、uuid 等文本字段；空格分词 AND；不区分大小写；模糊包含匹配；不做中文分词/同义词/拼写容错） |
 
 **关键字搜索（q）语义**：
 
 - 空格分词：将 `q` 按空白字符切分为多个词（连续空白视为一个分隔）。
 - AND：每个词都必须命中。
 - 匹配方式：不区分大小写的“包含”匹配（substring）。
-- 范围：仅对资产列表页展示字段中的文本类字段与枚举展示文案生效。
+- 范围：仅对主机名/虚拟机名（display_name）、externalId、uuid 等文本字段生效。
 - 空值处理：`q` 为空或仅包含空白时，视为未提供该参数。
 
 **成功响应**（200）：
@@ -701,11 +701,13 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
     {
       "assetUuid": "a_123",
       "assetType": "vm",
-      "displayName": "vm-app-01",
       "status": "in_service",
-      "sources": [{ "sourceId": "src_123", "sourceName": "vcenter-prod", "externalId": "vm-100" }],
-      "createdAt": "2026-01-01T00:00:00Z",
-      "updatedAt": "2026-01-26T02:15:00Z"
+      "hostName": "esxi-01",
+      "vmName": "vm-app-01",
+      "ip": "10.10.1.23",
+      "cpuCount": 4,
+      "memoryBytes": 8589934592,
+      "totalDiskBytes": 53687091200
     }
   ],
   "pagination": { "page": 1, "pageSize": 20, "total": 1, "totalPages": 1 },

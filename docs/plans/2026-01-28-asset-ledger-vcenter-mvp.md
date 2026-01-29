@@ -698,7 +698,7 @@ vSphere REST API 端点：
 
 兼容性注意（以真实 vCenter REST 返回为准，需做防御性处理）：
 
-- `GET /api/vcenter/host/{host}` 在部分环境可能返回 404（接口不存在）；**该“降级并返回成功”的口径已废弃**，见：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.0-prd.md`（现要求按 Source 版本范围选择 driver，关键能力缺失直接失败）。
+- `GET /api/vcenter/host/{host}` 在部分环境可能返回 404（接口不存在）；**该“降级并返回成功”的口径已废弃**，见：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`（现要求按 Source 版本范围选择 driver，关键能力缺失直接失败）。
 - VM detail 结构可能存在差异：`nics` 可能为对象（而非数组）；`instance_uuid` 可能出现在 `identity.instance_uuid`；detail 也可能不包含 VM 自身 ID 字段。
 - `external_id` 需以 VM 列表摘要的 `vm` 字段为单一来源；必要时将其注入到 detail 上，避免 ingest 阶段出现 `externalId missing`。
 
