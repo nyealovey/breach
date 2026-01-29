@@ -93,10 +93,11 @@
   - 非 VM：`-`
 - **宿主机名（hostName）**：
   - VM：取 runs_on 关系指向 Host 的展示名（Host 的 `asset.display_name`）
-  - Host：取自身 `asset.display_name`
+  - Host：`-`
   - Cluster：`-`（默认列表已隐藏）
 - **操作系统（os）**：
-  - `canonical.fields.os.name.value` + 可选 `canonical.fields.os.version.value`（拼接展示）
+  - 优先：`canonical.fields.os.name.value` + 可选 `canonical.fields.os.version.value`（拼接展示）
+  - fallback：`canonical.fields.os.fingerprint.value`（例如 vCenter 的 `guest_OS` 标识：`WINDOWS_7_SERVER_64`）
   - 无值：`-`
 - **状态（vmPowerState）**：
   - VM：`canonical.fields.runtime.power_state.value`

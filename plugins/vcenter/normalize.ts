@@ -260,6 +260,8 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       kind: 'vm',
       identity: {
         machine_uuid: raw.identity?.instance_uuid ?? raw.identity?.bios_uuid,
+        // VM display name (platform name). This is different from the guest hostname.
+        caption: raw.name ?? raw.identity?.name ?? raw.vm,
         // Use guest hostname (actual machine name) if available, otherwise undefined
         hostname: guestHostname || undefined,
       },

@@ -85,13 +85,16 @@ function pickMachineNameCollected(fields: unknown): string | null {
 function pickOs(fields: unknown): string | null {
   const name = getCanonicalFieldValue(fields, ['os', 'name']);
   const version = getCanonicalFieldValue(fields, ['os', 'version']);
+  const fingerprint = getCanonicalFieldValue(fields, ['os', 'fingerprint']);
 
   const nameStr = typeof name === 'string' ? name.trim() : '';
   const versionStr = typeof version === 'string' ? version.trim() : '';
+  const fingerprintStr = typeof fingerprint === 'string' ? fingerprint.trim() : '';
 
   if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
   if (nameStr) return nameStr;
   if (versionStr) return versionStr;
+  if (fingerprintStr) return fingerprintStr;
   return null;
 }
 
@@ -142,7 +145,7 @@ export async function GET(request: Request) {
         machineNameOverride !== null && machineNameCollected !== null && machineNameOverride !== machineNameCollected;
 
       const vmName = asset.assetType === 'vm' ? (pickVmName(fields) ?? asset.displayName ?? asset.uuid) : null;
-      const hostName = asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : (asset.displayName ?? asset.uuid);
+      const hostName = asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : null;
 
       return {
         assetUuid: asset.uuid,

@@ -72,6 +72,13 @@ export function buildAssetListWhere(query: {
       {
         runSnapshots: {
           some: {
+            canonical: { path: ['fields', 'os', 'fingerprint', 'value'], string_contains: q, mode: 'insensitive' },
+          },
+        },
+      },
+      {
+        runSnapshots: {
+          some: {
             canonical: { path: ['fields', 'identity', 'hostname', 'value'], string_contains: q, mode: 'insensitive' },
           },
         },
