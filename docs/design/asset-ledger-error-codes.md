@@ -57,6 +57,7 @@
 | CONFIG_INVALID_TIMEZONE           | web    | config     | false     | 400              | 调度组时区非法（非 IANA TZ）                                |
 | CONFIG_INVALID_HHMM               | web    | config     | false     | 400              | 调度组触发时间非法（非 `HH:mm`）                            |
 | CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                 |
+| CONFIG_CREDENTIAL_NOT_FOUND       | web    | config     | false     | 404              | 凭据不存在（Credential 不存在）                             |
 | CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                  |
 | CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                  |
 | CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                         |
@@ -123,6 +124,7 @@ export const ErrorCode = {
   CONFIG_INVALID_TIMEZONE: 'CONFIG_INVALID_TIMEZONE',
   CONFIG_INVALID_HHMM: 'CONFIG_INVALID_HHMM',
   CONFIG_SOURCE_NOT_FOUND: 'CONFIG_SOURCE_NOT_FOUND',
+  CONFIG_CREDENTIAL_NOT_FOUND: 'CONFIG_CREDENTIAL_NOT_FOUND',
   CONFIG_RUN_NOT_FOUND: 'CONFIG_RUN_NOT_FOUND',
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
   CONFIG_SOURCE_RECORD_NOT_FOUND: 'CONFIG_SOURCE_RECORD_NOT_FOUND',
@@ -250,6 +252,10 @@ export const ErrorMessages: Record<
   CONFIG_SOURCE_NOT_FOUND: {
     zh: '来源不存在：{{source_id}}',
     en: 'Source not found: {{source_id}}',
+  },
+  CONFIG_CREDENTIAL_NOT_FOUND: {
+    zh: '凭据不存在：{{credential_id}}',
+    en: 'Credential not found: {{credential_id}}',
   },
   CONFIG_RUN_NOT_FOUND: {
     zh: '采集批次不存在：{{run_id}}',
