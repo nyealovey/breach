@@ -19,7 +19,7 @@
 
 ## 总体进度
 
-- 任务完成：20 / 26
+- 任务完成：23 / 26
 - 当前批次：Batch 7（增量进行中：凭据模块 + 调度组手动运行）
 
 ## 任务进度（按建议执行顺序）
@@ -107,13 +107,13 @@
     - 状态：DONE
 
 21. Task 21：Credentials API（CRUD + usageCount + 删除限制）
-    - 状态：TODO
+    - 状态：DONE
 
 22. Task 22：Source API 改造（绑定 credentialId + 返回摘要 + 移除旧凭据入口）
-    - 状态：TODO
+    - 状态：DONE
 
 23. Task 23：Worker/Scheduler 使用新 Credential（不再读取旧字段）
-    - 状态：TODO
+    - 状态：DONE
 
 24. Task 24：调度组手动运行 API（批量 collect/manual）
     - 状态：TODO
