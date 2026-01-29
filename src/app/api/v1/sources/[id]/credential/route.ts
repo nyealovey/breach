@@ -2,7 +2,7 @@ import { requireAdmin } from '@/lib/auth/require-admin';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail } from '@/lib/http/response';
 
-export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function PUT(request: Request) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
 

@@ -19,8 +19,8 @@
 
 ## 总体进度
 
-- 任务完成：23 / 26
-- 当前批次：Batch 7（增量进行中：凭据模块 + 调度组手动运行）
+- 任务完成：26 / 26
+- 当前批次：已完成（Batch 7：凭据模块 + 调度组手动运行）
 
 ## 任务进度（按建议执行顺序）
 
@@ -116,10 +116,10 @@
     - 状态：DONE
 
 24. Task 24：调度组手动运行 API（批量 collect/manual）
-    - 状态：TODO
+    - 状态：DONE
 
 25. Task 25：Web UI（Credentials 页面 + Source 表单绑定 + 调度组运行按钮）
-    - 状态：TODO
+    - 状态：DONE
 
 26. Task 26：OpenAPI/Docs/E2E 更新（交付收尾）
-    - 状态：TODO
+    - 状态：DONE

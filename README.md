@@ -127,7 +127,8 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - `/login`：管理员登录
 - `/schedule-groups`：调度组配置
-- `/sources`：来源配置与凭据更新
+- `/sources`：来源配置（绑定凭据）
+- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret）
 - `/runs`：采集 Run 列表与详情
 - `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
@@ -141,7 +142,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。
 - `BCRYPT_LOG_ROUNDS`：bcrypt 成本（默认 12；值越大越安全但越慢）。
-- `PASSWORD_ENCRYPTION_KEY`：用于数据库中“Source 凭据密文”的加/解密（生产环境必须固定；否则重启后无法解密已存储的密码）。
+- `PASSWORD_ENCRYPTION_KEY`：用于数据库中“Credential 凭据密文”的加/解密（生产环境必须固定；否则重启后无法解密已存储的凭据）。
 - `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用；默认 `plugins/vcenter/index.ts`）
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）

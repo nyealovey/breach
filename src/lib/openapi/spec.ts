@@ -50,6 +50,17 @@ const AssetListItemSchema = z.object({
   sources: z.array(z.object({ sourceId: z.string(), name: z.string() })),
 });
 
+const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
+
+const CredentialListItemSchema = z.object({
+  credentialId: z.string(),
+  name: z.string(),
+  type: SourceTypeSchema,
+  usageCount: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/v1/assets',
@@ -67,6 +78,122 @@ registry.registerPath({
     200: { description: 'OK', content: { 'application/json': { schema: okPaginatedResponse(AssetListItemSchema) } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/credentials',
+  tags: ['credentials'],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().optional(),
+      type: SourceTypeSchema.optional(),
+      q: z.string().optional(),
+      sortBy: z.enum(['createdAt', 'updatedAt', 'name']).optional(),
+      sortOrder: z.enum(['asc', 'desc']).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okPaginatedResponse(CredentialListItemSchema) } },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/credentials',
+  tags: ['credentials'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ name: z.string().min(1), type: SourceTypeSchema, payload: z.unknown() }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: okResponse(CredentialListItemSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/credentials/{id}',
+  tags: ['credentials'],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(CredentialListItemSchema) } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/credentials/{id}',
+  tags: ['credentials'],
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ name: z.string().min(1).optional(), payload: z.unknown().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(CredentialListItemSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/credentials/{id}',
+  tags: ['credentials'],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    204: { description: 'No Content' },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/schedule-groups/{id}/runs',
+  tags: ['schedule-groups'],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(
+            z.object({
+              queued: z.number().int(),
+              skipped_active: z.number().int(),
+              skipped_missing_credential: z.number().int(),
+              message: z.string(),
+            }),
+          ),
+        },
+      },
+    },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
   },
 });
 

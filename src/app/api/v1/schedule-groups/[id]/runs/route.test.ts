@@ -34,4 +34,3 @@ describe('POST /api/v1/schedule-groups/:id/runs', () => {
     expect(body.data.queued).toBe(0);
   });
 });
-

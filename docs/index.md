@@ -6,6 +6,12 @@
 
 - 需求规格说明书（SRS）：`docs/requirements/asset-ledger-srs.md`
 
+## 当前实现（vCenter MVP）
+
+- vCenter MVP v1.0 计划：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`
+- vCenter MVP v1.0 执行进度：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
+- PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
+
 ## 参考文档（实现细节 / 规范）
 
 - 本地开发与测试环境启动指南：`docs/runbooks/local-dev.md`

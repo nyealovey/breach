@@ -7,4 +7,3 @@ describe('ErrorCode', () => {
     expect(ErrorCode.CONFIG_CREDENTIAL_NOT_FOUND).toBe('CONFIG_CREDENTIAL_NOT_FOUND');
   });
 });
-

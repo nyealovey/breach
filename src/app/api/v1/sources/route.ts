@@ -134,8 +134,7 @@ export async function POST(request: Request) {
   }
 
   const credentialId = body.credentialId ?? null;
-  const credential =
-    credentialId !== null ? await prisma.credential.findUnique({ where: { id: credentialId } }) : null;
+  const credential = credentialId !== null ? await prisma.credential.findUnique({ where: { id: credentialId } }) : null;
   if (credentialId !== null && !credential) {
     return fail(
       {

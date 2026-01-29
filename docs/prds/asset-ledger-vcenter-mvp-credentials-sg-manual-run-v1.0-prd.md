@@ -222,19 +222,19 @@ Source 创建/编辑时可选绑定 `credentialId`（可为空）。
 
 #### v1.0 → v1.1
 
-| 维度 | 原状态 | 补充内容 |
-|------|--------|----------|
-| 凭据名称唯一性 | 仅说明"唯一" | 明确为"全局唯一"，与 `schedule_group.name` 一致 |
-| 凭据更新生效时机 | 未说明 | 明确"立即生效，已绑定 Source 下次采集自动使用新凭据" |
-| API 分页参数 | 仅说明"建议支持" | 明确 `page=1`、`pageSize=20`（最大 100）、`sortBy=updatedAt`、`sortOrder=desc` |
-| API 排序字段 | 未说明 | 明确可选字段：`name/type/usageCount/createdAt/updatedAt` |
-| 并发控制 | 未说明 | 明确使用事务 + `FOR UPDATE SKIP LOCKED` 避免竞态条件 |
-| 错误码 | 仅说明"返回 409" | 明确错误码为 `CONFIG_RESOURCE_CONFLICT`，与 API 规范对齐 |
+| 维度             | 原状态           | 补充内容                                                                       |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------ |
+| 凭据名称唯一性   | 仅说明"唯一"     | 明确为"全局唯一"，与 `schedule_group.name` 一致                                |
+| 凭据更新生效时机 | 未说明           | 明确"立即生效，已绑定 Source 下次采集自动使用新凭据"                           |
+| API 分页参数     | 仅说明"建议支持" | 明确 `page=1`、`pageSize=20`（最大 100）、`sortBy=updatedAt`、`sortOrder=desc` |
+| API 排序字段     | 未说明           | 明确可选字段：`name/type/usageCount/createdAt/updatedAt`                       |
+| 并发控制         | 未说明           | 明确使用事务 + `FOR UPDATE SKIP LOCKED` 避免竞态条件                           |
+| 错误码           | 仅说明"返回 409" | 明确错误码为 `CONFIG_RESOURCE_CONFLICT`，与 API 规范对齐                       |
 
 #### v1.1 → v1.2
 
-| 维度 | v1.1 状态 | v1.2 补充内容 |
-|------|----------|--------------|
-| 凭据名称唯一性口径 | 误写为“跨表全局唯一” | 更正为“仅 Credential 表内唯一，不做跨资源/跨表重名限制” |
-| usageCount/删除限制口径 | 未说明是否排除软删除 Source | 明确只统计 `Source.deletedAt IS NULL` 的引用 |
-| 加密 key 规格 | 仅说明“长期固定” | 明确 `PASSWORD_ENCRYPTION_KEY` 为 base64 的 32 bytes key，且本期不支持轮换 |
+| 维度                    | v1.1 状态                   | v1.2 补充内容                                                              |
+| ----------------------- | --------------------------- | -------------------------------------------------------------------------- |
+| 凭据名称唯一性口径      | 误写为“跨表全局唯一”        | 更正为“仅 Credential 表内唯一，不做跨资源/跨表重名限制”                    |
+| usageCount/删除限制口径 | 未说明是否排除软删除 Source | 明确只统计 `Source.deletedAt IS NULL` 的引用                               |
+| 加密 key 规格           | 仅说明“长期固定”            | 明确 `PASSWORD_ENCRYPTION_KEY` 为 base64 的 32 bytes key，且本期不支持轮换 |

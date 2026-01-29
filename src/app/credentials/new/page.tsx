@@ -34,7 +34,8 @@ export default function NewCredentialPage() {
 
   const validate = () => {
     if (!name.trim()) return '请输入名称';
-    if (type === 'aliyun' && (!accessKeyId.trim() || !accessKeySecret.trim())) return '请填写 accessKeyId/accessKeySecret';
+    if (type === 'aliyun' && (!accessKeyId.trim() || !accessKeySecret.trim()))
+      return '请填写 accessKeyId/accessKeySecret';
     if (type === 'third_party' && !token.trim()) return '请填写 token';
     if ((type === 'vcenter' || type === 'pve' || type === 'hyperv') && (!username.trim() || !password.trim()))
       return '请填写用户名/密码';
@@ -144,4 +145,3 @@ export default function NewCredentialPage() {
     </Card>
   );
 }
-

@@ -1,5 +1,6 @@
-import { SourceType } from '@prisma/client';
 import { z } from 'zod/v4';
+
+import { SourceType } from '@prisma/client';
 
 const VcenterPayload = z.object({ username: z.string().min(1), password: z.string().min(1) });
 const AliyunPayload = z.object({ accessKeyId: z.string().min(1), accessKeySecret: z.string().min(1) });
@@ -29,4 +30,3 @@ export function payloadSchemaByType(type: SourceType) {
   // vcenter/pve/hyperv：username/password
   return VcenterPayload;
 }
-

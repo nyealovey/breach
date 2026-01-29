@@ -45,6 +45,22 @@ test.describe('admin happy path (vCenter MVP)', () => {
     const groupBody = (await groupRes.json()) as any;
     const groupId = groupBody.data.groupId as string;
 
+    // Create credential (API). Secrets never get returned by API.
+    const credentialName = `e2e_cred_${Date.now()}`;
+    const credentialRes = await page.request.post('/api/v1/credentials', {
+      data: {
+        name: credentialName,
+        type: 'vcenter',
+        payload: {
+          username: vcenterUsername || 'dummy',
+          password: vcenterPassword || 'dummy',
+        },
+      },
+    });
+    expect(credentialRes.ok()).toBe(true);
+    const credentialBody = (await credentialRes.json()) as any;
+    const credentialId = credentialBody.data.credentialId as string;
+
     // Create source (API)
     const sourceName = `e2e_source_${Date.now()}`;
     const sourceRes = await page.request.post('/api/v1/sources', {
@@ -54,38 +70,60 @@ test.describe('admin happy path (vCenter MVP)', () => {
         enabled: true,
         scheduleGroupId: groupId,
         config: { endpoint: vcenterEndpoint || 'https://example.invalid' },
+        credentialId,
       },
     });
     expect(sourceRes.ok()).toBe(true);
     const sourceBody = (await sourceRes.json()) as any;
     const sourceId = sourceBody.data.sourceId as string;
 
-    // Update credential (API) - optional if not provided.
-    if (vcenterUsername && vcenterPassword) {
-      const credRes = await page.request.put(`/api/v1/sources/${sourceId}/credential`, {
-        data: { username: vcenterUsername, password: vcenterPassword },
-      });
-      expect(credRes.ok()).toBe(true);
-    }
+    // Create another enabled source without credential to cover skip_missing_credential.
+    const sourceNameNoCred = `e2e_source_nocred_${Date.now()}`;
+    const sourceResNoCred = await page.request.post('/api/v1/sources', {
+      data: {
+        name: sourceNameNoCred,
+        sourceType: 'vcenter',
+        enabled: true,
+        scheduleGroupId: groupId,
+        config: { endpoint: vcenterEndpoint || 'https://example.invalid' },
+        credentialId: null,
+      },
+    });
+    expect(sourceResNoCred.ok()).toBe(true);
 
-    // Trigger runs (API). Worker may or may not be running; tolerate pending.
-    const healthRes = await page.request.post(`/api/v1/sources/${sourceId}/runs`, { data: { mode: 'healthcheck' } });
-    expect(healthRes.ok()).toBe(true);
-    const healthBody = (await healthRes.json()) as any;
-    const healthRunId = healthBody.data.runId as string;
+    // Trigger collect runs via Schedule Group UI button.
+    await page.goto('/schedule-groups');
+    const row = page.locator('tr', { hasText: groupName });
+    await expect(row).toBeVisible();
 
-    const collectRes = await page.request.post(`/api/v1/sources/${sourceId}/runs`, { data: { mode: 'collect' } });
-    expect(collectRes.ok()).toBe(true);
-    const collectBody = (await collectRes.json()) as any;
-    const collectRunId = collectBody.data.runId as string;
+    const [manualRunRes] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes(`/api/v1/schedule-groups/${groupId}/runs`) && res.request().method() === 'POST',
+      ),
+      row.getByRole('button', { name: '运行' }).click(),
+    ]);
+    expect(manualRunRes.ok()).toBe(true);
+    const manualRunBody = (await manualRunRes.json()) as any;
+    expect(manualRunBody.data.queued).toBe(1);
+    expect(manualRunBody.data.skipped_missing_credential).toBe(1);
+
+    // Find the queued collect run id for the source, then browse runs UI.
+    const runListRes = await page.request.get(
+      `/api/v1/runs?sourceId=${encodeURIComponent(sourceId)}&mode=collect&triggerType=manual&pageSize=1`,
+    );
+    expect(runListRes.ok()).toBe(true);
+    const runListBody = (await runListRes.json()) as any;
+    const collectRunId = runListBody.data?.[0]?.runId as string | undefined;
+    expect(collectRunId).toBeTruthy();
+    const runId = collectRunId as string;
 
     // Browse runs UI
-    await page.goto(`/runs/${collectRunId}`);
+    await page.goto(`/runs/${runId}`);
     await expect(page.getByText('Run 详情')).toBeVisible();
 
     // Optionally wait for completion to make assets available.
     await waitForRunToFinish({
-      runId: collectRunId,
+      runId,
       get: async (path) => {
         const res = await page.request.get(path);
         return { status: res.status(), json: () => res.json() };
@@ -107,8 +145,8 @@ test.describe('admin happy path (vCenter MVP)', () => {
       }
     }
 
-    // Healthcheck run detail should still be reachable.
-    await page.goto(`/runs/${healthRunId}`);
-    await expect(page.getByText('Run 详情')).toBeVisible();
+    // Credentials list should be reachable.
+    await page.goto('/credentials');
+    await expect(page.getByText('凭据')).toBeVisible();
   });
 });

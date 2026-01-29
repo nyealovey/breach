@@ -1327,7 +1327,7 @@ Create `src/app/api/v1/credentials/route.ts`（要点）：
 - `GET`：
   - query：`type`/`q`/`page`/`pageSize`/`sortBy`/`sortOrder`
   - 列表 item：`credentialId/name/type/usageCount/createdAt/updatedAt`（不含 payload）
-  - `usageCount`：只统计未删除 Source（建议 Source 软删除时清空 `credentialId`，则可用 relation _count）
+  - `usageCount`：只统计未删除 Source（建议 Source 软删除时清空 `credentialId`，则可用 relation \_count）
 - `POST`：
   - body：`name/type/payload`（按 `payloadSchemaByType(type)` 校验）
   - 存储：`payloadCiphertext = encryptJson(payload)`
@@ -1440,7 +1440,7 @@ describe('POST /api/v1/sources', () => {
 ```ts
 credential: source.credential
   ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
-  : null
+  : null;
 ```
 
 **Step 4: 移除旧 “更新凭据” API**

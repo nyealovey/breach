@@ -177,4 +177,3 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   const requestId = getOrCreateRequestId(auth.requestId);
   return new Response(null, { status: 204, headers: { 'X-Request-ID': requestId } });
 }
-

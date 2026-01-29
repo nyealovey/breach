@@ -8,4 +8,3 @@ describe('CredentialCreateSchema', () => {
     expect(result.success).toBe(false);
   });
 });
-

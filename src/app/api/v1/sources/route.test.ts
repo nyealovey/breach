@@ -42,4 +42,3 @@ describe('POST /api/v1/sources', () => {
     expect(body.error.code).toBe('CONFIG_CREDENTIAL_NOT_FOUND');
   });
 });
-
