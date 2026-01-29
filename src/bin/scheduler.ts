@@ -46,7 +46,7 @@ async function enqueueDueGroups(now: Date) {
     if (updated.count === 0) continue;
 
     const sources = await prisma.source.findMany({
-      where: { enabled: true, scheduleGroupId: group.id, deletedAt: null },
+      where: { enabled: true, scheduleGroupId: group.id, deletedAt: null, credentialId: { not: null } },
       select: { id: true },
     });
     const sourceIds = sources.map((s) => s.id);

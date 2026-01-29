@@ -136,7 +136,10 @@ type ProcessResult = {
 };
 
 async function processRun(run: Run): Promise<ProcessResult> {
-  const source = await prisma.source.findUnique({ where: { id: run.sourceId } });
+  const source = await prisma.source.findUnique({
+    where: { id: run.sourceId },
+    include: { credential: true },
+  });
   if (!source) {
     const error: AppError = {
       code: ErrorCode.CONFIG_SOURCE_NOT_FOUND,
@@ -177,14 +180,35 @@ async function processRun(run: Run): Promise<ProcessResult> {
   }
 
   let credential: unknown = {};
-  if (source.credentialCiphertext) {
+  if (source.credentialId) {
+    const payloadCiphertext = source.credential?.payloadCiphertext ?? null;
+    if (!payloadCiphertext) {
+      const error: AppError = {
+        code: ErrorCode.CONFIG_CREDENTIAL_NOT_FOUND,
+        category: 'config',
+        message: 'credential not found',
+        retryable: false,
+        redacted_context: { credentialId: source.credentialId },
+      };
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: 'Failed',
+          finishedAt: new Date(),
+          errorSummary: 'credential not found',
+          errors: [error],
+        },
+      });
+      return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+    }
+
     try {
-      credential = decryptJson(source.credentialCiphertext);
+      credential = decryptJson(payloadCiphertext);
     } catch (err) {
       const error: AppError = {
         code: ErrorCode.INTERNAL_ERROR,
         category: 'unknown',
-        message: 'failed to decrypt source credential',
+        message: 'failed to decrypt credential',
         retryable: false,
         redacted_context: { cause: err instanceof Error ? err.message : String(err) },
       };
@@ -193,7 +217,7 @@ async function processRun(run: Run): Promise<ProcessResult> {
         data: {
           status: 'Failed',
           finishedAt: new Date(),
-          errorSummary: 'failed to decrypt source credential',
+          errorSummary: 'failed to decrypt credential',
           errors: [error],
         },
       });
