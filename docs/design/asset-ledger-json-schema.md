@@ -1,7 +1,7 @@
 # 资产台账 normalized / canonical JSON Schema
 
-版本：v1.1  
-日期：2026-01-26
+版本：v1.2  
+日期：2026-01-29
 
 ## 文档简介
 
@@ -117,6 +117,14 @@
       }
     },
 
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] }
+      }
+    },
+
     "location": {
       "type": "object",
       "additionalProperties": false,
@@ -208,7 +216,12 @@
     "mac_addresses": ["00:50:56:aa:bb:cc"]
   },
   "os": { "name": "Ubuntu", "version": "22.04" },
-  "hardware": { "cpu_count": 4, "memory_bytes": 8589934592 },
+  "hardware": {
+    "cpu_count": 4,
+    "memory_bytes": 8589934592,
+    "disks": [{ "name": "Hard disk 1", "size_bytes": 53687091200, "type": "thin" }]
+  },
+  "runtime": { "power_state": "poweredOn" },
   "ownership": { "department": "IT", "owner_name": "Alice" },
   "service": { "system_name": "订单系统", "applications": ["order-api"], "service_level": "P1" }
 }

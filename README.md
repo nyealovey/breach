@@ -107,12 +107,14 @@ List of websites that started off with Next.js TypeScript Starter:
 运行指南：
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
+- 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），采集将直接失败并提示调整版本范围或升级 vCenter（不再使用降级方式伪成功）。
 
 需求文档：
 
 - 需求规格说明书（SRS，需求口径/验收依据）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
 - PRD（vCenter MVP v1.0，历史范围说明）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
 - PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：[`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`](docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md)
+- PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.0）：[`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.0-prd.md`](docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.0-prd.md)
 - PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
 - v1.0 需求追溯矩阵（Traceability）：[`docs/requirements/asset-ledger-v1.0-traceability.md`](docs/requirements/asset-ledger-v1.0-traceability.md)
 - vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施计划：[`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`](docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md)

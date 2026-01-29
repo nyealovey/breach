@@ -1,13 +1,16 @@
 type VmRaw = {
   vm: string;
   instance_uuid?: string;
+  identity?: { instance_uuid?: string; name?: string };
+  name?: string;
   guest?: { host_name?: string };
-  nics?: Array<{ mac_address?: string }>;
+  nics?: Array<{ mac_address?: string }> | Record<string, { mac_address?: string }>;
   host?: string;
 };
 
 type HostRaw = {
   host: string;
+  name?: string;
   cluster?: string;
   hardware?: { system_info?: { serial_number?: string } };
   vnics?: Array<{ ip?: { ip_address?: string } }>;
@@ -67,6 +70,12 @@ function getFirstString(values: Array<string | undefined>): string | undefined {
 }
 
 export function normalizeVM(raw: VmRaw): NormalizedAsset {
+  const nicValues = Array.isArray(raw.nics)
+    ? raw.nics
+    : raw.nics && typeof raw.nics === 'object'
+      ? Object.values(raw.nics)
+      : [];
+
   return {
     external_kind: 'vm',
     external_id: raw.vm,
@@ -74,11 +83,11 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       version: 'normalized-v1',
       kind: 'vm',
       identity: {
-        machine_uuid: raw.instance_uuid,
-        hostname: raw.guest?.host_name,
+        machine_uuid: raw.instance_uuid ?? raw.identity?.instance_uuid,
+        hostname: raw.guest?.host_name ?? raw.name ?? raw.identity?.name,
       },
       network: {
-        mac_addresses: uniqueStrings(raw.nics?.map((nic) => nic.mac_address) ?? []),
+        mac_addresses: uniqueStrings(nicValues.map((nic) => nic.mac_address)),
       },
     },
     raw_payload: raw,
@@ -94,6 +103,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
       version: 'normalized-v1',
       kind: 'host',
       identity: {
+        hostname: raw.name,
         serial_number: raw.hardware?.system_info?.serial_number,
       },
       network: {

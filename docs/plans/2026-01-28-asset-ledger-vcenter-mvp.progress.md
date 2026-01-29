@@ -67,6 +67,7 @@
 
 10. Task 10：vCenter Collector Plugin（TypeScript）
     - 状态：DONE
+    - 补充修正：兼容真实 vCenter REST 返回差异（VM detail 字段/结构差异、VM id 注入避免 externalId missing、Host detail 404 降级并记录 warning `VCENTER_HOST_DETAIL_NOT_FOUND`；**该降级口径已废弃**，见：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.0-prd.md`）
 
 11. Task 11：Collector 契约对齐 + Schema 校验（Ajv）
     - 状态：DONE

@@ -34,6 +34,7 @@ function runCollector(request: unknown): Promise<PluginResult> {
 
 describe('vcenter plugin integration (mock vSphere REST)', () => {
   let endpoint = '';
+  let hostDetailNotFound = false;
   const server = createServer((req, res) => {
     const url = req.url ?? '';
     const method = req.method ?? 'GET';
@@ -89,6 +90,12 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
     if (method === 'GET' && url === '/api/vcenter/host/host-1') {
+      if (hostDetailNotFound) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(
@@ -194,6 +201,42 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(parsed.relations).toHaveLength(2);
     expect(parsed.stats).toEqual({ assets: 3, relations: 2, inventory_complete: true, warnings: [] });
     expect(parsed.assets.map((a) => a.normalized.version)).toEqual(['normalized-v1', 'normalized-v1', 'normalized-v1']);
+  });
+
+  it('collect tolerates missing host detail endpoint (404) and continues', async () => {
+    hostDetailNotFound = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_2b', mode: 'collect', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        assets: unknown[];
+        relations: unknown[];
+        stats: { inventory_complete: boolean; warnings: unknown[] };
+        errors?: unknown[];
+      };
+
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.assets.length).toBe(3);
+      expect(parsed.relations.length).toBe(1);
+      expect(parsed.stats.inventory_complete).toBe(true);
+      expect(parsed.stats.warnings.length).toBe(1);
+    } finally {
+      hostDetailNotFound = false;
+    }
   });
 
   it('healthcheck returns VCENTER_AUTH_FAILED when session creation fails', async () => {

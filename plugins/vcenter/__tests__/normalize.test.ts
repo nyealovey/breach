@@ -24,6 +24,23 @@ describe('vcenter normalize', () => {
     });
   });
 
+  it('normalizeVM tolerates vCenter detail shapes (identity.instance_uuid + nics object)', () => {
+    const raw = {
+      vm: 'vm-26',
+      identity: { instance_uuid: 'uuid-26', name: 'vm-26-name' },
+      nics: { '4000': { mac_address: '00:50:56:96:aa:8c' } },
+    };
+
+    const asset = normalizeVM(raw as any);
+
+    expect(asset.normalized).toMatchObject({
+      version: 'normalized-v1',
+      kind: 'vm',
+      identity: { machine_uuid: 'uuid-26', hostname: 'vm-26-name' },
+      network: { mac_addresses: ['00:50:56:96:aa:8c'] },
+    });
+  });
+
   it('buildRelations creates vm -> host and host -> cluster edges', () => {
     const vmRaw = { vm: 'vm-1', host: 'host-1' };
     const hostRaw = {

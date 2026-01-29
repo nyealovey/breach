@@ -1,7 +1,7 @@
 # 资产台账系统采集插件参考（开源组件优先）
 
-版本：v1.1  
-日期：2026-01-26
+版本：v1.2  
+日期：2026-01-29
 
 ## 文档简介
 
@@ -20,7 +20,7 @@
 
 1. **插件薄、核心厚**：插件只做目标探测 + 拉取 + 规范化输出 + raw 留存，不在插件里实现台账域逻辑（疑似重复、合并等由核心处理）。
 2. **契约优先**：核心与插件通过“统一输入/输出契约”解耦；插件可用任意语言实现。
-3. **能力探测优先于版本号**：优先以 capabilities/API 探测选择 driver；版本号仅作为 fallback。
+3. **能力探测优先于版本号**：优先以 capabilities/API 探测选择 driver；版本号仅作为 fallback。若产品要求“由用户在 Source 中选择版本范围/首选 driver”，则探测用于**校验/建议**，不得静默切换，也不得以降级方式伪成功。
 4. **可回放**：插件必须输出 `raw_payload`（永久保留），便于后续回放/补算/审计。
 5. **安全默认**：凭证只通过安全通道传递；插件日志必须脱敏；raw 中不得包含明文凭证。
 
@@ -56,6 +56,8 @@
 
 - `source.config`（非敏感，可落库/可回显）
   - `endpoint`（必填）：支持填写 `https://<host>`（例如 `https://vcenter.example.com`）。实现侧可自行规范化为实际 SDK endpoint（例如自动补齐 `/sdk`），无需要求用户输入完整路径。
+  - `preferred_vcenter_version`（必填，新增）：vCenter 版本范围（首选），用于选择采集 driver。
+    - 枚举：`6.5-6.7` | `7.0-8.x`
   - `inventory_scope`（预留，可选）：v1.0 默认全量采集；当该字段为空/缺失时表示“全量”。
     - 建议结构（仅作预留，不作为 v1.0 验收项）：
       - `datacenter_names?: string[]`
@@ -66,6 +68,14 @@
   - `password`（必填）
 
 TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，不要求暴露额外配置项。
+
+实现备注（v1.0 当前实现，vSphere REST 兼容性）：
+
+- Session：使用 `POST /api/session`（Basic Auth）获取 session token；返回通常为 JSON 字符串（token）。
+- 结构差异：部分 vCenter 环境下 VM detail 的 `nics` 可能为对象（而非数组）；`instance_uuid` 可能出现在 `identity.instance_uuid`。
+- 字段缺失：VM detail 可能不包含 VM 自身 ID 字段；实现侧应以 VM 列表摘要的 `vm` 作为 `external_id` 的单一来源（必要时在 detail 上注入该字段），避免入账阶段出现 `externalId missing`。
+- 多版本差异处理（新口径，禁止降级）：必须按 `preferred_vcenter_version` 选择对应 driver；当所选 driver 的关键能力缺失（关键接口不存在/无法取到必备字段）时，采集必须失败（`errors[]`），不得以 warning + fallback 的方式返回成功。
+- 关系边（vCenter 口径）：vCenter 环境应可稳定构建 VM→Host→Cluster 的关系；插件至少必须输出 `runs_on` / `member_of` 之一（更推荐两者同时输出）。若 `relations[]` 为空应视为采集失败（避免 UI/后续能力不可用）。
 
 ### 2.2 输出（插件 → 核心）
 

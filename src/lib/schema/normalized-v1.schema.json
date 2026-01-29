@@ -78,6 +78,13 @@
         }
       }
     },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] }
+      }
+    },
     "location": {
       "type": "object",
       "additionalProperties": false,

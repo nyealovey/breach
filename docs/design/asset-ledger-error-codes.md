@@ -1,7 +1,7 @@
 # 资产台账错误码规范（Error Codes）
 
-版本：v1.0  
-日期：2026-01-27
+版本：v1.1  
+日期：2026-01-29
 
 ## 文档简介
 
@@ -47,44 +47,45 @@
 
 > 表内 “默认 HTTP 状态码”仅适用于 `http.request`；Worker/插件场景不适用可留空。
 
-| error.code                        | 层级   | category   | retryable | 默认 HTTP 状态码 | 说明（MVP 语义）                                            |
-| --------------------------------- | ------ | ---------- | --------- | ---------------- | ----------------------------------------------------------- |
-| AUTH_UNAUTHORIZED                 | web    | auth       | false     | 401              | 未登录/会话无效（无有效 session）                           |
-| AUTH_INVALID_CREDENTIALS          | web    | auth       | false     | 401              | 登录失败（用户名/密码错误）                                 |
-| AUTH_FORBIDDEN                    | web    | permission | false     | 403              | 已登录但无权限（v1.0 仅 admin；预留）                       |
-| AUTH_SESSION_EXPIRED              | web    | auth       | false     | 401              | 会话过期（session 失效）                                    |
-| CONFIG_INVALID_REQUEST            | web    | config     | false     | 400              | 请求参数校验失败（Zod/表单校验）                            |
-| CONFIG_INVALID_TIMEZONE           | web    | config     | false     | 400              | 调度组时区非法（非 IANA TZ）                                |
-| CONFIG_INVALID_HHMM               | web    | config     | false     | 400              | 调度组触发时间非法（非 `HH:mm`）                            |
-| CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                 |
-| CONFIG_CREDENTIAL_NOT_FOUND       | web    | config     | false     | 404              | 凭据不存在（Credential 不存在）                             |
-| CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                  |
-| CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                  |
-| CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                         |
-| CONFIG_SCHEDULE_GROUP_NOT_FOUND   | web    | config     | false     | 404              | 调度组不存在                                                |
-| CONFIG_DUPLICATE_NAME             | web    | config     | false     | 409              | 名称重复导致冲突                                            |
-| CONFIG_RESOURCE_CONFLICT          | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                       |
-| PLUGIN_EXEC_FAILED                | worker | unknown    | false     |                  | 插件进程无法启动（文件不存在/权限/exec 失败）               |
-| PLUGIN_TIMEOUT                    | worker | unknown    | true      |                  | 插件执行超时（超出 `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`）       |
-| PLUGIN_EXIT_NONZERO               | worker | unknown    | false     |                  | 插件退出码非 0 且 `errors[]` 不可用（缺失/无法解析）        |
-| PLUGIN_OUTPUT_INVALID_JSON        | worker | parse      | false     |                  | 插件 stdout 不是合法 JSON（包含被截断、混入非 JSON 等情况） |
-| PLUGIN_SCHEMA_VERSION_UNSUPPORTED | worker | parse      | false     |                  | `schema_version` 不被核心支持（请求/响应契约版本不匹配）    |
-| PLUGIN_RESPONSE_INVALID           | worker | parse      | false     |                  | 插件响应缺少必填字段/结构不符合契约（例如缺少 `assets[]`）  |
-| SCHEMA_VALIDATION_FAILED          | worker | parse      | false     |                  | `normalized-v1`/canonical 输出 schema 校验失败              |
-| INVENTORY_INCOMPLETE              | worker | parse      | false     |                  | collect 未提供完整清单（`inventory_complete=false`）        |
-| RAW_PERSIST_FAILED                | worker | unknown    | true      |                  | raw/元数据写入失败（raw 永久保留语义无法满足）              |
-| DB_WRITE_FAILED                   | worker | unknown    | true      |                  | 数据库写入失败（Run/source_record/relation 等持久化失败）   |
-| DB_READ_FAILED                    | worker | unknown    | true      |                  | 数据库读取失败                                              |
-| VCENTER_CONFIG_INVALID            | plugin | config     | false     |                  | vCenter 输入配置非法（endpoint 缺失/格式不合法等）          |
-| VCENTER_AUTH_FAILED               | plugin | auth       | false     |                  | vCenter 认证失败（用户名/密码错误）                         |
-| VCENTER_PERMISSION_DENIED         | plugin | permission | false     |                  | vCenter 权限不足（无法列举 inventory/读取必要字段）         |
-| VCENTER_NETWORK_ERROR             | plugin | network    | true      |                  | vCenter 网络/连接失败（DNS/TCP/超时等）                     |
-| VCENTER_TLS_ERROR                 | plugin | network    | false     |                  | TLS 握手/证书失败（与 v1.0“允许自签名”的实现策略相关）      |
-| VCENTER_RATE_LIMIT                | plugin | rate_limit | true      |                  | vCenter API 限流/节流                                       |
-| VCENTER_PARSE_ERROR               | plugin | parse      | false     |                  | vCenter 响应解析失败/协议不兼容                             |
-| VCENTER_API_VERSION_UNSUPPORTED   | plugin | parse      | false     |                  | vCenter API 版本/能力不支持（需升级 driver 或明确失败）     |
-| INTERNAL_ERROR                    | common | unknown    | false     | 500              | 未分类内部错误                                              |
-| INTERNAL_NOT_IMPLEMENTED          | common | unknown    | false     | 501              | 未实现功能                                                  |
+| error.code                        | 层级   | category   | retryable | 默认 HTTP 状态码 | 说明（MVP 语义）                                                                                                 |
+| --------------------------------- | ------ | ---------- | --------- | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| AUTH_UNAUTHORIZED                 | web    | auth       | false     | 401              | 未登录/会话无效（无有效 session）                                                                                |
+| AUTH_INVALID_CREDENTIALS          | web    | auth       | false     | 401              | 登录失败（用户名/密码错误）                                                                                      |
+| AUTH_FORBIDDEN                    | web    | permission | false     | 403              | 已登录但无权限（v1.0 仅 admin；预留）                                                                            |
+| AUTH_SESSION_EXPIRED              | web    | auth       | false     | 401              | 会话过期（session 失效）                                                                                         |
+| CONFIG_INVALID_REQUEST            | web    | config     | false     | 400              | 请求参数校验失败（Zod/表单校验）                                                                                 |
+| CONFIG_INVALID_TIMEZONE           | web    | config     | false     | 400              | 调度组时区非法（非 IANA TZ）                                                                                     |
+| CONFIG_INVALID_HHMM               | web    | config     | false     | 400              | 调度组触发时间非法（非 `HH:mm`）                                                                                 |
+| CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                                                                      |
+| CONFIG_CREDENTIAL_NOT_FOUND       | web    | config     | false     | 404              | 凭据不存在（Credential 不存在）                                                                                  |
+| CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                                                                       |
+| CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                                                                       |
+| CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                                                                              |
+| CONFIG_SCHEDULE_GROUP_NOT_FOUND   | web    | config     | false     | 404              | 调度组不存在                                                                                                     |
+| CONFIG_DUPLICATE_NAME             | web    | config     | false     | 409              | 名称重复导致冲突                                                                                                 |
+| CONFIG_RESOURCE_CONFLICT          | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                                                                            |
+| PLUGIN_EXEC_FAILED                | worker | unknown    | false     |                  | 插件进程无法启动（文件不存在/权限/exec 失败）                                                                    |
+| PLUGIN_TIMEOUT                    | worker | unknown    | true      |                  | 插件执行超时（超出 `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`）                                                            |
+| PLUGIN_EXIT_NONZERO               | worker | unknown    | false     |                  | 插件退出码非 0 且 `errors[]` 不可用（缺失/无法解析）                                                             |
+| PLUGIN_OUTPUT_INVALID_JSON        | worker | parse      | false     |                  | 插件 stdout 不是合法 JSON（包含被截断、混入非 JSON 等情况）                                                      |
+| PLUGIN_SCHEMA_VERSION_UNSUPPORTED | worker | parse      | false     |                  | `schema_version` 不被核心支持（请求/响应契约版本不匹配）                                                         |
+| PLUGIN_RESPONSE_INVALID           | worker | parse      | false     |                  | 插件响应缺少必填字段/结构不符合契约（例如缺少 `assets[]`）                                                       |
+| SCHEMA_VALIDATION_FAILED          | worker | parse      | false     |                  | `normalized-v1`/canonical 输出 schema 校验失败                                                                   |
+| INVENTORY_INCOMPLETE              | worker | parse      | false     |                  | collect 未提供完整清单（`inventory_complete=false`）                                                             |
+| RAW_PERSIST_FAILED                | worker | unknown    | true      |                  | raw/元数据写入失败（raw 永久保留语义无法满足）                                                                   |
+| DB_WRITE_FAILED                   | worker | unknown    | true      |                  | 数据库写入失败（Run/source_record/relation 等持久化失败）                                                        |
+| DB_READ_FAILED                    | worker | unknown    | true      |                  | 数据库读取失败                                                                                                   |
+| VCENTER_CONFIG_INVALID            | plugin | config     | false     |                  | vCenter 输入配置非法（endpoint 缺失/格式不合法等）                                                               |
+| VCENTER_AUTH_FAILED               | plugin | auth       | false     |                  | vCenter 认证失败（用户名/密码错误）                                                                              |
+| VCENTER_PERMISSION_DENIED         | plugin | permission | false     |                  | vCenter 权限不足（无法列举 inventory/读取必要字段）                                                              |
+| VCENTER_NETWORK_ERROR             | plugin | network    | true      |                  | vCenter 网络/连接失败（DNS/TCP/超时等）                                                                          |
+| VCENTER_TLS_ERROR                 | plugin | network    | false     |                  | TLS 握手/证书失败（与 v1.0“允许自签名”的实现策略相关）                                                           |
+| VCENTER_RATE_LIMIT                | plugin | rate_limit | true      |                  | vCenter API 限流/节流                                                                                            |
+| VCENTER_PARSE_ERROR               | plugin | parse      | false     |                  | vCenter 响应解析失败/协议不兼容                                                                                  |
+| VCENTER_API_VERSION_UNSUPPORTED   | plugin | parse      | false     |                  | vCenter API 版本/能力不支持（需升级 driver 或明确失败）                                                          |
+| VCENTER_HOST_DETAIL_NOT_FOUND     | plugin | network    | false     |                  | **DEPRECATED**：不再允许降级。应改为以 `VCENTER_API_VERSION_UNSUPPORTED` 失败并提示选择正确版本范围/升级 vCenter |
+| INTERNAL_ERROR                    | common | unknown    | false     | 500              | 未分类内部错误                                                                                                   |
+| INTERNAL_NOT_IMPLEMENTED          | common | unknown    | false     | 501              | 未实现功能                                                                                                       |
 
 ## 3. 落地规则（建议）
 
@@ -155,6 +156,7 @@ export const ErrorCode = {
   VCENTER_RATE_LIMIT: 'VCENTER_RATE_LIMIT',
   VCENTER_PARSE_ERROR: 'VCENTER_PARSE_ERROR',
   VCENTER_API_VERSION_UNSUPPORTED: 'VCENTER_API_VERSION_UNSUPPORTED',
+  VCENTER_HOST_DETAIL_NOT_FOUND: 'VCENTER_HOST_DETAIL_NOT_FOUND',
 
   // ========== 通用（INTERNAL_*）==========
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -356,6 +358,10 @@ export const ErrorMessages: Record<
   VCENTER_API_VERSION_UNSUPPORTED: {
     zh: 'vCenter API 版本不支持：{{version}}',
     en: 'vCenter API version not supported: {{version}}',
+  },
+  VCENTER_HOST_DETAIL_NOT_FOUND: {
+    zh: 'vCenter Host 详情接口不可用（已废弃降级口径）；请调整 Source 版本范围或升级 vCenter',
+    en: 'vCenter host detail endpoint unavailable (fallback deprecated); adjust source version range or upgrade vCenter',
   },
   INTERNAL_ERROR: {
     zh: '系统内部错误，请联系管理员',

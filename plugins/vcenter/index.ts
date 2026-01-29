@@ -34,7 +34,24 @@ function toAuthError(status: number | undefined): CollectorError {
       retryable: false,
     };
   }
-  return { code: 'VCENTER_NETWORK_ERROR', category: 'network', message: 'failed to create session', retryable: true };
+  return { code: 'VCENTER_NETWORK_ERROR', category: 'network', message: 'vcenter request failed', retryable: true };
+}
+
+function toVcenterError(err: unknown, stage: string): CollectorError {
+  const status = typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+  const bodyText =
+    typeof err === 'object' && err && 'bodyText' in err ? (err as { bodyText?: string }).bodyText : undefined;
+
+  const base = toAuthError(status);
+  return {
+    ...base,
+    redacted_context: {
+      stage,
+      ...(status ? { status } : {}),
+      ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+      cause: err instanceof Error ? err.message : String(err),
+    },
+  };
 }
 
 async function healthcheck(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
@@ -48,8 +65,7 @@ async function healthcheck(request: CollectorRequestV1): Promise<{ response: Col
     if (!token) throw new Error('session token empty');
     return { response: makeResponse({ errors: [] }), exitCode: 0 };
   } catch (err) {
-    const status = (err as { status?: number }).status;
-    return { response: makeResponse({ errors: [toAuthError(status)] }), exitCode: 1 };
+    return { response: makeResponse({ errors: [toVcenterError(err, 'healthcheck')] }), exitCode: 1 };
   }
 }
 
@@ -70,8 +86,7 @@ async function detect(request: CollectorRequestV1): Promise<{ response: Collecto
       exitCode: 0,
     };
   } catch (err) {
-    const status = (err as { status?: number }).status;
-    return { response: makeResponse({ errors: [toAuthError(status)] }), exitCode: 1 };
+    return { response: makeResponse({ errors: [toVcenterError(err, 'detect')] }), exitCode: 1 };
   }
 }
 
@@ -80,16 +95,44 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     const endpoint = request.source.config.endpoint;
     const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
 
+    const warnings: unknown[] = [];
+
     const [vmSummaries, hostSummaries, clusters] = await Promise.all([
       listVMs(endpoint, token),
       listHosts(endpoint, token),
       listClusters(endpoint, token),
     ]);
 
-    const [vmDetails, hostDetails] = await Promise.all([
-      Promise.all(vmSummaries.map((vm) => getVmDetail(endpoint, token, vm.vm))),
-      Promise.all(hostSummaries.map((host) => getHostDetail(endpoint, token, host.host))),
-    ]);
+    const vmDetails = await Promise.all(
+      vmSummaries.map(async (vm) => {
+        const detail = await getVmDetail(endpoint, token, vm.vm);
+        return { ...(detail as Record<string, unknown>), vm: vm.vm };
+      }),
+    );
+
+    const hostDetails = await Promise.all(
+      hostSummaries.map(async (host) => {
+        try {
+          return await getHostDetail(endpoint, token, host.host);
+        } catch (err) {
+          const status =
+            typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+
+          // Some vCenter builds don't expose host detail endpoint. Fallback to summary and keep collecting.
+          if (status === 404) {
+            warnings.push({
+              code: 'VCENTER_HOST_DETAIL_NOT_FOUND',
+              category: 'network',
+              message: 'host detail endpoint not found; using host summary',
+              redacted_context: { host_id: host.host },
+            });
+            return host as unknown as Record<string, unknown>;
+          }
+
+          throw err;
+        }
+      }),
+    );
 
     const vmAssets = vmDetails.map((vm) => normalizeVM(vm as any));
     const hostAssets = hostDetails.map((host) => normalizeHost(host as any));
@@ -102,16 +145,15 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       response: makeResponse({
         assets,
         relations,
-        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings: [] },
+        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings },
         errors: [],
       }),
       exitCode: 0,
     };
   } catch (err) {
-    const status = (err as { status?: number }).status;
     return {
       response: makeResponse({
-        errors: [toAuthError(status)],
+        errors: [toVcenterError(err, 'collect')],
         stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
       }),
       exitCode: 1,

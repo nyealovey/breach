@@ -11,6 +11,7 @@
 - vCenter MVP v1.0 计划：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`
 - vCenter MVP v1.0 执行进度：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
 - PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
+- PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.0）：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.0-prd.md`
 
 ## 参考文档（实现细节 / 规范）
 

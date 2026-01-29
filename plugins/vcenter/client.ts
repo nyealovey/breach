@@ -4,6 +4,13 @@ function joinUrl(base: string, path: string) {
   return `${base.replace(/\/+$/, '')}${path}`;
 }
 
+function makeHttpError(input: { op: string; status: number; bodyText: string }) {
+  const err = new Error(`${input.op} failed with status ${input.status}`);
+  (err as { status?: number; bodyText?: string }).status = input.status;
+  (err as { status?: number; bodyText?: string }).bodyText = input.bodyText;
+  return err;
+}
+
 async function fetchJson<T>(
   input: string,
   init: RequestInit,
@@ -24,10 +31,7 @@ export async function createSession(endpoint: string, username: string, password
   });
 
   if (!result.ok) {
-    const err = new Error(`createSession failed with status ${result.status}`);
-    (err as { status?: number; bodyText?: string }).status = result.status;
-    (err as { status?: number; bodyText?: string }).bodyText = result.bodyText;
-    throw err;
+    throw makeHttpError({ op: 'createSession', status: result.status, bodyText: result.bodyText });
   }
 
   // vSphere REST typically returns the session id as a JSON string.
@@ -41,7 +45,7 @@ export async function listVMs(endpoint: string, token: SessionToken): Promise<Ar
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
-  if (!result.ok) throw new Error(`listVMs failed with status ${result.status}`);
+  if (!result.ok) throw makeHttpError({ op: 'listVMs', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
 
@@ -55,7 +59,7 @@ export async function getVmDetail(
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
-  if (!result.ok) throw new Error(`getVmDetail failed with status ${result.status}`);
+  if (!result.ok) throw makeHttpError({ op: 'getVmDetail', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
 
@@ -65,7 +69,7 @@ export async function listHosts(endpoint: string, token: SessionToken): Promise<
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
-  if (!result.ok) throw new Error(`listHosts failed with status ${result.status}`);
+  if (!result.ok) throw makeHttpError({ op: 'listHosts', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
 
@@ -79,7 +83,7 @@ export async function getHostDetail(
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
-  if (!result.ok) throw new Error(`getHostDetail failed with status ${result.status}`);
+  if (!result.ok) throw makeHttpError({ op: 'getHostDetail', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
 
@@ -89,6 +93,6 @@ export async function listClusters(endpoint: string, token: SessionToken): Promi
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
-  if (!result.ok) throw new Error(`listClusters failed with status ${result.status}`);
+  if (!result.ok) throw makeHttpError({ op: 'listClusters', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
