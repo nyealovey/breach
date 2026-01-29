@@ -15,6 +15,7 @@ const SourceUpdateSchema = z.object({
   config: z.object({
     endpoint: z.string().min(1),
   }),
+  credentialId: z.string().min(1).nullable().optional(),
 });
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -24,7 +25,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const { id } = await context.params;
   const source = await prisma.source.findFirst({
     where: { id, deletedAt: null },
-    include: { scheduleGroup: { select: { name: true } } },
+    include: {
+      scheduleGroup: { select: { name: true } },
+      credential: { select: { id: true, name: true, type: true } },
+    },
   });
   if (!source) {
     return fail(
@@ -42,6 +46,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       enabled: source.enabled,
       scheduleGroupId: source.scheduleGroupId,
       scheduleGroupName: source.scheduleGroup?.name ?? null,
+      credential: source.credential
+        ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+        : null,
       config: source.config,
       createdAt: source.createdAt.toISOString(),
       updatedAt: source.updatedAt.toISOString(),
@@ -101,6 +108,36 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
+  const credentialId = body.credentialId === undefined ? existing.credentialId : body.credentialId;
+  const credential =
+    credentialId !== null && credentialId !== undefined
+      ? await prisma.credential.findUnique({ where: { id: credentialId } })
+      : null;
+  if (credentialId !== null && credentialId !== undefined && !credential) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_CREDENTIAL_NOT_FOUND,
+        category: 'config',
+        message: 'Credential not found',
+        retryable: false,
+      },
+      404,
+      { requestId: auth.requestId },
+    );
+  }
+  if (credential && credential.type !== body.sourceType) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'Credential type mismatch',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+
   const source = await prisma.source.update({
     where: { id },
     data: {
@@ -109,7 +146,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       enabled: body.enabled ?? true,
       scheduleGroupId: body.scheduleGroupId,
       config: body.config,
+      credentialId: credentialId ?? null,
     },
+    include: { credential: { select: { id: true, name: true, type: true } } },
   });
 
   return ok(
@@ -119,6 +158,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       sourceType: source.sourceType,
       enabled: source.enabled,
       scheduleGroupId: source.scheduleGroupId,
+      credential: source.credential
+        ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+        : null,
       config: source.config,
       createdAt: source.createdAt.toISOString(),
       updatedAt: source.updatedAt.toISOString(),
@@ -162,7 +204,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 
   await prisma.source.update({
     where: { id },
-    data: { deletedAt: new Date(), enabled: false },
+    data: { deletedAt: new Date(), enabled: false, credentialId: null },
   });
 
   const requestId = getOrCreateRequestId(auth.requestId);

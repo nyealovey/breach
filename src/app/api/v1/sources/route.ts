@@ -2,7 +2,6 @@ import { z } from 'zod/v4';
 
 import { requireAdmin } from '@/lib/auth/require-admin';
 import { prisma } from '@/lib/db/prisma';
-import { encryptJson } from '@/lib/crypto/aes-gcm';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { buildPagination, parseBoolean, parsePagination } from '@/lib/http/pagination';
 import { created, fail, okPaginated } from '@/lib/http/response';
@@ -16,12 +15,7 @@ const SourceCreateSchema = z.object({
   config: z.object({
     endpoint: z.string().min(1),
   }),
-  credential: z
-    .object({
-      username: z.string().min(1),
-      password: z.string().min(1),
-    })
-    .optional(),
+  credentialId: z.string().min(1).nullable().optional(),
 });
 
 export async function GET(request: Request) {
@@ -48,7 +42,10 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
       skip,
       take,
-      include: { scheduleGroup: { select: { name: true } } },
+      include: {
+        scheduleGroup: { select: { name: true } },
+        credential: { select: { id: true, name: true, type: true } },
+      },
     }),
   ]);
 
@@ -75,6 +72,9 @@ export async function GET(request: Request) {
       enabled: source.enabled,
       scheduleGroupId: source.scheduleGroupId,
       scheduleGroupName: source.scheduleGroup?.name ?? null,
+      credential: source.credential
+        ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+        : null,
       config: source.config,
       lastRun: lastRun
         ? {
@@ -133,22 +133,32 @@ export async function POST(request: Request) {
     );
   }
 
-  let credentialCiphertext: string | null = null;
-  if (body.credential) {
-    try {
-      credentialCiphertext = encryptJson(body.credential);
-    } catch (err) {
-      return fail(
-        {
-          code: ErrorCode.INTERNAL_ERROR,
-          category: 'unknown',
-          message: err instanceof Error ? err.message : 'Credential encryption failed',
-          retryable: false,
-        },
-        500,
-        { requestId: auth.requestId },
-      );
-    }
+  const credentialId = body.credentialId ?? null;
+  const credential =
+    credentialId !== null ? await prisma.credential.findUnique({ where: { id: credentialId } }) : null;
+  if (credentialId !== null && !credential) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_CREDENTIAL_NOT_FOUND,
+        category: 'config',
+        message: 'Credential not found',
+        retryable: false,
+      },
+      404,
+      { requestId: auth.requestId },
+    );
+  }
+  if (credential && credential.type !== body.sourceType) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'Credential type mismatch',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
   }
 
   try {
@@ -159,8 +169,9 @@ export async function POST(request: Request) {
         enabled: body.enabled ?? true,
         scheduleGroupId: body.scheduleGroupId,
         config: body.config,
-        credentialCiphertext,
+        credentialId,
       },
+      include: { credential: { select: { id: true, name: true, type: true } } },
     });
 
     return created(
@@ -170,6 +181,9 @@ export async function POST(request: Request) {
         sourceType: source.sourceType,
         enabled: source.enabled,
         scheduleGroupId: source.scheduleGroupId,
+        credential: source.credential
+          ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+          : null,
         config: source.config,
         createdAt: source.createdAt.toISOString(),
         updatedAt: source.updatedAt.toISOString(),
