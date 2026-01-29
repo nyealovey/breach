@@ -1,3 +1,8 @@
+/**
+ * vSphere Automation API Client
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/
+ */
+
 type SessionToken = string;
 
 function joinUrl(base: string, path: string) {
@@ -49,6 +54,26 @@ export async function listVMs(endpoint: string, token: SessionToken): Promise<Ar
   return result.data;
 }
 
+/**
+ * List VMs filtered by host
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/get/
+ * @param hostId - Host identifier to filter VMs by
+ * @returns Array of VM summaries on the specified host
+ */
+export async function listVMsByHost(
+  endpoint: string,
+  token: SessionToken,
+  hostId: string,
+): Promise<Array<{ vm: string }>> {
+  const url = joinUrl(endpoint, `/api/vcenter/vm?hosts=${encodeURIComponent(hostId)}`);
+  const result = await fetchJson<Array<{ vm: string }>>(url, {
+    method: 'GET',
+    headers: { 'vmware-api-session-id': token },
+  });
+  if (!result.ok) throw makeHttpError({ op: 'listVMsByHost', status: result.status, bodyText: result.bodyText });
+  return result.data;
+}
+
 export async function getVmDetail(
   endpoint: string,
   token: SessionToken,
@@ -97,16 +122,44 @@ export async function listClusters(endpoint: string, token: SessionToken): Promi
   return result.data;
 }
 
+/**
+ * Guest networking interface info
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/guest/networking/interfaces/get/
+ */
 export type GuestNetworkInterface = {
+  /** MAC address of the interface */
   mac_address?: string;
+  /** NIC device key */
   nic?: string;
+  /** IP configuration */
   ip?: {
     ip_addresses?: Array<{
+      /** IP address (IPv4 or IPv6) */
       ip_address: string;
+      /** Subnet prefix length */
       prefix_length?: number;
+      /** Origin of the IP address (DHCP, STATIC, etc.) */
       origin?: string;
+      /** State of the IP address */
       state?: string;
     }>;
+  };
+};
+
+/**
+ * Guest networking info (includes hostname)
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/guest/networking/get/
+ */
+export type GuestNetworkingInfo = {
+  dns_values?: {
+    /** Guest hostname */
+    host_name?: string;
+    /** Guest domain name */
+    domain_name?: string;
+  };
+  dns?: {
+    ip_addresses?: string[];
+    search_domains?: string[];
   };
 };
 
@@ -123,6 +176,27 @@ export async function getVmGuestNetworking(
   if (!result.ok) {
     // VMware Tools not running or other errors - return empty array instead of throwing
     return [];
+  }
+  return result.data;
+}
+
+/**
+ * Get guest networking info including hostname
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/guest/networking/get/
+ */
+export async function getVmGuestNetworkingInfo(
+  endpoint: string,
+  token: SessionToken,
+  vmId: string,
+): Promise<GuestNetworkingInfo | null> {
+  const url = joinUrl(endpoint, `/api/vcenter/vm/${encodeURIComponent(vmId)}/guest/networking`);
+  const result = await fetchJson<GuestNetworkingInfo>(url, {
+    method: 'GET',
+    headers: { 'vmware-api-session-id': token },
+  });
+  if (!result.ok) {
+    // VMware Tools not running or other errors - return null
+    return null;
   }
   return result.data;
 }

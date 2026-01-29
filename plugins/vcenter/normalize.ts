@@ -1,32 +1,127 @@
+/**
+ * vSphere VM API response types
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/get/
+ */
+
+/** VM detail from GET /api/vcenter/vm/{vm} */
 type VmRaw = {
+  /** VM identifier (injected by collector, not from API) */
   vm: string;
-  instance_uuid?: string;
-  identity?: { instance_uuid?: string; bios_uuid?: string; name?: string };
+  /** VM display name */
   name?: string;
+  /** Guest operating system identifier (e.g., "RHEL_8_64", "WINDOWS_9_64") */
   guest_OS?: string;
-  power_state?: string;
-  cpu?: { count?: number; cores_per_socket?: number };
-  memory?: { size_MiB?: number };
-  disks?: Record<string, { capacity?: number; label?: string }>;
-  nics?: Record<string, { mac_address?: string; label?: string }>;
+  /** Power state: POWERED_ON | POWERED_OFF | SUSPENDED */
+  power_state?: 'POWERED_ON' | 'POWERED_OFF' | 'SUSPENDED';
+  /** VM identity information */
+  identity?: {
+    name?: string;
+    bios_uuid?: string;
+    instance_uuid?: string;
+  };
+  /** CPU configuration */
+  cpu?: {
+    count?: number;
+    cores_per_socket?: number;
+    hot_add_enabled?: boolean;
+    hot_remove_enabled?: boolean;
+  };
+  /** Memory configuration */
+  memory?: {
+    size_MiB?: number;
+    hot_add_enabled?: boolean;
+    hot_add_increment_size_MiB?: number;
+    hot_add_limit_MiB?: number;
+  };
+  /** Virtual disks (keyed by disk ID, e.g., "2000") */
+  disks?: Record<
+    string,
+    {
+      label?: string;
+      type?: string;
+      capacity?: number;
+      backing?: { type?: string; vmdk_file?: string };
+    }
+  >;
+  /** Network adapters (keyed by NIC ID, e.g., "4000") */
+  nics?: Record<
+    string,
+    {
+      label?: string;
+      type?: string;
+      mac_type?: string;
+      mac_address?: string;
+      state?: string;
+      start_connected?: boolean;
+      backing?: { type?: string; network?: string; network_name?: string };
+    }
+  >;
+  /** Host running this VM (from list API, not detail) */
   host?: string;
-  // Injected from guest networking API
+  /**
+   * Guest networking interfaces (injected from separate API call)
+   * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/guest/networking/interfaces/get/
+   */
   guest_networking?: Array<{
     mac_address?: string;
-    ip?: { ip_addresses?: Array<{ ip_address: string; state?: string }> };
+    nic?: string;
+    ip?: {
+      ip_addresses?: Array<{
+        ip_address: string;
+        prefix_length?: number;
+        origin?: string;
+        state?: string;
+      }>;
+    };
+  }>;
+  /**
+   * Guest networking info including hostname (injected from separate API call)
+   * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/guest/networking/get/
+   */
+  guest_networking_info?: {
+    dns_values?: {
+      /** Guest hostname (the actual machine name inside the VM) */
+      host_name?: string;
+      domain_name?: string;
+    };
+  };
+};
+
+/**
+ * vSphere Host API response types
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/host/host/get/
+ */
+type HostRaw = {
+  /** Host identifier */
+  host: string;
+  /** Host display name */
+  name?: string;
+  /** Cluster this host belongs to */
+  cluster?: string;
+  /** Hardware information */
+  hardware?: {
+    system_info?: {
+      serial_number?: string;
+      vendor?: string;
+      model?: string;
+    };
+  };
+  /** Virtual NICs for management network */
+  vnics?: Array<{
+    ip?: {
+      ip_address?: string;
+    };
   }>;
 };
 
-type HostRaw = {
-  host: string;
-  name?: string;
-  cluster?: string;
-  hardware?: { system_info?: { serial_number?: string } };
-  vnics?: Array<{ ip?: { ip_address?: string } }>;
-};
-
+/**
+ * vSphere Cluster API response types
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/cluster/cluster/get/
+ */
 type ClusterRaw = {
+  /** Cluster identifier */
   cluster: string;
+  /** Cluster display name */
   name?: string;
 };
 
@@ -46,12 +141,15 @@ type NormalizedV1 = {
   };
   hardware?: {
     cpu_count?: number;
-    memory_mib?: number;
-    disk_capacity_bytes?: number;
+    memory_bytes?: number;
+    disks?: Array<{ name?: string; size_bytes?: number; type?: 'thin' | 'thick' | 'eagerZeroedThick' }>;
   };
-  state?: {
-    power_state?: string;
-    guest_os?: string;
+  os?: {
+    name?: string;
+    fingerprint?: string;
+  };
+  runtime?: {
+    power_state?: 'poweredOn' | 'poweredOff' | 'suspended';
   };
 };
 
@@ -63,7 +161,7 @@ export type NormalizedAsset = {
 };
 
 export type Relation = {
-  type: 'runs_on' | 'member_of';
+  type: 'runs_on' | 'member_of' | 'hosts_vm';
   from: { external_kind: 'vm' | 'host' | 'cluster'; external_id: string };
   to: { external_kind: 'vm' | 'host' | 'cluster'; external_id: string };
   raw_payload: unknown;
@@ -88,18 +186,37 @@ function getFirstString(values: Array<string | undefined>): string | undefined {
   return undefined;
 }
 
+// Check if an IP address is IPv4
+function isIPv4(ip: string): boolean {
+  // IPv4 pattern: x.x.x.x where x is 0-255
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  return ipv4Pattern.test(ip);
+}
+
+// Map vCenter power state to normalized format
+function mapPowerState(vcenterState?: string): 'poweredOn' | 'poweredOff' | 'suspended' | undefined {
+  if (!vcenterState) return undefined;
+  const map: Record<string, 'poweredOn' | 'poweredOff' | 'suspended'> = {
+    POWERED_ON: 'poweredOn',
+    POWERED_OFF: 'poweredOff',
+    SUSPENDED: 'suspended',
+  };
+  return map[vcenterState];
+}
+
 export function normalizeVM(raw: VmRaw): NormalizedAsset {
   // Extract MAC addresses from nics (object format from vSphere API)
   const nicValues = raw.nics ? Object.values(raw.nics) : [];
   const macAddresses = uniqueStrings(nicValues.map((nic) => nic.mac_address));
 
-  // Extract IP addresses from guest networking interfaces
+  // Extract IPv4 addresses only from guest networking interfaces
   const ipAddresses: string[] = [];
   if (raw.guest_networking) {
     for (const iface of raw.guest_networking) {
       if (iface.ip?.ip_addresses) {
         for (const addr of iface.ip.ip_addresses) {
-          if (addr.ip_address && !ipAddresses.includes(addr.ip_address)) {
+          // Only include IPv4 addresses
+          if (addr.ip_address && isIPv4(addr.ip_address) && !ipAddresses.includes(addr.ip_address)) {
             ipAddresses.push(addr.ip_address);
           }
         }
@@ -107,15 +224,23 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
     }
   }
 
-  // Calculate total disk capacity
-  let totalDiskBytes = 0;
+  // Build disks array
+  const disks: Array<{ name?: string; size_bytes?: number }> = [];
   if (raw.disks) {
-    for (const disk of Object.values(raw.disks)) {
+    for (const [key, disk] of Object.entries(raw.disks)) {
       if (disk.capacity) {
-        totalDiskBytes += disk.capacity;
+        disks.push({
+          name: disk.label ?? key,
+          size_bytes: disk.capacity,
+        });
       }
     }
   }
+
+  // Get guest hostname (the actual machine name inside the VM)
+  // Priority: guest_networking_info.dns_values.host_name (actual guest hostname)
+  // Fallback: VM name (only if guest hostname not available)
+  const guestHostname = raw.guest_networking_info?.dns_values?.host_name;
 
   return {
     external_kind: 'vm',
@@ -125,7 +250,8 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       kind: 'vm',
       identity: {
         machine_uuid: raw.identity?.instance_uuid ?? raw.identity?.bios_uuid,
-        hostname: raw.name ?? raw.identity?.name,
+        // Use guest hostname (actual machine name) if available, otherwise undefined
+        hostname: guestHostname || undefined,
       },
       network: {
         mac_addresses: macAddresses.length > 0 ? macAddresses : undefined,
@@ -133,12 +259,12 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       },
       hardware: {
         cpu_count: raw.cpu?.count,
-        memory_mib: raw.memory?.size_MiB,
-        disk_capacity_bytes: totalDiskBytes > 0 ? totalDiskBytes : undefined,
+        memory_bytes: raw.memory?.size_MiB ? raw.memory.size_MiB * 1024 * 1024 : undefined,
+        disks: disks.length > 0 ? disks : undefined,
       },
-      state: {
-        power_state: raw.power_state,
-        guest_os: raw.guest_OS,
+      os: raw.guest_OS ? { fingerprint: raw.guest_OS } : undefined,
+      runtime: {
+        power_state: mapPowerState(raw.power_state),
       },
     },
     raw_payload: raw,
@@ -189,11 +315,21 @@ export function buildRelations(vms: VmRaw[], hosts: HostRaw[], clusters: Cluster
   for (const vm of vms) {
     if (!vm.host) continue;
     if (!hostIds.has(vm.host)) continue;
+
+    // VM → Host (runs_on)
     relations.push({
       type: 'runs_on',
       from: { external_kind: 'vm', external_id: vm.vm },
       to: { external_kind: 'host', external_id: vm.host },
       raw_payload: { vm: vm.vm, host: vm.host },
+    });
+
+    // Host → VM (hosts_vm) - reverse relation for Host to show its VMs
+    relations.push({
+      type: 'hosts_vm',
+      from: { external_kind: 'host', external_id: vm.host },
+      to: { external_kind: 'vm', external_id: vm.vm },
+      raw_payload: { host: vm.host, vm: vm.vm },
     });
   }
 

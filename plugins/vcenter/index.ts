@@ -5,9 +5,10 @@ import {
   getHostDetail,
   getVmDetail,
   getVmGuestNetworking,
+  getVmGuestNetworkingInfo,
   listClusters,
   listHosts,
-  listVMs,
+  listVMsByHost,
 } from './client';
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
@@ -105,22 +106,39 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     const warnings: unknown[] = [];
 
-    const [vmSummaries, hostSummaries, clusters] = await Promise.all([
-      listVMs(endpoint, token),
-      listHosts(endpoint, token),
-      listClusters(endpoint, token),
-    ]);
+    // First, get hosts and clusters
+    const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
 
+    // Build VM-to-Host mapping by querying VMs per host
+    // This is the only way to get VM-Host relationships via vSphere REST API
+    // @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/get/
+    const vmToHostMap = new Map<string, string>();
+    const allVmIds = new Set<string>();
+
+    await Promise.all(
+      hostSummaries.map(async (host) => {
+        const vmsOnHost = await listVMsByHost(endpoint, token, host.host);
+        for (const vm of vmsOnHost) {
+          vmToHostMap.set(vm.vm, host.host);
+          allVmIds.add(vm.vm);
+        }
+      }),
+    );
+
+    // Get VM details with host info injected
     const vmDetails = await Promise.all(
-      vmSummaries.map(async (vm) => {
-        const [detail, guestNetworking] = await Promise.all([
-          getVmDetail(endpoint, token, vm.vm),
-          getVmGuestNetworking(endpoint, token, vm.vm),
+      Array.from(allVmIds).map(async (vmId) => {
+        const [detail, guestNetworking, guestNetworkingInfo] = await Promise.all([
+          getVmDetail(endpoint, token, vmId),
+          getVmGuestNetworking(endpoint, token, vmId),
+          getVmGuestNetworkingInfo(endpoint, token, vmId),
         ]);
         return {
           ...(detail as Record<string, unknown>),
-          vm: vm.vm,
+          vm: vmId,
+          host: vmToHostMap.get(vmId), // Inject host relationship
           guest_networking: guestNetworking,
+          guest_networking_info: guestNetworkingInfo, // Inject guest hostname info
         };
       }),
     );
@@ -128,7 +146,8 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     const hostDetails = await Promise.all(
       hostSummaries.map(async (host) => {
         try {
-          return await getHostDetail(endpoint, token, host.host);
+          const detail = await getHostDetail(endpoint, token, host.host);
+          return { ...detail, host: host.host };
         } catch (err) {
           const status =
             typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;

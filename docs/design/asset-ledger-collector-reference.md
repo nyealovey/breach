@@ -72,10 +72,95 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 实现备注（v1.0 当前实现，vSphere REST 兼容性）：
 
 - Session：使用 `POST /api/session`（Basic Auth）获取 session token；返回通常为 JSON 字符串（token）。
-- 结构差异：部分 vCenter 环境下 VM detail 的 `nics` 可能为对象（而非数组）；`instance_uuid` 可能出现在 `identity.instance_uuid`。
+- 结构差异：vCenter REST API 返回的 `nics` 和 `disks` 为对象格式（以设备 ID 为 key），而非数组。
 - 字段缺失：VM detail 可能不包含 VM 自身 ID 字段；实现侧应以 VM 列表摘要的 `vm` 作为 `external_id` 的单一来源（必要时在 detail 上注入该字段），避免入账阶段出现 `externalId missing`。
+- **IP 地址获取**：VM 详情 API (`GET /api/vcenter/vm/{vm}`) **不返回 IP 地址**，需额外调用 Guest Networking API (`GET /api/vcenter/vm/{vm}/guest/networking/interfaces`) 获取，且需要 VMware Tools 运行。
 - 多版本差异处理（新口径，禁止降级）：必须按 `preferred_vcenter_version` 选择对应 driver；当所选 driver 的关键能力缺失（关键接口不存在/无法取到必备字段）时，采集必须失败（`errors[]`），不得以 warning + fallback 的方式返回成功。
 - 关系边（vCenter 口径）：vCenter 环境应可稳定构建 VM→Host→Cluster 的关系；插件至少必须输出 `runs_on` / `member_of` 之一（更推荐两者同时输出）。若 `relations[]` 为空应视为采集失败（避免 UI/后续能力不可用）。
+
+#### 2.1.B vSphere REST API 字段映射（v1.0）
+
+> 参考文档：https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/
+
+**VM 详情 API** (`GET /api/vcenter/vm/{vm}`)：
+
+| vSphere API 字段 | 类型 | 说明 |
+|------------------|------|------|
+| `name` | string | VM 显示名称 |
+| `guest_OS` | string | 操作系统标识（如 `RHEL_8_64`、`WINDOWS_9_64`） |
+| `power_state` | enum | 电源状态：`POWERED_ON` \| `POWERED_OFF` \| `SUSPENDED` |
+| `identity.instance_uuid` | string | 实例 UUID（首选标识） |
+| `identity.bios_uuid` | string | BIOS UUID（备选标识） |
+| `identity.name` | string | 身份名称 |
+| `cpu.count` | integer | CPU 核心数 |
+| `cpu.cores_per_socket` | integer | 每插槽核心数 |
+| `memory.size_MiB` | integer | 内存大小（MiB） |
+| `disks` | object | 虚拟磁盘（key 为磁盘 ID，如 `"2000"`） |
+| `disks[id].label` | string | 磁盘标签（如 `"Hard disk 1"`） |
+| `disks[id].capacity` | integer | 磁盘容量（字节） |
+| `nics` | object | 网络适配器（key 为 NIC ID，如 `"4000"`） |
+| `nics[id].mac_address` | string | MAC 地址 |
+| `nics[id].label` | string | NIC 标签 |
+
+**Guest Networking API** (`GET /api/vcenter/vm/{vm}/guest/networking`)：
+
+> 注意：此 API 需要 VMware Tools 在 VM 中运行，否则返回空或错误。
+
+| vSphere API 字段 | 类型 | 说明 |
+|------------------|------|------|
+| `dns_values.host_name` | string | **Guest hostname（VM 内部的机器名）** |
+| `dns_values.domain_name` | string | Guest 域名 |
+
+**Guest Networking Interfaces API** (`GET /api/vcenter/vm/{vm}/guest/networking/interfaces`)：
+
+> 注意：此 API 需要 VMware Tools 在 VM 中运行，否则返回空或错误。
+
+| vSphere API 字段 | 类型 | 说明 |
+|------------------|------|------|
+| `mac_address` | string | 接口 MAC 地址 |
+| `nic` | string | 关联的 NIC 设备 key |
+| `ip.ip_addresses[]` | array | IP 地址列表 |
+| `ip.ip_addresses[].ip_address` | string | IP 地址（IPv4 或 IPv6） |
+| `ip.ip_addresses[].prefix_length` | integer | 子网前缀长度 |
+| `ip.ip_addresses[].origin` | string | IP 来源（DHCP、STATIC 等） |
+
+**字段映射到 normalized-v1**：
+
+| vSphere 字段 | normalized-v1 字段 | 转换说明 |
+|--------------|-------------------|----------|
+| `identity.instance_uuid` / `identity.bios_uuid` | `identity.machine_uuid` | 优先 instance_uuid |
+| `guest_networking_info.dns_values.host_name` | `identity.hostname` | **Guest hostname（VM 内部机器名）** |
+| `cpu.count` | `hardware.cpu_count` | 直接映射 |
+| `memory.size_MiB` | `hardware.memory_bytes` | MiB × 1024 × 1024 |
+| `disks[*].capacity` | `hardware.disks[].size_bytes` | 直接映射 |
+| `nics[*].mac_address` | `network.mac_addresses[]` | 提取所有 MAC |
+| `guest_networking[*].ip.ip_addresses[*].ip_address` | `network.ip_addresses[]` | **仅提取 IPv4 地址** |
+| `guest_OS` | `os.fingerprint` | 直接映射 |
+| `power_state` | `runtime.power_state` | 转换：`POWERED_ON` → `poweredOn` |
+
+**关系类型**：
+
+| 关系类型 | 方向 | 说明 |
+|----------|------|------|
+| `runs_on` | VM → Host | VM 运行在哪个 Host 上 |
+| `hosts_vm` | Host → VM | Host 托管了哪些 VM（反向关系） |
+| `member_of` | Host → Cluster | Host 属于哪个 Cluster |
+
+**VM-Host 关系获取**：
+
+> **重要**：vSphere REST API 的 VM 详情 (`GET /api/vcenter/vm/{vm}`) **不返回 host 字段**！
+
+获取 VM 和 Host 关系的方法是通过 VM 列表 API 的 `hosts` 过滤参数：
+
+```
+GET /api/vcenter/vm?hosts={host_id}
+```
+
+**实现策略**：
+1. 先获取所有 Host 列表 (`GET /api/vcenter/host`)
+2. 对每个 Host，调用 `GET /api/vcenter/vm?hosts={host_id}` 获取该 Host 上的 VM 列表
+3. 构建 VM → Host 的映射关系
+4. 在获取 VM 详情时注入 `host` 字段
 
 ### 2.2 输出（插件 → 核心）
 
