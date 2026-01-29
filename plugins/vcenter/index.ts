@@ -6,6 +6,7 @@ import {
   getVmDetail,
   getVmGuestNetworking,
   getVmGuestNetworkingInfo,
+  getVmTools,
   listClusters,
   listHosts,
   listHostsByCluster,
@@ -141,10 +142,11 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     // Get VM details with host info injected
     const vmDetails = await Promise.all(
       Array.from(allVmIds).map(async (vmId) => {
-        const [detail, guestNetworking, guestNetworkingInfo] = await Promise.all([
+        const [detail, guestNetworking, guestNetworkingInfo, tools] = await Promise.all([
           getVmDetail(endpoint, token, vmId),
           getVmGuestNetworking(endpoint, token, vmId),
           getVmGuestNetworkingInfo(endpoint, token, vmId),
+          getVmTools(endpoint, token, vmId),
         ]);
         return {
           ...(detail as Record<string, unknown>),
@@ -152,6 +154,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
           host: vmToHostMap.get(vmId), // Inject host relationship
           guest_networking: guestNetworking,
           guest_networking_info: guestNetworkingInfo, // Inject guest hostname info
+          tools: tools, // Inject VMware Tools status
         };
       }),
     );

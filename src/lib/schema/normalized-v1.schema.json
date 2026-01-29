@@ -85,7 +85,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] }
+        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] },
+        "tools_running": {
+          "type": "boolean",
+          "description": "Whether VMware Tools is running in the guest (only for VMs)"
+        },
+        "tools_status": {
+          "type": "string",
+          "description": "VMware Tools version status (NOT_INSTALLED, CURRENT, TOO_OLD, etc.)"
+        }
       }
     },
     "location": {

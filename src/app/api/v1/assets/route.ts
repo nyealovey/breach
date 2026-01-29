@@ -104,6 +104,12 @@ function pickVmPowerState(fields: unknown): string | null {
   return null;
 }
 
+function pickToolsRunning(fields: unknown): boolean | null {
+  const toolsRunning = getCanonicalFieldValue(fields, ['runtime', 'tools_running']);
+  if (typeof toolsRunning === 'boolean') return toolsRunning;
+  return null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
@@ -159,6 +165,7 @@ export async function GET(request: Request) {
         hostName,
         os: pickOs(fields),
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
+        toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields),
         cpuCount: typeof cpuCount === 'number' ? cpuCount : null,
         memoryBytes: typeof memoryBytes === 'number' ? memoryBytes : null,

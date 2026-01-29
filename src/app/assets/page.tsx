@@ -31,6 +31,7 @@ type AssetListItem = {
   vmName: string | null;
   os: string | null;
   vmPowerState: string | null;
+  toolsRunning: boolean | null;
   ip: string | null;
   cpuCount: number | null;
   memoryBytes: number | null;
@@ -259,7 +260,18 @@ export default function AssetsPage() {
                       {item.os ?? '-'}
                     </TableCell>
                     <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
-                      {item.ip ?? '-'}
+                      {item.ip ? (
+                        item.ip
+                      ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
+                        <span
+                          className="cursor-help text-muted-foreground"
+                          title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                        >
+                          - (Tools 未运行)
+                        </span>
+                      ) : (
+                        '-'
+                      )}
                     </TableCell>
                     <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
                     <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>

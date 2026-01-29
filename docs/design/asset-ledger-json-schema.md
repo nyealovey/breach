@@ -124,7 +124,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] }
+        "power_state": { "enum": ["poweredOn", "poweredOff", "suspended"] },
+        "tools_running": {
+          "type": "boolean",
+          "description": "Whether VMware Tools is running in the guest (only for VMs)"
+        },
+        "tools_status": {
+          "type": "string",
+          "description": "VMware Tools version status (NOT_INSTALLED, CURRENT, TOO_OLD, etc.)"
+        }
       }
     },
 
@@ -224,7 +232,7 @@
     "memory_bytes": 8589934592,
     "disks": [{ "name": "Hard disk 1", "size_bytes": 53687091200, "type": "thin" }]
   },
-  "runtime": { "power_state": "poweredOn" },
+  "runtime": { "power_state": "poweredOn", "tools_running": true },
   "ownership": { "department": "IT", "owner_name": "Alice" },
   "service": { "system_name": "订单系统", "applications": ["order-api"], "service_level": "P1" }
 }

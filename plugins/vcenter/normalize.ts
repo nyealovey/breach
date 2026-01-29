@@ -85,6 +85,14 @@ type VmRaw = {
       domain_name?: string;
     };
   };
+  /**
+   * VMware Tools status (injected from separate API call)
+   * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/tools/get/
+   */
+  tools?: {
+    run_state?: 'NOT_RUNNING' | 'RUNNING' | 'EXECUTING_SCRIPTS';
+    version_status?: string;
+  };
 };
 
 /**
@@ -160,6 +168,10 @@ type NormalizedV1 = {
   };
   runtime?: {
     power_state?: 'poweredOn' | 'poweredOff' | 'suspended';
+    /** Whether VMware Tools is running (only for VMs) */
+    tools_running?: boolean;
+    /** VMware Tools version status (only for VMs) */
+    tools_status?: string;
   };
 };
 
@@ -252,6 +264,10 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
   // Fallback: VM name (only if guest hostname not available)
   const guestHostname = raw.guest_networking_info?.dns_values?.host_name;
 
+  // Get VMware Tools status
+  const toolsRunning = raw.tools?.run_state === 'RUNNING' || raw.tools?.run_state === 'EXECUTING_SCRIPTS';
+  const toolsStatus = raw.tools?.version_status;
+
   return {
     external_kind: 'vm',
     external_id: raw.vm,
@@ -277,6 +293,8 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       os: raw.guest_OS ? { fingerprint: raw.guest_OS } : undefined,
       runtime: {
         power_state: mapPowerState(raw.power_state),
+        tools_running: raw.tools ? toolsRunning : undefined,
+        tools_status: toolsStatus,
       },
     },
     raw_payload: raw,

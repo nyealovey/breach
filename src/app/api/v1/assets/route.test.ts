@@ -107,6 +107,7 @@ describe('GET /api/v1/assets', () => {
         hostName: '10.10.103.36',
         os: 'Ubuntu 20.04',
         vmPowerState: 'poweredOn',
+        toolsRunning: null,
         ip: '10.10.100.106',
         cpuCount: 4,
         memoryBytes: 8589934592,
