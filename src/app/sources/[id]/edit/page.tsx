@@ -19,8 +19,10 @@ type SourceDetail = {
   sourceType: string;
   enabled: boolean;
   scheduleGroupId: string | null;
+  credential: { credentialId: string; name: string; type: string } | null;
   config?: { endpoint?: string };
 };
+type CredentialItem = { credentialId: string; name: string; type: string };
 
 export default function EditSourcePage() {
   const params = useParams<{ id: string }>();
@@ -33,9 +35,8 @@ export default function EditSourcePage() {
   const [scheduleGroupId, setScheduleGroupId] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
-  const [credUser, setCredUser] = useState('');
-  const [credPass, setCredPass] = useState('');
-  const [credSubmitting, setCredSubmitting] = useState(false);
+  const [credentialId, setCredentialId] = useState('');
+  const [credentials, setCredentials] = useState<CredentialItem[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -57,6 +58,7 @@ export default function EditSourcePage() {
           setEndpoint(source.config?.endpoint ?? '');
           setScheduleGroupId(source.scheduleGroupId ?? '');
           setEnabled(source.enabled);
+          setCredentialId(source.credential?.credentialId ?? '');
         }
       } else {
         toast.error('加载失败');
@@ -68,6 +70,23 @@ export default function EditSourcePage() {
       active = false;
     };
   }, [params.id]);
+
+  useEffect(() => {
+    let active = true;
+    const loadCredentials = async () => {
+      const res = await fetch(`/api/v1/credentials?type=${encodeURIComponent(sourceType)}&pageSize=100`);
+      if (!res.ok) {
+        if (active) setCredentials([]);
+        return;
+      }
+      const body = (await res.json()) as { data: CredentialItem[] };
+      if (active) setCredentials(body.data ?? []);
+    };
+    void loadCredentials();
+    return () => {
+      active = false;
+    };
+  }, [sourceType]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -83,6 +102,7 @@ export default function EditSourcePage() {
           enabled,
           scheduleGroupId,
           config: { endpoint },
+          credentialId: credentialId ? credentialId : null,
         }),
       });
       if (!res.ok) {
@@ -107,29 +127,6 @@ export default function EditSourcePage() {
     }
     toast.success('来源已删除');
     router.push('/sources');
-  };
-
-  const onUpdateCredential = async (e: FormEvent) => {
-    e.preventDefault();
-    if (credSubmitting) return;
-    setCredSubmitting(true);
-    try {
-      const res = await fetch(`/api/v1/sources/${params.id}/credential`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: credUser, password: credPass }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '更新凭据失败');
-        return;
-      }
-      toast.success('凭据已更新');
-      setCredUser('');
-      setCredPass('');
-    } finally {
-      setCredSubmitting(false);
-    }
   };
 
   if (loading) {
@@ -157,7 +154,10 @@ export default function EditSourcePage() {
                 id="sourceType"
                 className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                 value={sourceType}
-                onChange={(e) => setSourceType(e.target.value)}
+                onChange={(e) => {
+                  setSourceType(e.target.value);
+                  setCredentialId('');
+                }}
               >
                 <option value="vcenter">vCenter</option>
                 <option value="pve">PVE</option>
@@ -186,6 +186,25 @@ export default function EditSourcePage() {
                 ))}
               </select>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="credentialId">选择凭据</Label>
+              <select
+                id="credentialId"
+                className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                value={credentialId}
+                onChange={(e) => setCredentialId(e.target.value)}
+              >
+                <option value="">不选择</option>
+                {credentials.map((c) => (
+                  <option key={c.credentialId} value={c.credentialId}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {enabled && !credentialId ? (
+                <div className="text-sm text-destructive">未配置凭据，无法参与运行/调度。</div>
+              ) : null}
+            </div>
             <div className="flex items-center justify-between rounded border px-3 py-2">
               <div className="text-sm">
                 <div className="font-medium">启用</div>
@@ -195,27 +214,6 @@ export default function EditSourcePage() {
             </div>
             <Button type="submit" disabled={submitting}>
               {submitting ? '保存中…' : '保存'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="max-w-xl">
-        <CardHeader>
-          <CardTitle>更新凭据</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={onUpdateCredential}>
-            <div className="space-y-2">
-              <Label htmlFor="credUser">用户名</Label>
-              <Input id="credUser" value={credUser} onChange={(e) => setCredUser(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="credPass">密码</Label>
-              <Input id="credPass" type="password" value={credPass} onChange={(e) => setCredPass(e.target.value)} />
-            </div>
-            <Button type="submit" disabled={credSubmitting}>
-              {credSubmitting ? '更新中…' : '更新凭据'}
             </Button>
           </form>
         </CardContent>

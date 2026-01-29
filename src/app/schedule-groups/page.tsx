@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,9 +18,17 @@ type ScheduleGroup = {
   lastTriggeredOn: string | null;
 };
 
+type ManualRunResult = {
+  queued: number;
+  skipped_active: number;
+  skipped_missing_credential: number;
+  message: string;
+};
+
 export default function ScheduleGroupsPage() {
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [runningId, setRunningId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -42,6 +51,26 @@ export default function ScheduleGroupsPage() {
       active = false;
     };
   }, []);
+
+  const onRun = async (groupId: string) => {
+    if (runningId) return;
+    setRunningId(groupId);
+    try {
+      const res = await fetch(`/api/v1/schedule-groups/${groupId}/runs`, { method: 'POST' });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        toast.error(body?.error?.message ?? '触发失败');
+        return;
+      }
+      const body = (await res.json()) as { data: ManualRunResult };
+      const r = body.data;
+      const summary = `queued=${r.queued} · skipped_active=${r.skipped_active} · skipped_missing_credential=${r.skipped_missing_credential}`;
+      if (r.queued === 0) toast.message(r.message || '无可入队来源', { description: summary });
+      else toast.success('已触发运行', { description: summary });
+    } finally {
+      setRunningId(null);
+    }
+  };
 
   return (
     <Card>
@@ -79,9 +108,19 @@ export default function ScheduleGroupsPage() {
                   <TableCell>{group.sourceCount}</TableCell>
                   <TableCell>{group.lastTriggeredOn ?? '-'}</TableCell>
                   <TableCell className="text-right">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/schedule-groups/${group.groupId}/edit`}>编辑</Link>
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={runningId === group.groupId}
+                        onClick={() => void onRun(group.groupId)}
+                      >
+                        运行
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/schedule-groups/${group.groupId}/edit`}>编辑</Link>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

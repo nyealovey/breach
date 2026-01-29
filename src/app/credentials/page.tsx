@@ -1,0 +1,120 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+type CredentialItem = {
+  credentialId: string;
+  name: string;
+  type: string;
+  usageCount: number;
+  updatedAt: string;
+};
+
+export default function CredentialsPage() {
+  const [items, setItems] = useState<CredentialItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      const res = await fetch('/api/v1/credentials?pageSize=100');
+      if (!res.ok) {
+        if (active) {
+          setItems([]);
+          setLoading(false);
+        }
+        return;
+      }
+      const body = (await res.json()) as { data: CredentialItem[] };
+      if (active) {
+        setItems(body.data ?? []);
+        setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const onDelete = async (credentialId: string) => {
+    if (deletingId) return;
+    if (!confirm('确认删除该凭据？（仅当 usageCount=0 才允许删除）')) return;
+    setDeletingId(credentialId);
+    try {
+      const res = await fetch(`/api/v1/credentials/${credentialId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        toast.error(body?.error?.message ?? '删除失败');
+        return;
+      }
+      toast.success('凭据已删除');
+      setItems((prev) => prev.filter((c) => c.credentialId !== credentialId));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>凭据</CardTitle>
+        <Button asChild>
+          <Link href="/credentials/new">新建凭据</Link>
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="text-sm text-muted-foreground">加载中…</div>
+        ) : items.length === 0 ? (
+          <div className="text-sm text-muted-foreground">暂无凭据，点击「新建凭据」开始配置。</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>类型</TableHead>
+                <TableHead>引用数</TableHead>
+                <TableHead>更新时间</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.credentialId}>
+                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell>{item.type}</TableCell>
+                  <TableCell>{item.usageCount}</TableCell>
+                  <TableCell>{item.updatedAt}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/credentials/${item.credentialId}/edit`}>编辑</Link>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingId === item.credentialId}
+                        onClick={() => void onDelete(item.credentialId)}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

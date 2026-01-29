@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import type { FormEvent } from 'react';
 
 type ScheduleGroup = { groupId: string; name: string };
+type CredentialItem = { credentialId: string; name: string; type: string };
 
 export default function NewSourcePage() {
   const router = useRouter();
@@ -22,6 +23,8 @@ export default function NewSourcePage() {
   const [scheduleGroupId, setScheduleGroupId] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
+  const [credentialId, setCredentialId] = useState('');
+  const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -38,6 +41,23 @@ export default function NewSourcePage() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadCredentials = async () => {
+      const res = await fetch(`/api/v1/credentials?type=${encodeURIComponent(sourceType)}&pageSize=100`);
+      if (!res.ok) {
+        if (active) setCredentials([]);
+        return;
+      }
+      const body = (await res.json()) as { data: CredentialItem[] };
+      if (active) setCredentials(body.data ?? []);
+    };
+    void loadCredentials();
+    return () => {
+      active = false;
+    };
+  }, [sourceType]);
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -52,6 +72,7 @@ export default function NewSourcePage() {
           scheduleGroupId,
           enabled,
           config: { endpoint },
+          credentialId: credentialId ? credentialId : null,
         }),
       });
       if (!res.ok) {
@@ -83,7 +104,10 @@ export default function NewSourcePage() {
               id="sourceType"
               className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
               value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
+              onChange={(e) => {
+                setSourceType(e.target.value);
+                setCredentialId('');
+              }}
             >
               <option value="vcenter">vCenter</option>
               <option value="pve">PVE</option>
@@ -111,6 +135,25 @@ export default function NewSourcePage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="credentialId">选择凭据</Label>
+            <select
+              id="credentialId"
+              className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+              value={credentialId}
+              onChange={(e) => setCredentialId(e.target.value)}
+            >
+              <option value="">不选择</option>
+              {credentials.map((c) => (
+                <option key={c.credentialId} value={c.credentialId}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {enabled && !credentialId ? (
+              <div className="text-sm text-destructive">未配置凭据，无法参与运行/调度。</div>
+            ) : null}
           </div>
           <div className="flex items-center justify-between rounded border px-3 py-2">
             <div className="text-sm">

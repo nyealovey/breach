@@ -38,6 +38,9 @@ export default function RootLayout({
               <Link className="block rounded px-2 py-1 hover:bg-muted" href="/sources">
                 来源
               </Link>
+              <Link className="block rounded px-2 py-1 hover:bg-muted" href="/credentials">
+                凭据
+              </Link>
               <Link className="block rounded px-2 py-1 hover:bg-muted" href="/runs">
                 运行
               </Link>
