@@ -3,13 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from '../normalize';
 
 describe('vcenter normalize', () => {
-  it('normalizeVM maps machine_uuid/hostname/mac_addresses', () => {
+  it('normalizeVM maps machine_uuid/hostname/mac_addresses/cpu/memory', () => {
     const raw = {
       vm: 'vm-1',
-      instance_uuid: 'uuid-1',
-      guest: { host_name: 'vm1.local' },
-      nics: [{ mac_address: 'aa:bb:cc:dd:ee:ff' }, { mac_address: 'aa:bb:cc:dd:ee:00' }],
+      identity: { instance_uuid: 'uuid-1' },
+      name: 'vm1.local',
+      cpu: { count: 4 },
+      memory: { size_MiB: 8192 },
+      nics: { '4000': { mac_address: 'aa:bb:cc:dd:ee:ff' }, '4001': { mac_address: 'aa:bb:cc:dd:ee:00' } },
+      disks: { '2000': { capacity: 107374182400 } },
       host: 'host-1',
+      guest_networking: [
+        { ip: { ip_addresses: [{ ip_address: '192.168.1.100' }] } },
+      ],
     };
 
     const asset = normalizeVM(raw);
@@ -20,7 +26,8 @@ describe('vcenter normalize', () => {
       version: 'normalized-v1',
       kind: 'vm',
       identity: { machine_uuid: 'uuid-1', hostname: 'vm1.local' },
-      network: { mac_addresses: ['aa:bb:cc:dd:ee:ff', 'aa:bb:cc:dd:ee:00'] },
+      network: { mac_addresses: ['aa:bb:cc:dd:ee:ff', 'aa:bb:cc:dd:ee:00'], ip_addresses: ['192.168.1.100'] },
+      hardware: { cpu_count: 4, memory_mib: 8192, disk_capacity_bytes: 107374182400 },
     });
   });
 

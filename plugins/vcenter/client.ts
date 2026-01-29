@@ -96,3 +96,33 @@ export async function listClusters(endpoint: string, token: SessionToken): Promi
   if (!result.ok) throw makeHttpError({ op: 'listClusters', status: result.status, bodyText: result.bodyText });
   return result.data;
 }
+
+export type GuestNetworkInterface = {
+  mac_address?: string;
+  nic?: string;
+  ip?: {
+    ip_addresses?: Array<{
+      ip_address: string;
+      prefix_length?: number;
+      origin?: string;
+      state?: string;
+    }>;
+  };
+};
+
+export async function getVmGuestNetworking(
+  endpoint: string,
+  token: SessionToken,
+  vmId: string,
+): Promise<GuestNetworkInterface[]> {
+  const url = joinUrl(endpoint, `/api/vcenter/vm/${encodeURIComponent(vmId)}/guest/networking/interfaces`);
+  const result = await fetchJson<GuestNetworkInterface[]>(url, {
+    method: 'GET',
+    headers: { 'vmware-api-session-id': token },
+  });
+  if (!result.ok) {
+    // VMware Tools not running or other errors - return empty array instead of throwing
+    return [];
+  }
+  return result.data;
+}

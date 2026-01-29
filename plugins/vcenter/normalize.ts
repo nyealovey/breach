@@ -1,11 +1,20 @@
 type VmRaw = {
   vm: string;
   instance_uuid?: string;
-  identity?: { instance_uuid?: string; name?: string };
+  identity?: { instance_uuid?: string; bios_uuid?: string; name?: string };
   name?: string;
-  guest?: { host_name?: string };
-  nics?: Array<{ mac_address?: string }> | Record<string, { mac_address?: string }>;
+  guest_OS?: string;
+  power_state?: string;
+  cpu?: { count?: number; cores_per_socket?: number };
+  memory?: { size_MiB?: number };
+  disks?: Record<string, { capacity?: number; label?: string }>;
+  nics?: Record<string, { mac_address?: string; label?: string }>;
   host?: string;
+  // Injected from guest networking API
+  guest_networking?: Array<{
+    mac_address?: string;
+    ip?: { ip_addresses?: Array<{ ip_address: string; state?: string }> };
+  }>;
 };
 
 type HostRaw = {
@@ -32,7 +41,17 @@ type NormalizedV1 = {
   };
   network?: {
     mac_addresses?: string[];
+    ip_addresses?: string[];
     management_ip?: string;
+  };
+  hardware?: {
+    cpu_count?: number;
+    memory_mib?: number;
+    disk_capacity_bytes?: number;
+  };
+  state?: {
+    power_state?: string;
+    guest_os?: string;
   };
 };
 
@@ -70,11 +89,33 @@ function getFirstString(values: Array<string | undefined>): string | undefined {
 }
 
 export function normalizeVM(raw: VmRaw): NormalizedAsset {
-  const nicValues = Array.isArray(raw.nics)
-    ? raw.nics
-    : raw.nics && typeof raw.nics === 'object'
-      ? Object.values(raw.nics)
-      : [];
+  // Extract MAC addresses from nics (object format from vSphere API)
+  const nicValues = raw.nics ? Object.values(raw.nics) : [];
+  const macAddresses = uniqueStrings(nicValues.map((nic) => nic.mac_address));
+
+  // Extract IP addresses from guest networking interfaces
+  const ipAddresses: string[] = [];
+  if (raw.guest_networking) {
+    for (const iface of raw.guest_networking) {
+      if (iface.ip?.ip_addresses) {
+        for (const addr of iface.ip.ip_addresses) {
+          if (addr.ip_address && !ipAddresses.includes(addr.ip_address)) {
+            ipAddresses.push(addr.ip_address);
+          }
+        }
+      }
+    }
+  }
+
+  // Calculate total disk capacity
+  let totalDiskBytes = 0;
+  if (raw.disks) {
+    for (const disk of Object.values(raw.disks)) {
+      if (disk.capacity) {
+        totalDiskBytes += disk.capacity;
+      }
+    }
+  }
 
   return {
     external_kind: 'vm',
@@ -83,11 +124,21 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
       version: 'normalized-v1',
       kind: 'vm',
       identity: {
-        machine_uuid: raw.instance_uuid ?? raw.identity?.instance_uuid,
-        hostname: raw.guest?.host_name ?? raw.name ?? raw.identity?.name,
+        machine_uuid: raw.identity?.instance_uuid ?? raw.identity?.bios_uuid,
+        hostname: raw.name ?? raw.identity?.name,
       },
       network: {
-        mac_addresses: uniqueStrings(nicValues.map((nic) => nic.mac_address)),
+        mac_addresses: macAddresses.length > 0 ? macAddresses : undefined,
+        ip_addresses: ipAddresses.length > 0 ? ipAddresses : undefined,
+      },
+      hardware: {
+        cpu_count: raw.cpu?.count,
+        memory_mib: raw.memory?.size_MiB,
+        disk_capacity_bytes: totalDiskBytes > 0 ? totalDiskBytes : undefined,
+      },
+      state: {
+        power_state: raw.power_state,
+        guest_os: raw.guest_OS,
       },
     },
     raw_payload: raw,

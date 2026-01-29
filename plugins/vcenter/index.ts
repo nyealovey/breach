@@ -1,6 +1,14 @@
 #!/usr/bin/env bun
 
-import { createSession, getHostDetail, getVmDetail, listClusters, listHosts, listVMs } from './client';
+import {
+  createSession,
+  getHostDetail,
+  getVmDetail,
+  getVmGuestNetworking,
+  listClusters,
+  listHosts,
+  listVMs,
+} from './client';
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
@@ -105,8 +113,15 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     const vmDetails = await Promise.all(
       vmSummaries.map(async (vm) => {
-        const detail = await getVmDetail(endpoint, token, vm.vm);
-        return { ...(detail as Record<string, unknown>), vm: vm.vm };
+        const [detail, guestNetworking] = await Promise.all([
+          getVmDetail(endpoint, token, vm.vm),
+          getVmGuestNetworking(endpoint, token, vm.vm),
+        ]);
+        return {
+          ...(detail as Record<string, unknown>),
+          vm: vm.vm,
+          guest_networking: guestNetworking,
+        };
       }),
     );
 
