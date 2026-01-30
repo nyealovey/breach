@@ -208,6 +208,17 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
         });
       }
 
+      // Validate and warn on missing datastoreTotalBytes (best-effort).
+      const datastoreTotalBytes = soap?.datastoreTotalBytes;
+      if (soap && datastoreTotalBytes === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DATASTORE_TOTAL_MISSING',
+          category: 'parse',
+          message: 'failed to compute datastore total bytes for host',
+          redacted_context: { host_id: hostSummary.host, field: 'attributes.datastore_total_bytes' },
+        });
+      }
+
       return {
         ...hostSummary,
         cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship

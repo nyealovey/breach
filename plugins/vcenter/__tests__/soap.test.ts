@@ -210,3 +210,22 @@ it('parses system model + management ip (prefers vmk0)', () => {
   });
   expect(out.get('host-1')?.ipAddresses).toEqual(expect.arrayContaining(['10.0.0.2', '192.168.1.10']));
 });
+
+it('parses host system serial number', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesExResponse xmlns="urn:vim25">
+      <returnval>
+        <objects>
+          <obj type="HostSystem">host-1</obj>
+          <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
+        </objects>
+      </returnval>
+    </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const out = parseRetrievePropertiesExHostResult(xml);
+  expect(out.get('host-1')?.systemSerialNumber).toBe('SN-123');
+});

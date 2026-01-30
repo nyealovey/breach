@@ -108,7 +108,7 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
-- Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量、硬件厂商/型号、管理 IP）通过 vSphere SOAP（`/sdk` + vim25）采集；优先使用 `RetrievePropertiesEx`，若目标不支持会自动降级到 `RetrieveProperties`；管理 IP 优先取 `vmk0`/`vswif0`（或 portgroup 含 `Management`）的 IPv4；本地盘总量口径为 `HostScsiDisk.localDisk==true` 容量求和 + `HostNvmeNamespace(blockSize*capacityInBlocks)` 求和（若目标不支持 `nvmeTopology` 将自动忽略）；若可判定但无本地盘则 `attributes.disk_total_bytes=0`；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
+- Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量、datastore 总容量（排除 NFS/NFS41/vSAN）、整机序列号、硬件厂商/型号、管理 IP）通过 vSphere SOAP（`/sdk` + vim25）采集；优先使用 `RetrievePropertiesEx`，若目标不支持会自动降级到 `RetrieveProperties`；管理 IP 优先取 `vmk0`/`vswif0`（或 portgroup 含 `Management`）的 IPv4；本地盘总量口径为 `config.storageDevice.scsiLun` 中 `lunType="disk"` 且有 `capacity` 的设备容量求和 + `config.storageDevice.nvmeTopology`（`HostNvmeNamespace.blockSize * capacityInBlocks`）求和（若目标不支持 `nvmeTopology` 将自动忽略）；datastore 总容量口径为 Host 的 `datastore` 列表对应 Datastore `summary.capacity` 求和（过滤 `summary.type in {NFS,NFS41,vsan}`）；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
 - 手动触发 Source Run 支持 `mode=detect`（探测模式），用于写入 `detectResult`（driver/target_version/capabilities 等元信息）。
 
 需求文档：

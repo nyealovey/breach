@@ -151,6 +151,7 @@ export async function GET(request: Request) {
       const cpuThreads = getCanonicalFieldValue(fields, ['attributes', 'cpu_threads']);
       const osName = getCanonicalFieldValue(fields, ['os', 'name']);
       const memoryBytes = getCanonicalFieldValue(fields, ['hardware', 'memory_bytes']);
+      const datastoreTotalBytes = getCanonicalFieldValue(fields, ['attributes', 'datastore_total_bytes']);
       const diskTotalBytes = getCanonicalFieldValue(fields, ['attributes', 'disk_total_bytes']);
 
       const machineNameOverride = asset.machineNameOverride?.trim() ? asset.machineNameOverride.trim() : null;
@@ -187,9 +188,11 @@ export async function GET(request: Request) {
         memoryBytes: typeof memoryBytes === 'number' ? memoryBytes : null,
         totalDiskBytes:
           asset.assetType === 'host'
-            ? typeof diskTotalBytes === 'number'
-              ? diskTotalBytes
-              : null
+            ? typeof datastoreTotalBytes === 'number'
+              ? datastoreTotalBytes
+              : typeof diskTotalBytes === 'number'
+                ? diskTotalBytes
+                : null
             : sumDiskBytes(fields),
       };
     });

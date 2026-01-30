@@ -62,11 +62,12 @@
 - 输入 `ESXi` 或 `7.0.3` 可命中对应 Host。
 - 本期不支持按 build 号（`os.fingerprint`）搜索，后续版本可扩展。
 
-6. **通过 SOAP 采集 Host（ESXi）的硬件厂商/型号与管理 IP（用于盘点展示）**
+6. **通过 SOAP 采集 Host（ESXi）的硬件厂商/型号、整机序列号与管理 IP（用于盘点展示）**
 
 - 采集字段（HostSystem）：
   - `hardware.systemInfo.vendor`（建议，落 `identity.vendor`）
   - `hardware.systemInfo.model`（建议，落 `identity.model`）
+  - `hardware.systemInfo.serialNumber`（建议，落 `identity.serial_number`；若缺失则尝试从 `hardware.systemInfo.otherIdentifyingInfo` 提取 ServiceTag/Serial）
   - `config.network.vnic` / `config.network.consoleVnic`（建议，提取 IPv4；落 `network.ip_addresses` 与 `network.management_ip`）
 - 口径（管理 IP）：
   - 优先取 `device == vmk0`（或 `vswif0`）的 IPv4；
@@ -76,7 +77,7 @@
 #### Feature Boundaries（明确不做什么）
 
 - 不采集/落库本地盘“已使用/可用”（`disk_used_bytes`）。（本次只做 total）
-- 不计算 datastore 总量/已用，不做 SAN/LUN 等非本地盘容量统计。
+- 不采集 datastore “已用/可用”；仅采集 datastore total，并按 `summary.type in {NFS,NFS41,vsan}` 排除远程 NFS 与 vSAN datastore。
 - 不做“ESXi 版本 → 风险/漏洞”联动能力（后续需求另立 PRD）。
 - 不做 UI 列排序能力（维持现状）。
 
@@ -98,8 +99,10 @@
 - `normalized.attributes.cpu_packages = <numCpuPkgs>`（number，可选）
 - `normalized.attributes.cpu_threads = <numCpuThreads>`（number，可选）
 - `normalized.attributes.disk_total_bytes = <sum(localDisk capacities)>`（number，bytes，必需；若无法采集则缺失并告警）
+- `normalized.attributes.datastore_total_bytes = <sum(datastore.summary.capacity)>`（number，bytes，建议；过滤 `summary.type in {NFS,NFS41,vsan}`）
 - `normalized.identity.vendor = <soap_vendor>`（string，建议；例如 `HP`）
 - `normalized.identity.model = <soap_model>`（string，建议；例如 `ProLiant DL380p Gen8`）
+- `normalized.identity.serial_number = <soap_serial>`（string，建议；例如 `SN-123`）
 - `normalized.network.management_ip = <mgmt_ipv4>`（string，建议；例如 `192.168.1.10`）
 - `normalized.network.ip_addresses = <all_ipv4s_from_vnic>`（string[]，建议；例如 `["192.168.1.10"]`）
 
@@ -130,6 +133,11 @@
    - 读取 `config.storageDevice.scsiLun`（或等价可获得 `HostScsiDisk` 的路径）
    - 仅统计 `HostScsiDisk.localDisk == true` 的容量之和 + `HostNvmeNamespace(blockSize * capacityInBlocks)` 之和，写入 `attributes.disk_total_bytes`
 5. 将结果回填到对应 Host 的 normalized 中，最终由核心 ingest 写入 canonical 快照。
+
+6. datastore total（建议）：
+   - 先读取 HostSystem 的 `datastore`（MoRef 列表）
+   - 再按 Datastore MoRef 批量读取 `summary.type` / `summary.capacity`
+   - 过滤 `summary.type in {NFS,NFS41,vsan}` 后求和，写入 `attributes.datastore_total_bytes`
 
 ### UI & API（展示与搜索）
 

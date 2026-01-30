@@ -143,6 +143,38 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         }
 
         if (body.includes('RetrievePropertiesEx')) {
+          if (body.includes('<vim25:type>Datastore</vim25:type>')) {
+            // Datastore summaries for host datastore aggregation.
+            res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesExResponse xmlns="urn:vim25">
+      <returnval>
+        <objects>
+          <obj type="Datastore">datastore-1</obj>
+          <propSet><name>summary.name</name><val>local-vmfs-1</val></propSet>
+          <propSet><name>summary.type</name><val>VMFS</val></propSet>
+          <propSet><name>summary.capacity</name><val>1000</val></propSet>
+        </objects>
+        <objects>
+          <obj type="Datastore">datastore-2</obj>
+          <propSet><name>summary.name</name><val>remote-nfs</val></propSet>
+          <propSet><name>summary.type</name><val>NFS</val></propSet>
+          <propSet><name>summary.capacity</name><val>9999</val></propSet>
+        </objects>
+        <objects>
+          <obj type="Datastore">datastore-3</obj>
+          <propSet><name>summary.name</name><val>vsanDatastore</val></propSet>
+          <propSet><name>summary.type</name><val>vsan</val></propSet>
+          <propSet><name>summary.capacity</name><val>8888</val></propSet>
+        </objects>
+      </returnval>
+    </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+            return;
+          }
+
           // Provide one host worth of properties.
           res.end(`<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -157,6 +189,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
           <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
           <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+          <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
           <propSet>
             <name>config.network.vnic</name>
             <val>
@@ -165,6 +198,14 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
                 <portgroup>Management Network</portgroup>
                 <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
               </HostVirtualNic>
+            </val>
+          </propSet>
+          <propSet>
+            <name>datastore</name>
+            <val>
+              <ManagedObjectReference type="Datastore">datastore-1</ManagedObjectReference>
+              <ManagedObjectReference type="Datastore">datastore-2</ManagedObjectReference>
+              <ManagedObjectReference type="Datastore">datastore-3</ManagedObjectReference>
             </val>
           </propSet>
           <propSet>
@@ -185,6 +226,36 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         }
 
         if (body.includes('RetrieveProperties')) {
+          if (body.includes('<vim25:type>Datastore</vim25:type>')) {
+            // Datastore summaries for legacy RetrieveProperties.
+            res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesResponse xmlns="urn:vim25">
+      <returnval>
+        <obj type="Datastore">datastore-1</obj>
+        <propSet><name>summary.name</name><val>local-vmfs-1</val></propSet>
+        <propSet><name>summary.type</name><val>VMFS</val></propSet>
+        <propSet><name>summary.capacity</name><val>1000</val></propSet>
+      </returnval>
+      <returnval>
+        <obj type="Datastore">datastore-2</obj>
+        <propSet><name>summary.name</name><val>remote-nfs</val></propSet>
+        <propSet><name>summary.type</name><val>NFS</val></propSet>
+        <propSet><name>summary.capacity</name><val>9999</val></propSet>
+      </returnval>
+      <returnval>
+        <obj type="Datastore">datastore-3</obj>
+        <propSet><name>summary.name</name><val>vsanDatastore</val></propSet>
+        <propSet><name>summary.type</name><val>vsan</val></propSet>
+        <propSet><name>summary.capacity</name><val>8888</val></propSet>
+      </returnval>
+    </RetrievePropertiesResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+            return;
+          }
+
           // Provide one host worth of properties (older API without *Ex).
           res.end(`<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -198,6 +269,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
         <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
         <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+        <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
         <propSet>
           <name>config.network.vnic</name>
           <val>
@@ -206,6 +278,14 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
               <portgroup>Management Network</portgroup>
               <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
             </HostVirtualNic>
+          </val>
+        </propSet>
+        <propSet>
+          <name>datastore</name>
+          <val>
+            <ManagedObjectReference type="Datastore">datastore-1</ManagedObjectReference>
+            <ManagedObjectReference type="Datastore">datastore-2</ManagedObjectReference>
+            <ManagedObjectReference type="Datastore">datastore-3</ManagedObjectReference>
           </val>
         </propSet>
         <propSet>
@@ -422,9 +502,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(host?.normalized).toMatchObject({
       os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
       hardware: { cpu_count: 32, memory_bytes: 274877906944 },
-      identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+      identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
       network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
-      attributes: { disk_total_bytes: 512 * 7814037168 },
+      attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
     });
   });
 
@@ -464,9 +544,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       expect(host?.normalized).toMatchObject({
         os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
         hardware: { cpu_count: 32, memory_bytes: 274877906944 },
-        identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+        identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
         network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
-        attributes: { disk_total_bytes: 512 * 7814037168 },
+        attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
       });
     } finally {
       soapRetrievePropertiesExUnsupported = false;
@@ -509,9 +589,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       expect(host?.normalized).toMatchObject({
         os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
         hardware: { cpu_count: 32, memory_bytes: 274877906944 },
-        identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+        identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
         network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
-        attributes: { disk_total_bytes: 512 * 7814037168 },
+        attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
       });
     } finally {
       soapNvmeTopologyUnsupported = false;

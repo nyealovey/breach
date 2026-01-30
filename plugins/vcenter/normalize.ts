@@ -316,6 +316,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
 
   const attributes: Record<string, string | number | boolean | null> = {};
   if (soap?.diskTotalBytes !== undefined) attributes.disk_total_bytes = soap.diskTotalBytes;
+  if (soap?.datastoreTotalBytes !== undefined) attributes.datastore_total_bytes = soap.datastoreTotalBytes;
   if (soap?.cpuModel !== undefined) attributes.cpu_model = soap.cpuModel;
   if (soap?.cpuMhz !== undefined) attributes.cpu_mhz = soap.cpuMhz;
   if (soap?.cpuPackages !== undefined) attributes.cpu_packages = soap.cpuPackages;
@@ -331,7 +332,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
       kind: 'host',
       identity: {
         hostname: raw.name,
-        serial_number: raw.hardware?.system_info?.serial_number,
+        serial_number: getFirstString([raw.hardware?.system_info?.serial_number, soap?.systemSerialNumber]),
         vendor: getFirstString([raw.hardware?.system_info?.vendor, soap?.systemVendor]),
         model: getFirstString([raw.hardware?.system_info?.model, soap?.systemModel]),
       },
