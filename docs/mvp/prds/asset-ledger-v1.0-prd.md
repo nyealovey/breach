@@ -121,7 +121,7 @@
 
 ## 技术设计（另附）
 
-为避免“需求/设计”混写，本 PRD 不再包含实现方式、库选型、索引/分区等技术细节；对应的技术设计与选型建议见：`docs/design/asset-ledger-vcenter-mvp-design.md`。
+为避免“需求/设计”混写，本 PRD 不再包含实现方式、库选型、索引/分区等技术细节；对应的技术设计与选型建议见：`docs/mvp/design/asset-ledger-vcenter-mvp-design.md`。
 
 ## Acceptance Criteria
 

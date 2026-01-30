@@ -1,8 +1,8 @@
 # 资产台账 vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）执行进度
 
-- 计划来源：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`
-- 需求验收口径：`docs/requirements/asset-ledger-v1.0-traceability.md`（AC-01 ~ AC-09）
-- 增量需求：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
+- 计划来源：`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md`
+- 需求验收口径：`docs/mvp/requirements/asset-ledger-v1.0-traceability.md`（AC-01 ~ AC-09）
+- 增量需求：`docs/mvp/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
 - 开始日期：2026-01-28
 - 最后更新：2026-01-29
 
@@ -67,7 +67,7 @@
 
 10. Task 10：vCenter Collector Plugin（TypeScript）
     - 状态：DONE
-    - 补充修正：兼容真实 vCenter REST 返回差异（VM detail 字段/结构差异、VM id 注入避免 externalId missing、Host detail 404 降级并记录 warning `VCENTER_HOST_DETAIL_NOT_FOUND`；**该降级口径已废弃**，见：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`）
+    - 补充修正：兼容真实 vCenter REST 返回差异（VM detail 字段/结构差异、VM id 注入避免 externalId missing、Host detail 404 降级并记录 warning `VCENTER_HOST_DETAIL_NOT_FOUND`；**该降级口径已废弃**，见：`docs/mvp/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`）
 
 11. Task 11：Collector 契约对齐 + Schema 校验（Ajv）
     - 状态：DONE
@@ -80,7 +80,7 @@
 13. Task 13：Asset API + UI
     - 状态：DONE
     - 产出：`/api/v1/assets*`（列表/详情/来源明细/关系）+ `/assets`（列表/详情）+ 对应 API 单测
-    - 补充修正（2026-01-29）：资产列表改为“盘点列”展示（主机名/虚拟机名/IP/CPU/内存/总分配磁盘），不展示 Last Seen/来源；“全部类型”默认不展示 cluster；IP 取 `ip_addresses` 全量；单位使用 GiB/TiB（1024）。对应 PRD：`docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`
+    - 补充修正（2026-01-29）：资产列表改为“盘点列”展示（主机名/虚拟机名/IP/CPU/内存/总分配磁盘），不展示 Last Seen/来源；“全部类型”默认不展示 cluster；IP 取 `ip_addresses` 全量；单位使用 GiB/TiB（1024）。对应 PRD：`docs/mvp/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`
 
 14. Task 14：Raw 查看入口 + 审计（admin-only）
     - 状态：DONE

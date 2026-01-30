@@ -115,19 +115,21 @@ List of websites that started off with Next.js TypeScript Starter:
 需求文档：
 
 - 需求规格说明书（SRS，需求口径/验收依据）：[`docs/requirements/asset-ledger-srs.md`](docs/requirements/asset-ledger-srs.md)
-- PRD（vCenter MVP v1.0，历史范围说明）：[`docs/prds/asset-ledger-v1.0-prd.md`](docs/prds/asset-ledger-v1.0-prd.md)
-- PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：[`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`](docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md)
-- PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.1）：[`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`](docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md)
-- PRD（vCenter Host（ESXi）版本/规格/型号/IP（SOAP）v1.3）：[`docs/prds/asset-ledger-vcenter-host-esxi-version-v1.2-prd.md`](docs/prds/asset-ledger-vcenter-host-esxi-version-v1.2-prd.md)
-- PRD（资产列表盘点列展示 v1.0）：[`docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`](docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md)
-- PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/prds/asset-ledger-host-field-model-v1.0-prd.md)
-- v1.0 需求追溯矩阵（Traceability）：[`docs/requirements/asset-ledger-v1.0-traceability.md`](docs/requirements/asset-ledger-v1.0-traceability.md)
-- vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施计划：[`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md`](docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md)
-- vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施进度（执行记录）：[`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`](docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md)
+- MVP 归档入口（当前仓库实现对应的文档快照）：[`docs/mvp/index.md`](docs/mvp/index.md)
+- PRD（vCenter MVP v1.0，历史范围说明）：[`docs/mvp/prds/asset-ledger-v1.0-prd.md`](docs/mvp/prds/asset-ledger-v1.0-prd.md)
+- PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：[`docs/mvp/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`](docs/mvp/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md)
+- PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.1）：[`docs/mvp/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`](docs/mvp/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md)
+- PRD（vCenter Host（ESXi）版本/规格/型号/IP（SOAP）v1.3）：[`docs/mvp/prds/asset-ledger-vcenter-host-esxi-version-v1.2-prd.md`](docs/mvp/prds/asset-ledger-vcenter-host-esxi-version-v1.2-prd.md)
+- PRD（资产列表盘点列展示 v1.0）：[`docs/mvp/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`](docs/mvp/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md)
+- PRD（Host 字段模型 v1.0，历史范围说明）：[`docs/mvp/prds/asset-ledger-host-field-model-v1.0-prd.md`](docs/mvp/prds/asset-ledger-host-field-model-v1.0-prd.md)
+- v1.0 需求追溯矩阵（Traceability）：[`docs/mvp/requirements/asset-ledger-v1.0-traceability.md`](docs/mvp/requirements/asset-ledger-v1.0-traceability.md)
+- vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施计划：[`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md`](docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md)
+- vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施进度（执行记录）：[`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`](docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md)
+- 后续里程碑规划（草案）：[`docs/roadmap.md`](docs/roadmap.md)
 
 设计文档：
 
-- 技术设计（vCenter MVP v1.0）：[`docs/design/asset-ledger-vcenter-mvp-design.md`](docs/design/asset-ledger-vcenter-mvp-design.md)
+- 技术设计（vCenter MVP v1.0）：[`docs/mvp/design/asset-ledger-vcenter-mvp-design.md`](docs/mvp/design/asset-ledger-vcenter-mvp-design.md)
 - 日志规范（宽事件 / 采集域事件）：[`docs/design/asset-ledger-logging-spec.md`](docs/design/asset-ledger-logging-spec.md)
 - 错误码规范（Error Codes）：[`docs/design/asset-ledger-error-codes.md`](docs/design/asset-ledger-error-codes.md)
 - 疑似重复规则（dup-rules-v1）：[`docs/design/asset-ledger-dup-rules-v1.md`](docs/design/asset-ledger-dup-rules-v1.md)

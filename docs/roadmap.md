@@ -1,0 +1,194 @@
+# 资产台账系统 Post-MVP 里程碑路线图（草案）
+
+日期：2026-01-30
+
+## 背景与约定
+
+- **当前仓库代码实现 = MVP**（不改动代码结构，仅做文档归档）。
+- MVP 相关 PRD/计划/追溯矩阵/技术设计已归档到：`docs/mvp/`
+- 后续新增/迭代需求文档（PRD）统一放到：`docs/prds/`
+
+## 里程碑拆分（建议）
+
+### M0：vCenter MVP（已完成/归档）
+
+- 文档入口：`docs/mvp/index.md`
+
+### M1：vCenter 6.5 兼容性增强
+
+目标：确保在真实 **vCenter Server 6.5** 环境中，`detect/collect_hosts/collect_vms` 的关键路径稳定可用，并且 UI/错误提示口径一致。
+
+范围（草案）：
+
+- driver/capabilities：补齐/修正对 6.5 的能力探测与判定口径，避免“误判可用/误判不可用”。
+- SOAP/REST 差异：针对 6.5 的字段缺失/结构差异做明确的“必填/可选”口径与错误码。
+- 回归用例：补充最小兼容性用例清单（不要求引入测试框架，但至少形成可重复的验证步骤/样例输出）。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M1-asset-ledger-vcenter-6.5-compat-v1.0-prd.md`
+- 工程计划：按 PRD 拆分到 `docs/plans/`（待创建）
+
+已确认：
+
+1. 目标版本：vCenter Server 6.5
+2. 验收范围：`detect`、`collect_hosts`、`collect_vms` 都必须可用
+
+### M2：采集项优化（Collector 优化）
+
+目标：在不破坏现有契约与数据口径的前提下，优先提升采集项的**字段覆盖面**（补齐更多 inventory 字段），并为后续性能/稳定性优化打基础。
+
+范围（草案）：
+
+- 覆盖面：明确“必须采集项/可选采集项/不采集项”的清单与版本差异。
+- 性能：减少 API 调用次数、避免重复拉取、必要时并发/批量化；Run 级别可观测（统计项更可用）。
+- 稳定性：对超时、单对象失败、分页/游标等边界给出一致策略（Fail fast vs 部分成功）。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M2-asset-ledger-collector-optimizations-v1.0-prd.md`
+- 设计补充（必要时）：`docs/design/`（按主题新增）
+
+已确认：
+
+1. 优先补齐字段：Host 的 Datastore 明细（名称 + 容量；id best-effort），在保留现有总容量口径的基础上补齐拆分信息
+
+### M3：UI 优化
+
+目标：优先提升 **/assets** 页面的易用性与可观测性，减少“需要查日志才能定位问题”的场景。
+
+范围（草案）：
+
+- /assets：列表信息密度、筛选/搜索、详情页信息组织、关系链可读性。
+- /runs：优先做失败可定位（错误码 + 可执行建议动作）；统计展示可后续补齐；暂不做“从 /runs 直接打开 raw”的入口（raw 仍仅在资产详情可查看，admin-only）。
+- 通用：加载性能、空状态/错误状态一致性、表单校验与提示文案。
+
+交付物（计划）：
+
+- PRD（/assets）：`docs/prds/M3-asset-ledger-ui-optimizations-v1.0-prd.md`
+- PRD（/runs）：`docs/prds/M3-asset-ledger-runs-ui-optimizations-v1.0-prd.md`（待创建）
+
+已确认：
+
+1. 优先级顺序：筛选/搜索（A）→ 列配置（B）→ 详情信息组织（C）→ 关系链展示（D）
+2. 列配置持久化方式：DB（按用户，单份全局配置；不持久化列顺序）
+3. /runs 优化优先级：A（错误码→可读原因 + 建议动作）；暂不增加“从 /runs 打开 raw”的入口
+
+### M4：Hyper-V 采集 + Windows 物理机采集
+
+目标：
+
+- 新增 Hyper-V 来源采集能力，覆盖单机与故障转移群集（含 S2D 场景）。
+- 同期支持采集 Windows 普通物理机信息（作为 Host 资产入账）。
+
+范围（草案）：
+
+- Hyper-V：
+  - 单机：Host/VM 盘点字段与 VM→Host 关系。
+  - Failover Cluster：Cluster/Host/VM 盘点字段与 VM→Host→Cluster 关系（允许缺边，但禁止 relations=0 伪成功）。
+  - S2D：本期以“群集形态识别 + 最小盘点字段可用”为主（存储明细另立 PRD）。
+- Windows 物理机：
+  - 采集 identity/os/hardware/network 的最小字段集（按 `normalized-v1`）。
+  - 与虚拟化关系解耦：默认无 runs_on/member_of（除非未来引入机房/集群建模）。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M4-asset-ledger-hyperv-collector-v1.0-prd.md`（待创建）
+- PRD：`docs/prds/M4-asset-ledger-windows-physical-collector-v1.0-prd.md`（待创建）
+
+### M5：PVE 采集（兼容 5.0 ～ 8.0）
+
+目标：新增 PVE 来源采集能力，并确保 **PVE 5.0～8.0** 的关键路径可用（detect/collect，字段解析健壮，错误口径一致）。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M5-asset-ledger-pve-5-8-compat-v1.0-prd.md`（待创建）
+
+### M6：Linux 普通物理机采集
+
+目标：新增 Linux 普通物理机采集能力（作为 Host 资产入账），补齐最小盘点字段集与可追溯 raw。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M6-asset-ledger-linux-physical-collector-v1.0-prd.md`（待创建）
+
+### M7：重复资产展示 + 合并治理
+
+目标：支持显示疑似重复资产、提供人工合并能力，并确保合并可审计、可追溯、可回看冲突处理结果。
+
+范围（草案）：
+
+- 重复中心（DuplicateCandidate）：按固定规则生成候选，展示命中原因/置信度/关键字段对比，支持忽略。
+- 合并（Merge）：主/从资产选择、关系/来源明细并入、冲突处理策略、审计落库；被合并资产默认隐藏。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M7-asset-ledger-duplicate-center-v1.0-prd.md`（待创建）
+- PRD：`docs/prds/M7-asset-ledger-asset-merge-v1.0-prd.md`（待创建）
+
+### M8：权限拓展（普通用户只读）
+
+目标：在不扩大敏感面（凭证/raw/治理操作）的前提下，支持 **普通用户（user）** 只读访问资产与运行结果，满足 SRS 的角色模型。
+
+范围（草案）：
+
+- 只读开放（user 可见）：
+  - 资产列表/详情/关系链/来源明细（normalized）
+  - Run 列表/详情（含错误码与统计）
+- 仍为 admin-only：
+  - Source/调度组/凭证管理
+  - raw payload 查看（以及 raw 查看审计）
+  - 重复中心/合并/自定义字段管理/导出
+
+交付物（计划）：
+
+- PRD：`docs/prds/M8-asset-ledger-user-readonly-access-v1.0-prd.md`（待创建）
+
+### M9：阿里云采集（Aliyun）
+
+目标：新增阿里云来源采集能力（以 ECS 为主），满足 “多来源资产汇总 + 可追溯” 的最小闭环。
+
+范围（草案）：
+
+- 采集对象：ECS（作为 VM 资产入账），补齐 identity/os/hardware/network 的最小字段集（按 `normalized-v1`）。
+- 关系：云侧通常无法映射 VM→Host/Cluster，允许 relations 为空，但不得影响入账与展示。
+- 可观测：healthcheck/detect/collect 的错误口径与 stats 完整；raw 永久保留并可脱敏查看（admin-only）。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M9-asset-ledger-aliyun-collector-v1.0-prd.md`（待创建）
+
+### M10：下线语义（来源消失）+ 历史追溯
+
+目标：实现“来源消失即下线”的语义，并在 UI 提供可验收的资产历史追溯入口（按 Run 查看变化）。
+
+范围（草案）：
+
+- 下线语义（per-source + overall）：
+  - 来源维度：本轮成功 Run 未发现 → 标记该来源为未发现/下线，并记录 last_seen 与缺失 Run
+  - 资产总体：当所有来源均未发现 → 资产状态汇总为下线；任一来源再次出现可恢复
+- 历史追溯：
+  - 资产详情提供 “历史/时间线” 入口：按 Run 展示关键字段变化与关系变化摘要
+
+交付物（计划）：
+
+- PRD：`docs/prds/M10-asset-ledger-offline-semantics-v1.0-prd.md`（待创建）
+- PRD：`docs/prds/M10-asset-ledger-asset-history-v1.0-prd.md`（待创建）
+
+### M11：自定义字段 + 全量导出（CSV）
+
+目标：支持管理员配置台账自定义字段，并支持全量导出用于盘点与离线分析（导出需审计、权限受控）。
+
+范围（草案）：
+
+- 自定义字段：
+  - 字段定义管理（新增/停用/作用域/类型）
+  - 资产详情编辑与展示（与 canonical/来源明细并存）
+- 导出：
+  - 管理员可导出全量台账 CSV（含 asset_uuid/类型/状态/display_name/last_seen_at/来源摘要等）
+  - 导出动作与下载均需审计；普通用户无入口且 403
+
+交付物（计划）：
+
+- PRD：`docs/prds/M11-asset-ledger-custom-fields-v1.0-prd.md`（待创建）
+- PRD：`docs/prds/M11-asset-ledger-export-csv-v1.0-prd.md`（待创建）

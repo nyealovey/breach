@@ -9,7 +9,7 @@
 
 - 适用读者：前端开发、UI/UX 设计师、产品经理。
 - 关联文档：
-  - PRD：`docs/prds/asset-ledger-v1.0-prd.md`
+  - PRD：`docs/mvp/prds/asset-ledger-v1.0-prd.md`
   - API 规范：`docs/design/asset-ledger-api-spec.md`
   - 错误码规范：`docs/design/asset-ledger-error-codes.md`
 

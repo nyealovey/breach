@@ -10,7 +10,7 @@
 
 ## 范围与验收入口（v1.0）
 
-以 `docs/requirements/asset-ledger-v1.0-traceability.md` 的 AC-01~AC-08 为主线，落地到任务拆解：
+以 `docs/mvp/requirements/asset-ledger-v1.0-traceability.md` 的 AC-01~AC-08 为主线，落地到任务拆解：
 
 - AC-01：管理员初始化 + 登录/会话 + 改密
 - AC-02：Source CRUD + 软删除 + 凭据更新（加密存储、UI 不回显）+ 列表展示最近一次 Run
@@ -24,7 +24,7 @@
 
 > 注：本次 MVP **需要**提供 raw 查看入口（admin-only + 审计），同时满足 raw 永久保留 + zstd 压缩 + 元数据齐全；raw 展示侧需做防御性脱敏（避免意外包含凭证/Token）。
 
-增量需求（补充到 vCenter MVP 的实现）：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`（本计划 Task 18~Task 26 覆盖）。
+增量需求（补充到 vCenter MVP 的实现）：`docs/mvp/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`（本计划 Task 18~Task 26 覆盖）。
 
 ---
 
@@ -698,7 +698,7 @@ vSphere REST API 端点：
 
 兼容性注意（以真实 vCenter REST 返回为准，需做防御性处理）：
 
-- `GET /api/vcenter/host/{host}` 在部分环境可能返回 404（接口不存在）；**该“降级并返回成功”的口径已废弃**，见：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`（现要求按 Source 版本范围选择 driver，关键能力缺失直接失败）。
+- `GET /api/vcenter/host/{host}` 在部分环境可能返回 404（接口不存在）；**该“降级并返回成功”的口径已废弃**，见：`docs/mvp/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`（现要求按 Source 版本范围选择 driver，关键能力缺失直接失败）。
 - VM detail 结构可能存在差异：`nics` 可能为对象（而非数组）；`instance_uuid` 可能出现在 `identity.instance_uuid`；detail 也可能不包含 VM 自身 ID 字段。
 - `external_id` 需以 VM 列表摘要的 `vm` 字段为单一来源；必要时将其注入到 detail 上，避免 ingest 阶段出现 `externalId missing`。
 
@@ -1073,7 +1073,7 @@ git commit -m "test: add playwright e2e for vcenter mvp happy path"
 
 ## 增量：凭据模块 + 调度组手动运行（PRD v1.0）
 
-PRD：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
+PRD：`docs/mvp/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
 
 关键约束（执行中保持一致）：
 

@@ -5,11 +5,11 @@
 
 ## 文档简介
 
-本文档对应 PRD：`docs/prds/asset-ledger-v1.0-prd.md`，用于承载“怎么做”的技术设计与库选型建议，避免与需求混写。
+本文档对应 PRD：`docs/mvp/prds/asset-ledger-v1.0-prd.md`，用于承载“怎么做”的技术设计与库选型建议，避免与需求混写。
 
 关联文档：
 
-- PRD：`docs/prds/asset-ledger-v1.0-prd.md`
+- PRD：`docs/mvp/prds/asset-ledger-v1.0-prd.md`
 - SRS：`docs/requirements/asset-ledger-srs.md`
 - 概念数据模型：`docs/design/asset-ledger-data-model.md`
 - 插件契约参考：`docs/design/asset-ledger-collector-reference.md`

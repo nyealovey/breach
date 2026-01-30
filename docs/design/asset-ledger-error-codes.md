@@ -13,7 +13,7 @@
 
 关联文档：
 
-- PRD（vCenter MVP v1.0）：`docs/prds/asset-ledger-v1.0-prd.md`
+- PRD（vCenter MVP v1.0）：`docs/mvp/prds/asset-ledger-v1.0-prd.md`
 - 日志规范：`docs/design/asset-ledger-logging-spec.md`
 - 采集插件契约：`docs/design/asset-ledger-collector-reference.md`
 

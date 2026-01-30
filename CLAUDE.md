@@ -84,6 +84,6 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 ## Documentation
 
 - **Overview**: `docs/index.md` (explains PRD vs SRS layering)
-- **Requirements**: `docs/requirements/asset-ledger-srs.md`, `docs/prds/`
+- **Requirements**: `docs/requirements/asset-ledger-srs.md` (SRS), `docs/prds/` (post-MVP PRDs), `docs/mvp/prds/` (archived MVP PRDs)
 - **Design**: `docs/design/` (data model, JSON schema, logging spec, error codes, collector reference)
 - **Environment schema**: `src/lib/env/server.ts` (T3 Env with Zod validation)

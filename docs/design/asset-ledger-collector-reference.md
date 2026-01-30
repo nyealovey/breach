@@ -967,4 +967,4 @@ plugins/vcenter/
 └── __tests__/            # 测试
 ```
 
-详细实现步骤见：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.md` Task 10。
+详细实现步骤见：`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md` Task 10。

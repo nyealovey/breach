@@ -9,7 +9,7 @@
 
 - 适用读者：前端开发、后端开发、API 消费者。
 - 关联文档：
-  - PRD：`docs/prds/asset-ledger-v1.0-prd.md`
+  - PRD：`docs/mvp/prds/asset-ledger-v1.0-prd.md`
   - 错误码规范：`docs/design/asset-ledger-error-codes.md`
   - JSON Schema：`docs/design/asset-ledger-json-schema.md`
 

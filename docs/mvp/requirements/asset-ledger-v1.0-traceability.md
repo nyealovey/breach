@@ -10,7 +10,7 @@
 - 适用读者：产品、研发、测试、运维、评审人员。
 - 使用方式：以 PRD 的 Acceptance Criteria 为入口，沿表格追溯到 SRS/设计文档；任何新增/变更的 v1.0 验收项必须同步更新本矩阵。
 - 关联文档：
-  - PRD（v1.0）：`docs/prds/asset-ledger-v1.0-prd.md`
+  - PRD（v1.0）：`docs/mvp/prds/asset-ledger-v1.0-prd.md`
   - SRS：`docs/requirements/asset-ledger-srs.md`
   - API 规范：`docs/design/asset-ledger-api-spec.md`
   - 概念数据模型：`docs/design/asset-ledger-data-model.md`
