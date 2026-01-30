@@ -113,7 +113,7 @@ export default function NewSourcePage() {
               <option value="">不选择</option>
               {credentials.map((c) => (
                 <option key={c.credentialId} value={c.credentialId}>
-                  {c.name}
+                  {c.name} · {c.credentialId}
                 </option>
               ))}
             </select>

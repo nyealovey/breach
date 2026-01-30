@@ -127,6 +127,10 @@ export default function EditCredentialPage() {
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
+            <Label htmlFor="credentialId">Credential ID</Label>
+            <Input id="credentialId" value={params.id} disabled className="font-mono" />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="name">名称</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>

@@ -62,6 +62,13 @@ const nextConfig: NextConfig = {
   async redirects() {
     return redirects;
   },
+  // @bokuweb/zstd-wasm reads zstd.wasm via fs + __dirname. When bundled by Turbopack, __dirname becomes a
+  // virtual /ROOT path and fs reads can fail with ENOENT. Keep it external so Node can resolve real paths.
+  serverExternalPackages: ['@bokuweb/zstd-wasm'],
+  // Ensure zstd.wasm is included in output file tracing for deployments that prune files (standalone/serverless).
+  outputFileTracingIncludes: {
+    '/api/v1/source-records/**': ['node_modules/@bokuweb/zstd-wasm/dist/common/zstd.wasm'],
+  },
   experimental: {
     // Enable caching for next build. FileSystem caching is enabled by default for development
     turbopackFileSystemCacheForBuild: true,

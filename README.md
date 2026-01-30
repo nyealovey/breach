@@ -138,12 +138,14 @@ List of websites that started off with Next.js TypeScript Starter:
 ### MVP UI 页面（持续完善）
 
 - `/login`：管理员登录
-- `/schedule-groups`：调度组配置
-- `/sources`：来源配置（绑定凭据）
-- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret）
+- `/schedule-groups`：调度组配置（列表/编辑页展示 `groupId`；选择来源时展示 `sourceId`）
+- `/sources`：来源配置（绑定凭据；列表页展示 `sourceId` + `endpoint` + 最新运行时间；编辑页展示 `sourceId` / `scheduleGroupId` / `credentialId`）
+- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret；列表/编辑页展示 `credentialId`）
 - `/runs`：采集 Run 列表与详情
 - `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：机器名（支持覆盖显示）/虚拟机名/宿主机名/操作系统/IP/CPU（VM: vCPU 数量；Host(ESXi): cpu_threads 线程数）/内存/总分配磁盘/状态（VM 是否运行）（不展示 Last Seen/来源）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
+
+备注：Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
 
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）
 

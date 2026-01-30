@@ -17,6 +17,8 @@ type SourceDetail = {
   name: string;
   sourceType: string;
   enabled: boolean;
+  scheduleGroupId: string | null;
+  scheduleGroupName: string | null;
   credential: { credentialId: string; name: string; type: string } | null;
   config?: { endpoint?: string };
 };
@@ -31,6 +33,8 @@ export default function EditSourcePage() {
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
   const [enabled, setEnabled] = useState(true);
+  const [scheduleGroupId, setScheduleGroupId] = useState<string | null>(null);
+  const [scheduleGroupName, setScheduleGroupName] = useState<string | null>(null);
   const [credentialId, setCredentialId] = useState('');
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
 
@@ -46,6 +50,8 @@ export default function EditSourcePage() {
           setSourceType(source.sourceType);
           setEndpoint(source.config?.endpoint ?? '');
           setEnabled(source.enabled);
+          setScheduleGroupId(source.scheduleGroupId ?? null);
+          setScheduleGroupName(source.scheduleGroupName ?? null);
           setCredentialId(source.credential?.credentialId ?? '');
         }
       } else {
@@ -131,6 +137,22 @@ export default function EditSourcePage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
+            <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <div>
+                sourceId: <span className="font-mono">{params.id}</span>
+              </div>
+              <div>
+                scheduleGroup:{' '}
+                {scheduleGroupId ? (
+                  <>
+                    <span>{scheduleGroupName ?? '-'}</span> <span className="font-mono">({scheduleGroupId})</span>
+                  </>
+                ) : (
+                  '-'
+                )}
+              </div>
+              <div>credentialId: {credentialId ? <span className="font-mono">{credentialId}</span> : '-'}</div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">名称</Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -168,7 +190,7 @@ export default function EditSourcePage() {
                 <option value="">不选择</option>
                 {credentials.map((c) => (
                   <option key={c.credentialId} value={c.credentialId}>
-                    {c.name}
+                    {c.name} · {c.credentialId}
                   </option>
                 ))}
               </select>

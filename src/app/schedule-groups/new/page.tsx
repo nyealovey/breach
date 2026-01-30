@@ -113,9 +113,10 @@ export default function NewScheduleGroupPage() {
               <div className="space-y-2 rounded border p-3">
                 {sources.map((s) => {
                   const checked = selectedSet.has(s.sourceId);
-                  const hint = s.scheduleGroupName ? `（当前：${s.scheduleGroupName}）` : '';
+                  const hint =
+                    s.scheduleGroupName || s.scheduleGroupId ? `当前：${s.scheduleGroupName ?? s.scheduleGroupId}` : '';
                   return (
-                    <label key={s.sourceId} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <label key={s.sourceId} className="flex cursor-pointer items-start gap-2 text-sm">
                       <input
                         type="checkbox"
                         className="h-4 w-4"
@@ -127,8 +128,11 @@ export default function NewScheduleGroupPage() {
                           });
                         }}
                       />
-                      <span className="font-medium">{s.name}</span>
-                      <span className="text-xs text-muted-foreground">{hint}</span>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="font-medium leading-none">{s.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">{s.sourceId}</div>
+                        {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
+                      </div>
                     </label>
                   );
                 })}

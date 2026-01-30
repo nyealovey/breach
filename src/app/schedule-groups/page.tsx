@@ -101,7 +101,10 @@ export default function ScheduleGroupsPage() {
             <TableBody>
               {groups.map((group) => (
                 <TableRow key={group.groupId}>
-                  <TableCell className="font-medium">{group.name}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{group.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{group.groupId}</div>
+                  </TableCell>
                   <TableCell>{group.enabled ? '启用' : '停用'}</TableCell>
                   <TableCell>{group.timezone}</TableCell>
                   <TableCell>{group.runAtHhmm}</TableCell>

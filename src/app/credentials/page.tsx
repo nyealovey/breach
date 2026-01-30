@@ -90,7 +90,10 @@ export default function CredentialsPage() {
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.credentialId}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{item.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{item.credentialId}</div>
+                  </TableCell>
                   <TableCell>{item.type}</TableCell>
                   <TableCell>{item.usageCount}</TableCell>
                   <TableCell>{item.updatedAt}</TableCell>

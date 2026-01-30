@@ -12,7 +12,7 @@ type SourceItem = {
   name: string;
   sourceType: string;
   enabled: boolean;
-  scheduleGroupName: string | null;
+  config?: { endpoint?: string } | null;
   lastRun: { runId: string; status: string; finishedAt: string | null; mode: string } | null;
 };
 
@@ -62,7 +62,7 @@ export default function SourcesPage() {
                 <TableHead>名称</TableHead>
                 <TableHead>类型</TableHead>
                 <TableHead>启用</TableHead>
-                <TableHead>调度组</TableHead>
+                <TableHead>Endpoint</TableHead>
                 <TableHead>最新 Run</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -70,13 +70,14 @@ export default function SourcesPage() {
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.sourceId}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{item.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{item.sourceId}</div>
+                  </TableCell>
                   <TableCell>{item.sourceType}</TableCell>
                   <TableCell>{item.enabled ? '启用' : '停用'}</TableCell>
-                  <TableCell>{item.scheduleGroupName ?? '-'}</TableCell>
-                  <TableCell>
-                    {item.lastRun ? `${item.lastRun.status} · ${item.lastRun.finishedAt ?? '未完成'}` : '暂无'}
-                  </TableCell>
+                  <TableCell className="font-mono text-xs">{item.config?.endpoint ?? '-'}</TableCell>
+                  <TableCell className="font-mono text-xs">{item.lastRun?.finishedAt ?? '-'}</TableCell>
                   <TableCell className="text-right">
                     <Button asChild size="sm" variant="outline">
                       <Link href={`/sources/${item.sourceId}/edit`}>编辑</Link>
