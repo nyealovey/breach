@@ -1,6 +1,6 @@
-# 资产台账系统 - vCenter Host ESXi 版本/构建号 + 硬件规格（CPU/内存/本地磁盘总量）采集（SOAP）与资产列表展示 - 产品需求文档（PRD）
+# 资产台账系统 - vCenter Host ESXi 版本/构建号 + 硬件规格（CPU/内存/本地磁盘总量/厂商型号）+ 管理 IP 采集（SOAP）与资产列表展示 - 产品需求文档（PRD）
 
-> 目标：补齐 Host（ESXi）的关键盘点字段：操作系统版本、CPU/内存、本地磁盘总量，并在资产列表（/assets）展示。Host（ESXi）侧信息**全部通过 vSphere Web Services（SOAP / vim25）采集**，数据来源可追溯（canonical 快照），不依赖人工输入。
+> 目标：补齐 Host（ESXi）的关键盘点字段：操作系统版本、CPU/内存、本地磁盘总量、硬件厂商/型号、管理 IP，并在资产列表（/assets）展示。Host（ESXi）侧信息**全部通过 vSphere Web Services（SOAP / vim25）采集**，数据来源可追溯（canonical 快照），不依赖人工输入。
 
 ## Requirements Description
 
@@ -53,7 +53,7 @@
 
 - Host 行：
   - “操作系统”列展示为 `ESXi {version}`（仅展示 name + version）
-  - CPU 列展示为 `hardware.cpu_count`（核心数）
+  - CPU 列展示为 `attributes.cpu_threads`（线程数）
   - 内存列展示为 `hardware.memory_bytes`（按 1024 进制格式化）
   - “总分配磁盘”列对 Host 展示为 `attributes.disk_total_bytes`（本地物理盘总量；按 1024 进制格式化）
 
@@ -61,6 +61,17 @@
 
 - 输入 `ESXi` 或 `7.0.3` 可命中对应 Host。
 - 本期不支持按 build 号（`os.fingerprint`）搜索，后续版本可扩展。
+
+6. **通过 SOAP 采集 Host（ESXi）的硬件厂商/型号与管理 IP（用于盘点展示）**
+
+- 采集字段（HostSystem）：
+  - `hardware.systemInfo.vendor`（建议，落 `identity.vendor`）
+  - `hardware.systemInfo.model`（建议，落 `identity.model`）
+  - `config.network.vnic` / `config.network.consoleVnic`（建议，提取 IPv4；落 `network.ip_addresses` 与 `network.management_ip`）
+- 口径（管理 IP）：
+  - 优先取 `device == vmk0`（或 `vswif0`）的 IPv4；
+  - 其次取 `portgroup` 名称包含 `Management` 的 IPv4；
+  - 否则取采集到的第一个 IPv4（仅用于兜底展示）。
 
 #### Feature Boundaries（明确不做什么）
 
@@ -87,12 +98,16 @@
 - `normalized.attributes.cpu_packages = <numCpuPkgs>`（number，可选）
 - `normalized.attributes.cpu_threads = <numCpuThreads>`（number，可选）
 - `normalized.attributes.disk_total_bytes = <sum(localDisk capacities)>`（number，bytes，必需；若无法采集则缺失并告警）
+- `normalized.identity.vendor = <soap_vendor>`（string，建议；例如 `HP`）
+- `normalized.identity.model = <soap_model>`（string，建议；例如 `ProLiant DL380p Gen8`）
+- `normalized.network.management_ip = <mgmt_ipv4>`（string，建议；例如 `192.168.1.10`）
+- `normalized.network.ip_addresses = <all_ipv4s_from_vnic>`（string[]，建议；例如 `["192.168.1.10"]`）
 
 > 说明：
 >
 > - UI 展示：
 >   - “操作系统”只使用 `name + version`；
->   - CPU/内存使用 `hardware.cpu_count/memory_bytes`；
+>   - CPU 使用 `attributes.cpu_threads`；内存使用 `hardware.memory_bytes`；
 >   - Host 的“总分配磁盘”使用 `attributes.disk_total_bytes`（本地盘总量）。
 
 #### canonical-v1（Host）
@@ -122,6 +137,7 @@
   - Host 行 `os`：展示 `ESXi {version}`（来自 canonical 的 `os.name + os.version`）
   - Host 行 `cpuCount/memoryBytes`：来自 canonical `hardware.cpu_count/hardware.memory_bytes`
   - Host 行 `totalDiskBytes`：优先来自 canonical `attributes.disk_total_bytes`
+  - Host 行 `ip`：来自 canonical `network.ip_addresses`（将数组去重/过滤后用 `", "` 拼接）
 - 搜索 `q` 覆盖 `os.name`、`os.version`（本期不支持 `os.fingerprint`）
 
 ### Edge Cases
@@ -167,9 +183,11 @@
 
 - [ ] 对接 vCenter 跑一次 collect 后，Host 行“操作系统”列可展示为 `ESXi 7.0.3`（示例）。
 - [ ] 对接 vCenter 跑一次 collect 后，Host 的 `os.fingerprint` 可写入 canonical（示例：`20036589`；本期不用于搜索/展示）。
-- [ ] 对接 vCenter 跑一次 collect 后，Host 行 CPU 列可展示为核心数（示例：`32`）。
+- [ ] 对接 vCenter 跑一次 collect 后，Host 行 CPU 列可展示为线程数（示例：`64`）。
 - [ ] 对接 vCenter 跑一次 collect 后，Host 行 内存 列可展示为总量（示例：`256 GiB`）。
 - [ ] 对接 vCenter 跑一次 collect 后，Host 行 “总分配磁盘” 列可展示为本地物理盘总量（示例：`3.6 TiB`）。
+- [ ] 对接 vCenter 跑一次 collect 后，Host 行 IP 列可展示为管理 IP（示例：`192.168.1.10`）。
+- [ ] 对接 vCenter 跑一次 collect 后，Host 的 `identity.model` 可写入 canonical（示例：`ProLiant DL380p Gen8`）。
 - [ ] 搜索 `ESXi` 或 `7.0.3` 可命中对应 Host（本期不支持 build 号搜索）。
 - [ ] SOAP 不可用时不影响采集其它数据，且错误/告警可定位。
 
@@ -197,7 +215,7 @@
 
 ---
 
-**Document Version**: 1.2
+**Document Version**: 1.3
 **Created**: 2026-01-30
-**Clarification Rounds**: 4
+**Clarification Rounds**: 5
 **Quality Score**: 100/100

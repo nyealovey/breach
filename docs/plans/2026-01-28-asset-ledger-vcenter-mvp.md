@@ -593,7 +593,7 @@ git commit -m "feat: add source api and pages with encrypted credential update"
 
 实现 `POST /api/v1/sources/:id/runs`：
 
-- body: `{ mode: "collect" | "healthcheck" }`
+- body: `{ mode: "collect" | "detect" | "healthcheck" }`
 - 若该 Source 存在活动 Run（Queued/Running）：
   - 返回 200 + 当前活动 `run_id`
   - 写 `AuditEvent`：`run.trigger_suppressed`

@@ -732,7 +732,10 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 **字段口径补充（列表聚合字段）**：
 
-- `cpuCount`：取 `canonical.fields.hardware.cpu_count.value`。
+- `cpuCount`：
+  - VM：取 `canonical.fields.hardware.cpu_count.value`（vCPU 数量）；
+  - Host（ESXi）：取 `canonical.fields.attributes.cpu_threads.value`（线程数）；
+  - 其它：取 `canonical.fields.hardware.cpu_count.value`。
 - `memoryBytes`：取 `canonical.fields.hardware.memory_bytes.value`（bytes）。
 - `totalDiskBytes`：
   - VM：`canonical.fields.hardware.disks.value[].size_bytes` 求和；

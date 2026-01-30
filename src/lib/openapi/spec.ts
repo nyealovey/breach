@@ -60,6 +60,7 @@ const AssetListItemSchema = z.object({
 });
 
 const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
+const RunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
 
 const CredentialListItemSchema = z.object({
   credentialId: z.string(),
@@ -68,6 +69,15 @@ const CredentialListItemSchema = z.object({
   usageCount: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+const TriggerRunResponseSchema = z.object({
+  runId: z.string(),
+  sourceId: z.string(),
+  mode: RunModeSchema,
+  triggerType: z.string(),
+  status: z.string(),
+  createdAt: z.string(),
 });
 
 registry.registerPath({
@@ -203,6 +213,37 @@ registry.registerPath({
         },
       },
     },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/sources/{id}/runs',
+  tags: ['sources'],
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ mode: RunModeSchema }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK (suppressed due to active run)',
+      content: {
+        'application/json': {
+          schema: okResponse(
+            z.object({ runId: z.string(), sourceId: z.string(), status: z.string(), message: z.string() }),
+          ),
+        },
+      },
+    },
+    201: { description: 'Created', content: { 'application/json': { schema: okResponse(TriggerRunResponseSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
     404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
   },
 });

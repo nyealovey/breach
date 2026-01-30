@@ -116,7 +116,7 @@ describe('GET /api/v1/assets', () => {
     ]);
   });
 
-  it('returns host totalDiskBytes from attributes.disk_total_bytes (not hardware.disks sum)', async () => {
+  it('returns ESXi host cpuCount from attributes.cpu_threads and totalDiskBytes from attributes.disk_total_bytes', async () => {
     (requireAdmin as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
@@ -160,6 +160,7 @@ describe('GET /api/v1/assets', () => {
                   },
                 },
                 attributes: {
+                  cpu_threads: { value: 64, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
                   disk_total_bytes: { value: 999, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
                 },
               },
@@ -181,7 +182,7 @@ describe('GET /api/v1/assets', () => {
       vmName: null,
       hostName: null,
       os: 'ESXi 7.0.3',
-      cpuCount: 32,
+      cpuCount: 64,
       memoryBytes: 274877906944,
       totalDiskBytes: 999,
     });

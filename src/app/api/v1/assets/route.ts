@@ -148,6 +148,8 @@ export async function GET(request: Request) {
       const fields = canonical && typeof canonical === 'object' ? (canonical as Record<string, unknown>).fields : null;
 
       const cpuCount = getCanonicalFieldValue(fields, ['hardware', 'cpu_count']);
+      const cpuThreads = getCanonicalFieldValue(fields, ['attributes', 'cpu_threads']);
+      const osName = getCanonicalFieldValue(fields, ['os', 'name']);
       const memoryBytes = getCanonicalFieldValue(fields, ['hardware', 'memory_bytes']);
       const diskTotalBytes = getCanonicalFieldValue(fields, ['attributes', 'disk_total_bytes']);
 
@@ -174,7 +176,14 @@ export async function GET(request: Request) {
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields),
-        cpuCount: typeof cpuCount === 'number' ? cpuCount : null,
+        cpuCount:
+          asset.assetType === 'host' && typeof osName === 'string' && osName.trim() === 'ESXi'
+            ? typeof cpuThreads === 'number'
+              ? cpuThreads
+              : null
+            : typeof cpuCount === 'number'
+              ? cpuCount
+              : null,
         memoryBytes: typeof memoryBytes === 'number' ? memoryBytes : null,
         totalDiskBytes:
           asset.assetType === 'host'

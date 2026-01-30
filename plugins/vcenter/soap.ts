@@ -8,6 +8,10 @@ export type HostSoapDetails = {
   cpuMhz?: number;
   cpuPackages?: number;
   cpuThreads?: number;
+  systemVendor?: string;
+  systemModel?: string;
+  ipAddresses?: string[];
+  managementIp?: string;
 };
 
 import { XMLParser } from 'fast-xml-parser';
@@ -17,6 +21,18 @@ const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, par
 function toArray<T>(value: T | T[] | null | undefined): T[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function parseSoapFaultString(xml: string): string | undefined {
+  try {
+    const parsed = parser.parse(xml) as Record<string, unknown>;
+    const envelope = parsed.Envelope as Record<string, unknown> | undefined;
+    const body = envelope?.Body as Record<string, unknown> | undefined;
+    const fault = body?.Fault as Record<string, unknown> | undefined;
+    return toStringValue(fault?.faultstring);
+  } catch {
+    return undefined;
+  }
 }
 
 function toStringValue(value: unknown): string | undefined {
@@ -36,11 +52,25 @@ function toNumberValue(value: unknown): number | undefined {
 
 function toBooleanValue(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
   if (typeof value === 'string') {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
   }
   return undefined;
+}
+
+function isIPv4(ip: string): boolean {
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!ipv4Pattern.test(ip)) return false;
+
+  // Ensure each octet is within 0-255.
+  const parts = ip.split('.').map((part) => Number(part));
+  return parts.length === 4 && parts.every((n) => Number.isFinite(n) && n >= 0 && n <= 255);
 }
 
 function collectObjectsWithLocalDisk(node: unknown, out: Array<Record<string, unknown>>) {
@@ -54,6 +84,67 @@ function collectObjectsWithLocalDisk(node: unknown, out: Array<Record<string, un
   const record = node as Record<string, unknown>;
   if ('localDisk' in record) out.push(record);
   for (const value of Object.values(record)) collectObjectsWithLocalDisk(value, out);
+}
+
+type VirtualNicCandidate = {
+  device?: string;
+  portgroup?: string;
+  ipAddress?: string;
+};
+
+function collectVirtualNicCandidates(node: unknown, out: VirtualNicCandidate[]) {
+  if (!node) return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectVirtualNicCandidates(item, out);
+    return;
+  }
+  if (typeof node !== 'object') return;
+
+  const record = node as Record<string, unknown>;
+  const device = toStringValue(record.device);
+  const portgroup = toStringValue(record.portgroup);
+
+  const spec = record.spec && typeof record.spec === 'object' ? (record.spec as Record<string, unknown>) : undefined;
+  const ip = spec?.ip && typeof spec.ip === 'object' ? (spec.ip as Record<string, unknown>) : undefined;
+  const ipAddress = toStringValue(ip?.ipAddress ?? ip?.ip_address);
+
+  const isVmkOrVswif = device ? /^vmk\d+$/i.test(device) || /^vswif\d+$/i.test(device) : false;
+  if (isVmkOrVswif && ipAddress && isIPv4(ipAddress.trim())) {
+    out.push({ device, portgroup, ipAddress: ipAddress.trim() });
+  }
+
+  for (const value of Object.values(record)) collectVirtualNicCandidates(value, out);
+}
+
+function scoreVirtualNicCandidate(c: VirtualNicCandidate): number {
+  const device = (c.device ?? '').trim().toLowerCase();
+  const portgroup = (c.portgroup ?? '').trim().toLowerCase();
+
+  let score = 0;
+  if (device === 'vmk0' || device === 'vswif0') score += 100;
+  if (portgroup.includes('management')) score += 10;
+  return score;
+}
+
+function parseHostIps(val: unknown): { ipAddresses?: string[]; managementIp?: string } {
+  const candidates: VirtualNicCandidate[] = [];
+  collectVirtualNicCandidates(val, candidates);
+
+  const ipAddresses = Array.from(
+    new Set(
+      candidates
+        .map((c) => c.ipAddress)
+        .filter((ip): ip is string => typeof ip === 'string' && ip.trim().length > 0 && isIPv4(ip.trim())),
+    ),
+  );
+
+  if (ipAddresses.length === 0) return {};
+
+  const management = candidates
+    .filter((c) => c.ipAddress && ipAddresses.includes(c.ipAddress))
+    .sort((a, b) => scoreVirtualNicCandidate(b) - scoreVirtualNicCandidate(a))[0]?.ipAddress;
+
+  return { ipAddresses, managementIp: management ?? ipAddresses[0] };
 }
 
 function parseCapacityBytes(capacity: unknown): number | undefined {
@@ -78,8 +169,16 @@ function parseDiskTotalBytes(val: unknown): number | undefined {
   const candidates: Array<Record<string, unknown>> = [];
   collectObjectsWithLocalDisk(val, candidates);
 
-  const localDisks = candidates.filter((d) => toBooleanValue(d.localDisk) === true);
-  if (localDisks.length === 0) return undefined;
+  if (candidates.length === 0) return undefined;
+
+  const localDisks: Array<Record<string, unknown>> = [];
+  for (const disk of candidates) {
+    const localFlag = toBooleanValue(disk.localDisk);
+    if (localFlag === undefined) return undefined;
+    if (localFlag) localDisks.push(disk);
+  }
+  // Host has disks we can classify but none are local disks: total = 0 bytes.
+  if (localDisks.length === 0) return 0;
 
   let sum = 0;
   for (const disk of localDisks) {
@@ -88,7 +187,7 @@ function parseDiskTotalBytes(val: unknown): number | undefined {
     sum += bytes;
   }
 
-  return Number.isFinite(sum) && sum > 0 ? sum : undefined;
+  return Number.isFinite(sum) && sum >= 0 ? sum : undefined;
 }
 
 function toSdkEndpoint(endpoint: string): string {
@@ -159,17 +258,10 @@ function extractCookie(headers: Headers): string | undefined {
   return setCookie.split(';')[0];
 }
 
-export function parseRetrievePropertiesExHostResult(xml: string): Map<string, HostSoapDetails> {
-  const parsed = parser.parse(xml) as Record<string, unknown>;
-  const envelope = parsed.Envelope as Record<string, unknown> | undefined;
-  const body = envelope?.Body as Record<string, unknown> | undefined;
-
-  const response = body?.RetrievePropertiesExResponse as Record<string, unknown> | undefined;
-  const returnval = response?.returnval as Record<string, unknown> | undefined;
-  const objects = toArray(returnval?.objects as unknown);
-
+function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, HostSoapDetails> {
   const out = new Map<string, HostSoapDetails>();
-  for (const object of objects) {
+
+  for (const object of toArray(objects as unknown)) {
     if (!object || typeof object !== 'object') continue;
     const objRecord = object as Record<string, unknown>;
 
@@ -177,6 +269,7 @@ export function parseRetrievePropertiesExHostResult(xml: string): Map<string, Ho
     if (!hostId) continue;
 
     const details: HostSoapDetails = {};
+    const ipCandidates: { ipAddresses?: string[]; managementIp?: string }[] = [];
     for (const propSet of toArray(objRecord.propSet as unknown)) {
       if (!propSet || typeof propSet !== 'object') continue;
       const prop = propSet as Record<string, unknown>;
@@ -200,15 +293,58 @@ export function parseRetrievePropertiesExHostResult(xml: string): Map<string, Ho
         details.cpuPackages = toNumberValue(val);
       } else if (name === 'summary.hardware.numCpuThreads') {
         details.cpuThreads = toNumberValue(val);
+      } else if (name === 'hardware.systemInfo.vendor') {
+        details.systemVendor = toStringValue(val);
+      } else if (name === 'hardware.systemInfo.model') {
+        details.systemModel = toStringValue(val);
       } else if (name === 'config.storageDevice.scsiLun') {
         details.diskTotalBytes = parseDiskTotalBytes(val);
+      } else if (name === 'config.network.vnic' || name === 'config.network.consoleVnic') {
+        ipCandidates.push(parseHostIps(val));
       }
+    }
+
+    if (ipCandidates.length > 0) {
+      const ipAddresses = Array.from(
+        new Set(
+          ipCandidates
+            .flatMap((c) => c.ipAddresses ?? [])
+            .map((ip) => ip.trim())
+            .filter((ip) => ip.length > 0 && isIPv4(ip)),
+        ),
+      );
+      if (ipAddresses.length > 0) details.ipAddresses = ipAddresses;
+
+      const managementIp = ipCandidates
+        .map((c) => c.managementIp)
+        .find((ip) => typeof ip === 'string' && ip.length > 0);
+      if (managementIp) details.managementIp = managementIp;
+      else if (ipAddresses.length > 0) details.managementIp = ipAddresses[0];
     }
 
     out.set(hostId, details);
   }
 
   return out;
+}
+
+export function parseRetrievePropertiesExHostResult(xml: string): Map<string, HostSoapDetails> {
+  const parsed = parser.parse(xml) as Record<string, unknown>;
+  const envelope = parsed.Envelope as Record<string, unknown> | undefined;
+  const body = envelope?.Body as Record<string, unknown> | undefined;
+
+  const response = body?.RetrievePropertiesExResponse as Record<string, unknown> | undefined;
+  const returnval = response?.returnval as Record<string, unknown> | undefined;
+  return parseHostSoapDetailsFromObjectContents(returnval?.objects);
+}
+
+export function parseRetrievePropertiesHostResult(xml: string): Map<string, HostSoapDetails> {
+  const parsed = parser.parse(xml) as Record<string, unknown>;
+  const envelope = parsed.Envelope as Record<string, unknown> | undefined;
+  const body = envelope?.Body as Record<string, unknown> | undefined;
+
+  const response = body?.RetrievePropertiesResponse as Record<string, unknown> | undefined;
+  return parseHostSoapDetailsFromObjectContents(response?.returnval);
 }
 
 export async function collectHostSoapDetails(input: {
@@ -271,6 +407,10 @@ export async function collectHostSoapDetails(input: {
     'summary.hardware.cpuMhz',
     'summary.hardware.numCpuPkgs',
     'summary.hardware.numCpuThreads',
+    'hardware.systemInfo.vendor',
+    'hardware.systemInfo.model',
+    'config.network.vnic',
+    'config.network.consoleVnic',
     'config.storageDevice.scsiLun',
   ];
 
@@ -282,7 +422,7 @@ export async function collectHostSoapDetails(input: {
     .map((id) => `<vim25:objectSet><vim25:obj type="HostSystem">${id}</vim25:obj></vim25:objectSet>`)
     .join('');
 
-  const retrieveRes = await soapPost({
+  const retrieveExRes = await soapPost({
     sdkEndpoint,
     timeoutMs,
     cookie,
@@ -296,9 +436,38 @@ export async function collectHostSoapDetails(input: {
       </vim25:RetrievePropertiesEx>`,
     ),
   });
-  if (retrieveRes.status < 200 || retrieveRes.status >= 300) {
-    throw makeHttpError({ op: 'RetrievePropertiesEx', status: retrieveRes.status, bodyText: retrieveRes.bodyText });
+  if (retrieveExRes.status >= 200 && retrieveExRes.status < 300) {
+    return parseRetrievePropertiesExHostResult(retrieveExRes.bodyText);
   }
 
-  return parseRetrievePropertiesExHostResult(retrieveRes.bodyText);
+  // Some old vSphere/vCenter deployments don't support RetrievePropertiesEx (vim25/2.5u2).
+  // Fall back to RetrieveProperties when we can confidently detect this incompatibility.
+  const faultString = parseSoapFaultString(retrieveExRes.bodyText);
+  const faultLower = faultString?.toLowerCase();
+  const exUnsupported =
+    retrieveExRes.status === 500 &&
+    faultLower?.includes('unable to resolve wsdl method name') &&
+    faultLower.includes('retrievepropertiesex');
+  if (exUnsupported) {
+    const retrieveRes = await soapPost({
+      sdkEndpoint,
+      timeoutMs,
+      cookie,
+      bodyXml: soapEnvelope(
+        `<vim25:RetrieveProperties>
+          <vim25:_this type="PropertyCollector">${propertyCollector}</vim25:_this>
+          <vim25:specSet>
+            <vim25:propSet>${propSetXml}</vim25:propSet>
+            ${objectSetXml}
+          </vim25:specSet>
+        </vim25:RetrieveProperties>`,
+      ),
+    });
+    if (retrieveRes.status < 200 || retrieveRes.status >= 300) {
+      throw makeHttpError({ op: 'RetrieveProperties', status: retrieveRes.status, bodyText: retrieveRes.bodyText });
+    }
+    return parseRetrievePropertiesHostResult(retrieveRes.bodyText);
+  }
+
+  throw makeHttpError({ op: 'RetrievePropertiesEx', status: retrieveExRes.status, bodyText: retrieveExRes.bodyText });
 }

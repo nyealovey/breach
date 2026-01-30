@@ -24,7 +24,7 @@
   - 主机名
   - 虚拟机名
   - IP（取 `ip_addresses` 全量）
-  - CPU（vCPU 数量）
+  - CPU（VM: vCPU 数量；Host(ESXi): 线程数）
   - 内存（GiB/TiB，1024 进制）
   - 总分配磁盘（GiB/TiB，1024 进制）
   - 状态
@@ -67,7 +67,9 @@
 - IP：
   - 取 `canonical.fields.network.ip_addresses.value`（数组），过滤空值并去重后以 `", "` 拼接；无值则 `-`
 - CPU：
-  - 取 `canonical.fields.hardware.cpu_count.value`；无值则 `-`
+  - VM：取 `canonical.fields.hardware.cpu_count.value`（vCPU 数量）；无值则 `-`
+  - Host（ESXi）：取 `canonical.fields.attributes.cpu_threads.value`（线程数）；无值则 `-`
+  - 其它：取 `canonical.fields.hardware.cpu_count.value`；无值则 `-`
 - 内存：
   - 取 `canonical.fields.hardware.memory_bytes.value`；按 1024 进制格式化为 GiB/TiB；无值则 `-`
 - 总分配磁盘：

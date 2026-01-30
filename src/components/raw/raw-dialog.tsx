@@ -23,6 +23,13 @@ type Props = {
   onOpenChange: (open: boolean) => void;
 };
 
+export function getRawLoadErrorMessage(status: number): string {
+  if (status === 401) return '未登录或会话已过期，请刷新页面后重新登录。';
+  if (status === 403) return '无权限查看 raw。';
+  if (status === 404) return '记录不存在或已被删除。';
+  return `加载 raw 失败（HTTP ${status}）。`;
+}
+
 export function RawDialog({ recordId, open, onOpenChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,20 +44,27 @@ export function RawDialog({ recordId, open, onOpenChange }: Props) {
       setError(null);
       setData(null);
 
-      const res = await fetch(`/api/v1/source-records/${recordId}/raw`);
-      if (!res.ok) {
-        const msg = res.status === 403 ? '无权限查看 raw。' : '加载 raw 失败。';
+      try {
+        const res = await fetch(`/api/v1/source-records/${recordId}/raw`);
+        if (!res.ok) {
+          const msg = getRawLoadErrorMessage(res.status);
+          if (active) {
+            setError(msg);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const body = (await res.json()) as { data: RawResponse };
         if (active) {
-          setError(msg);
+          setData(body.data ?? null);
           setLoading(false);
         }
-        return;
-      }
-
-      const body = (await res.json()) as { data: RawResponse };
-      if (active) {
-        setData(body.data ?? null);
-        setLoading(false);
+      } catch {
+        if (active) {
+          setError('网络错误，加载 raw 失败。');
+          setLoading(false);
+        }
       }
     };
 

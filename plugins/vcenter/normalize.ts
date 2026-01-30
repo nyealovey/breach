@@ -309,8 +309,11 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
 }
 
 export function normalizeHost(raw: HostRaw): NormalizedAsset {
-  const mgmtIp = getFirstString(raw.vnics?.map((vnic) => vnic.ip?.ip_address) ?? []);
   const soap = raw.soap;
+  const vnicIps = raw.vnics?.map((vnic) => vnic.ip?.ip_address) ?? [];
+  const ipAddresses = uniqueStrings([...(soap?.ipAddresses ?? []), soap?.managementIp, ...vnicIps]);
+  const mgmtIp = getFirstString([getFirstString(vnicIps), soap?.managementIp, ipAddresses[0]]);
+
   const attributes: Record<string, string | number | boolean | null> = {};
   if (soap?.diskTotalBytes !== undefined) attributes.disk_total_bytes = soap.diskTotalBytes;
   if (soap?.cpuModel !== undefined) attributes.cpu_model = soap.cpuModel;
@@ -329,11 +332,12 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
       identity: {
         hostname: raw.name,
         serial_number: raw.hardware?.system_info?.serial_number,
-        vendor: raw.hardware?.system_info?.vendor,
-        model: raw.hardware?.system_info?.model,
+        vendor: getFirstString([raw.hardware?.system_info?.vendor, soap?.systemVendor]),
+        model: getFirstString([raw.hardware?.system_info?.model, soap?.systemModel]),
       },
       network: {
         management_ip: mgmtIp,
+        ip_addresses: ipAddresses.length > 0 ? ipAddresses : undefined,
       },
       os:
         soap?.esxiVersion || soap?.esxiBuild

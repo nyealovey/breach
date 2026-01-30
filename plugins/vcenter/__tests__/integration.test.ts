@@ -35,6 +35,7 @@ function runCollector(request: unknown): Promise<PluginResult> {
 describe('vcenter plugin integration (mock vSphere REST)', () => {
   let endpoint = '';
   let soapFail = false;
+  let soapRetrievePropertiesExUnsupported = false;
   let soapLoginCookie = 'vmware_soap_session="soap-123"';
   const server = createServer((req, res) => {
     const url = req.url ?? '';
@@ -112,6 +113,20 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           return;
         }
 
+        if (soapRetrievePropertiesExUnsupported && body.includes('RetrievePropertiesEx')) {
+          res.statusCode = 500;
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>ServerFaultCode</faultcode>
+      <faultstring>Unable to resolve WSDL method name RetrievePropertiesEx in vim.version.version3 (vim25/2.5u2)</faultstring>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
         if (body.includes('RetrievePropertiesEx')) {
           // Provide one host worth of properties.
           res.end(`<?xml version="1.0" encoding="UTF-8"?>
@@ -125,6 +140,18 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           <propSet><name>summary.config.product.build</name><val>20036589</val></propSet>
           <propSet><name>summary.hardware.numCpuCores</name><val>32</val></propSet>
           <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
+          <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
+          <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+          <propSet>
+            <name>config.network.vnic</name>
+            <val>
+              <HostVirtualNic>
+                <device>vmk0</device>
+                <portgroup>Management Network</portgroup>
+                <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
+              </HostVirtualNic>
+            </val>
+          </propSet>
           <propSet>
             <name>config.storageDevice.scsiLun</name>
             <val>
@@ -137,6 +164,46 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         </objects>
       </returnval>
     </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        if (body.includes('RetrieveProperties')) {
+          // Provide one host worth of properties (older API without *Ex).
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesResponse xmlns="urn:vim25">
+      <returnval>
+        <obj type="HostSystem">host-1</obj>
+        <propSet><name>summary.config.product.version</name><val>7.0.3</val></propSet>
+        <propSet><name>summary.config.product.build</name><val>20036589</val></propSet>
+        <propSet><name>summary.hardware.numCpuCores</name><val>32</val></propSet>
+        <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
+        <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
+        <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+        <propSet>
+          <name>config.network.vnic</name>
+          <val>
+            <HostVirtualNic>
+              <device>vmk0</device>
+              <portgroup>Management Network</portgroup>
+              <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
+            </HostVirtualNic>
+          </val>
+        </propSet>
+        <propSet>
+          <name>config.storageDevice.scsiLun</name>
+          <val>
+            <HostScsiDisk>
+              <localDisk>true</localDisk>
+              <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
+            </HostScsiDisk>
+          </val>
+        </propSet>
+      </returnval>
+    </RetrievePropertiesResponse>
   </soapenv:Body>
 </soapenv:Envelope>`);
           return;
@@ -340,8 +407,55 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(host?.normalized).toMatchObject({
       os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
       hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+      identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+      network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
       attributes: { disk_total_bytes: 512 * 7814037168 },
     });
+  });
+
+  it('collect falls back to RetrieveProperties when RetrievePropertiesEx is unsupported', async () => {
+    soapRetrievePropertiesExUnsupported = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_2_fallback', mode: 'collect', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        assets: Array<{ external_kind: string; external_id: string; normalized: { version: string } }>;
+        relations: unknown[];
+        stats: { assets: number; relations: number; inventory_complete: boolean; warnings: unknown[] };
+        errors?: unknown[];
+      };
+
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.assets).toHaveLength(3);
+      expect(parsed.relations).toHaveLength(3);
+      expect(parsed.stats).toEqual({ assets: 3, relations: 3, inventory_complete: true, warnings: [] });
+
+      const host = parsed.assets.find((a) => a.external_kind === 'host' && a.external_id === 'host-1');
+      expect(host).toBeTruthy();
+      expect(host?.normalized).toMatchObject({
+        os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
+        hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+        identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+        network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+        attributes: { disk_total_bytes: 512 * 7814037168 },
+      });
+    } finally {
+      soapRetrievePropertiesExUnsupported = false;
+    }
   });
 
   it('collect tolerates SOAP failures and continues', async () => {

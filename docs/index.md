@@ -12,6 +12,7 @@
 - vCenter MVP v1.0 执行进度：`docs/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`
 - PRD（vCenter MVP 增量：凭据模块 + 调度组手动运行 v1.0）：`docs/prds/asset-ledger-vcenter-mvp-credentials-sg-manual-run-v1.0-prd.md`
 - PRD（vCenter 插件：多版本 Driver + 关系/规格/电源状态 v1.1）：`docs/prds/asset-ledger-vcenter-plugin-versioned-drivers-v1.1-prd.md`
+- PRD（vCenter Host（ESXi）版本/规格/型号/IP（SOAP）v1.3）：`docs/prds/asset-ledger-vcenter-host-esxi-version-v1.2-prd.md`
 - PRD（资产列表盘点列展示 v1.0）：`docs/prds/asset-ledger-asset-list-inventory-columns-v1.0-prd.md`
 
 ## 参考文档（实现细节 / 规范）
