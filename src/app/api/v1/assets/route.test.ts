@@ -115,4 +115,124 @@ describe('GET /api/v1/assets', () => {
       },
     ]);
   });
+
+  it('returns host totalDiskBytes from attributes.disk_total_bytes (not hardware.disks sum)', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.asset.count as any).mockResolvedValue(1);
+    (prisma.asset.findMany as any).mockResolvedValue([
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440001',
+        assetType: 'host',
+        status: 'in_service',
+        displayName: 'esxi-01',
+        machineNameOverride: null,
+        createdAt: new Date('2026-01-30T00:00:00.000Z'),
+        runSnapshots: [
+          {
+            canonical: {
+              version: 'canonical-v1',
+              asset_uuid: '550e8400-e29b-41d4-a716-446655440001',
+              asset_type: 'host',
+              status: 'in_service',
+              display_name: 'esxi-01',
+              last_seen_at: '2026-01-30T00:00:00.000Z',
+              fields: {
+                identity: {
+                  hostname: { value: 'esxi-01', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
+                os: {
+                  name: { value: 'ESXi', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  version: { value: '7.0.3', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  fingerprint: { value: '20036589', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
+                hardware: {
+                  cpu_count: { value: 32, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  memory_bytes: { value: 274877906944, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  // Deliberately include disks to ensure host does NOT use this sum.
+                  disks: {
+                    value: [{ name: 'ignored', size_bytes: 123, type: 'thin' }],
+                    sources: [{ source_id: 'src_1', run_id: 'run_1' }],
+                  },
+                },
+                attributes: {
+                  disk_total_bytes: { value: 999, sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
+              },
+              relations: { outgoing: [] },
+            },
+          },
+        ],
+      },
+    ] as any);
+
+    const req = new Request('http://localhost/api/v1/assets?page=1&pageSize=20&asset_type=host');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data[0]).toMatchObject({
+      assetType: 'host',
+      machineName: 'esxi-01',
+      vmName: null,
+      hostName: null,
+      os: 'ESXi 7.0.3',
+      cpuCount: 32,
+      memoryBytes: 274877906944,
+      totalDiskBytes: 999,
+    });
+  });
+
+  it('does not fall back to os.fingerprint for hosts when version is missing', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.asset.count as any).mockResolvedValue(1);
+    (prisma.asset.findMany as any).mockResolvedValue([
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440002',
+        assetType: 'host',
+        status: 'in_service',
+        displayName: 'esxi-02',
+        machineNameOverride: null,
+        createdAt: new Date('2026-01-30T00:00:00.000Z'),
+        runSnapshots: [
+          {
+            canonical: {
+              version: 'canonical-v1',
+              asset_uuid: '550e8400-e29b-41d4-a716-446655440002',
+              asset_type: 'host',
+              status: 'in_service',
+              display_name: 'esxi-02',
+              last_seen_at: '2026-01-30T00:00:00.000Z',
+              fields: {
+                identity: {
+                  hostname: { value: 'esxi-02', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
+                os: {
+                  name: { value: 'ESXi', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  fingerprint: { value: '20036589', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                },
+              },
+              relations: { outgoing: [] },
+            },
+          },
+        ],
+      },
+    ] as any);
+
+    const req = new Request('http://localhost/api/v1/assets?page=1&pageSize=20&asset_type=host');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data[0].os).toBeNull();
+  });
 });

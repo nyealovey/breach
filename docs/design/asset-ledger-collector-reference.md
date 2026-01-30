@@ -163,6 +163,37 @@ GET /api/vcenter/vm?hosts={host_id}
 3. 构建 VM → Host 的映射关系
 4. 在获取 VM 详情时注入 `host` 字段
 
+#### 2.1.C vSphere SOAP（vim25）字段映射（Host ESXi 版本/硬件/本地盘总量）
+
+> 背景：vSphere REST API 对 Host 的 ESXi 版本/构建号与硬件规格信息不稳定/缺失；本项目约定 Host（ESXi）侧关键盘点字段统一通过 vSphere Web Services（SOAP, `/sdk`）采集。
+
+**SDK endpoint**：`https://<vcenter>/sdk`（基于 `source.config.endpoint` 自动补齐 `/sdk`，不要求用户输入完整路径）。
+
+**推荐采集方式（批量，避免 N+1）**：
+
+- `RetrieveServiceContent` → 取得 `SessionManager` / `PropertyCollector`
+- `SessionManager.Login(userName, password)` → 通过 Cookie 维持会话
+- `PropertyCollector.RetrievePropertiesEx` → 批量读取所有 Host 的字段（同一 run 内 SOAP 登录最多一次）
+
+**HostSystem 字段映射到 normalized-v1**：
+
+| HostSystem（SOAP）字段                                                  | normalized-v1 字段            | 说明                                                              |
+| ----------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `summary.config.product.version`                                        | `os.version`                  | 必采；列表展示 `ESXi {version}`                                   |
+| `summary.config.product.build`                                          | `os.fingerprint`              | 必采必落库；**Host build 本期不用于搜索/展示**                    |
+| `summary.hardware.numCpuCores`                                          | `hardware.cpu_count`          | 必采（核心数）                                                    |
+| `summary.hardware.memorySize`                                           | `hardware.memory_bytes`       | 必采（bytes）                                                     |
+| `summary.hardware.cpuModel`                                             | `attributes.cpu_model`        | 可选                                                              |
+| `summary.hardware.cpuMhz`                                               | `attributes.cpu_mhz`          | 可选                                                              |
+| `summary.hardware.numCpuPkgs`                                           | `attributes.cpu_packages`     | 可选                                                              |
+| `summary.hardware.numCpuThreads`                                        | `attributes.cpu_threads`      | 可选                                                              |
+| `config.storageDevice.scsiLun`（HostScsiDisk.localDisk==true 容量求和） | `attributes.disk_total_bytes` | 必采（仅本地物理盘 total，不采集 used；无法判定则缺失并 warning） |
+
+**约束建议**：
+
+- TLS：v1 允许自签名；实现侧可跳过证书校验（与 Web 侧策略一致）。
+- 超时：30s；失败不重试，直接降级为字段缺失并写 warning（不影响 inventory complete）。
+
 ### 2.2 输出（插件 → 核心）
 
 插件通过 **stdout** 输出 JSON 响应，包含四块：

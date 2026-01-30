@@ -2,7 +2,6 @@
 
 import {
   createSession,
-  getHostDetail,
   getVmDetail,
   getVmGuestNetworking,
   getVmGuestNetworkingInfo,
@@ -13,6 +12,7 @@ import {
   listVMsByHost,
 } from './client';
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from './normalize';
+import { collectHostSoapDetails } from './soap';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
@@ -111,6 +111,31 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     // First, get hosts and clusters
     const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
 
+    // Best-effort: fetch Host details via SOAP (vim25). Failures should not abort the whole run.
+    const hostSoapPromise = collectHostSoapDetails({
+      endpoint,
+      username: request.source.credential.username,
+      password: request.source.credential.password,
+      hostIds: hostSummaries.map((h) => h.host),
+    }).catch((err) => {
+      const status =
+        typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+      const bodyText =
+        typeof err === 'object' && err && 'bodyText' in err ? (err as { bodyText?: string }).bodyText : undefined;
+      warnings.push({
+        code: 'VCENTER_SOAP_FAILED',
+        category: 'network',
+        message: 'failed to collect host details via SOAP; host fields may be missing',
+        redacted_context: {
+          stage: 'soap_collect',
+          ...(status ? { status } : {}),
+          ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+          cause: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return new Map();
+    });
+
     // Build Host-to-Cluster mapping by querying Hosts per cluster
     // This is the only way to get Host-Cluster relationships via vSphere REST API
     const hostToClusterMap = new Map<string, string>();
@@ -160,40 +185,35 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     );
 
     // Get Host details with cluster info injected
-    const hostDetails = await Promise.all(
-      hostSummaries.map(async (hostSummary) => {
-        try {
-          const detail = await getHostDetail(endpoint, token, hostSummary.host);
-          return {
-            ...detail,
-            host: hostSummary.host,
-            name: hostSummary.name ?? (detail as Record<string, unknown>).name,
-            cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship
-            connection_state: hostSummary.connection_state,
-            power_state: hostSummary.power_state,
-          };
-        } catch (err) {
-          const status =
-            typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+    const hostSoapDetails = await hostSoapPromise;
+    const hostDetails = hostSummaries.map((hostSummary) => {
+      const soap = hostSoapDetails.get(hostSummary.host);
+      if (!soap) {
+        warnings.push({
+          code: 'VCENTER_HOST_SOAP_MISSING',
+          category: 'parse',
+          message: 'missing SOAP host details; some fields may be empty',
+          redacted_context: { host_id: hostSummary.host },
+        });
+      }
 
-          // Some vCenter builds don't expose host detail endpoint. Fallback to summary and keep collecting.
-          if (status === 404) {
-            warnings.push({
-              code: 'VCENTER_HOST_DETAIL_NOT_FOUND',
-              category: 'network',
-              message: 'host detail endpoint not found; using host summary',
-              redacted_context: { host_id: hostSummary.host },
-            });
-            return {
-              ...hostSummary,
-              cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship
-            } as Record<string, unknown>;
-          }
+      // Validate and warn on missing/invalid diskTotalBytes (best-effort; no fallback).
+      const diskTotalBytes = soap?.diskTotalBytes;
+      if (soap && diskTotalBytes === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DISK_TOTAL_MISSING',
+          category: 'parse',
+          message: 'failed to compute local disk total bytes for host',
+          redacted_context: { host_id: hostSummary.host, field: 'attributes.disk_total_bytes' },
+        });
+      }
 
-          throw err;
-        }
-      }),
-    );
+      return {
+        ...hostSummary,
+        cluster: hostToClusterMap.get(hostSummary.host), // Inject cluster relationship
+        soap,
+      } as Record<string, unknown>;
+    });
 
     const vmAssets = vmDetails.map((vm) => normalizeVM(vm as any));
     const hostAssets = hostDetails.map((host) => normalizeHost(host as any));

@@ -103,6 +103,8 @@ type VmRaw = {
  * For full Host details (ESXi version, hardware model, CPU type),
  * SOAP API (govmomi/pyVmomi) is required.
  */
+import type { HostSoapDetails } from './soap';
+
 type HostRaw = {
   /** Host identifier */
   host: string;
@@ -128,6 +130,9 @@ type HostRaw = {
       ip_address?: string;
     };
   }>;
+
+  /** Host details collected via vSphere SOAP (vim25). */
+  soap?: HostSoapDetails;
 };
 
 /**
@@ -164,6 +169,7 @@ type NormalizedV1 = {
   };
   os?: {
     name?: string;
+    version?: string;
     fingerprint?: string;
   };
   runtime?: {
@@ -173,6 +179,7 @@ type NormalizedV1 = {
     /** VMware Tools version status (only for VMs) */
     tools_status?: string;
   };
+  attributes?: Record<string, string | number | boolean | null>;
 };
 
 export type NormalizedAsset = {
@@ -303,6 +310,16 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
 
 export function normalizeHost(raw: HostRaw): NormalizedAsset {
   const mgmtIp = getFirstString(raw.vnics?.map((vnic) => vnic.ip?.ip_address) ?? []);
+  const soap = raw.soap;
+  const attributes: Record<string, string | number | boolean | null> = {};
+  if (soap?.diskTotalBytes !== undefined) attributes.disk_total_bytes = soap.diskTotalBytes;
+  if (soap?.cpuModel !== undefined) attributes.cpu_model = soap.cpuModel;
+  if (soap?.cpuMhz !== undefined) attributes.cpu_mhz = soap.cpuMhz;
+  if (soap?.cpuPackages !== undefined) attributes.cpu_packages = soap.cpuPackages;
+  if (soap?.cpuThreads !== undefined) attributes.cpu_threads = soap.cpuThreads;
+
+  const hasAttributes = Object.keys(attributes).length > 0;
+
   return {
     external_kind: 'host',
     external_id: raw.host,
@@ -318,6 +335,19 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
       network: {
         management_ip: mgmtIp,
       },
+      os:
+        soap?.esxiVersion || soap?.esxiBuild
+          ? {
+              name: 'ESXi',
+              ...(soap.esxiVersion ? { version: soap.esxiVersion } : {}),
+              ...(soap.esxiBuild ? { fingerprint: soap.esxiBuild } : {}),
+            }
+          : undefined,
+      hardware:
+        soap?.cpuCores !== undefined || soap?.memoryBytes !== undefined
+          ? { cpu_count: soap?.cpuCores, memory_bytes: soap?.memoryBytes }
+          : undefined,
+      attributes: hasAttributes ? attributes : undefined,
     },
     raw_payload: raw,
   };

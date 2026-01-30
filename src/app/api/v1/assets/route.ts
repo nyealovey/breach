@@ -82,7 +82,7 @@ function pickMachineNameCollected(fields: unknown): string | null {
   return null;
 }
 
-function pickOs(fields: unknown): string | null {
+function pickOs(fields: unknown, assetType: string): string | null {
   const name = getCanonicalFieldValue(fields, ['os', 'name']);
   const version = getCanonicalFieldValue(fields, ['os', 'version']);
   const fingerprint = getCanonicalFieldValue(fields, ['os', 'fingerprint']);
@@ -90,6 +90,12 @@ function pickOs(fields: unknown): string | null {
   const nameStr = typeof name === 'string' ? name.trim() : '';
   const versionStr = typeof version === 'string' ? version.trim() : '';
   const fingerprintStr = typeof fingerprint === 'string' ? fingerprint.trim() : '';
+
+  // Host: only display name+version (do NOT fall back to fingerprint/build).
+  if (assetType === 'host') {
+    if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
+    return null;
+  }
 
   if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
   if (nameStr) return nameStr;
@@ -143,6 +149,7 @@ export async function GET(request: Request) {
 
       const cpuCount = getCanonicalFieldValue(fields, ['hardware', 'cpu_count']);
       const memoryBytes = getCanonicalFieldValue(fields, ['hardware', 'memory_bytes']);
+      const diskTotalBytes = getCanonicalFieldValue(fields, ['attributes', 'disk_total_bytes']);
 
       const machineNameOverride = asset.machineNameOverride?.trim() ? asset.machineNameOverride.trim() : null;
       const machineNameCollected = pickMachineNameCollected(fields);
@@ -163,13 +170,18 @@ export async function GET(request: Request) {
         machineNameMismatch,
         vmName,
         hostName,
-        os: pickOs(fields),
+        os: pickOs(fields, asset.assetType),
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields),
         cpuCount: typeof cpuCount === 'number' ? cpuCount : null,
         memoryBytes: typeof memoryBytes === 'number' ? memoryBytes : null,
-        totalDiskBytes: sumDiskBytes(fields),
+        totalDiskBytes:
+          asset.assetType === 'host'
+            ? typeof diskTotalBytes === 'number'
+              ? diskTotalBytes
+              : null
+            : sumDiskBytes(fields),
       };
     });
 

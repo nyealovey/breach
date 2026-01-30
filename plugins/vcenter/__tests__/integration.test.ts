@@ -34,13 +34,126 @@ function runCollector(request: unknown): Promise<PluginResult> {
 
 describe('vcenter plugin integration (mock vSphere REST)', () => {
   let endpoint = '';
-  let hostDetailNotFound = false;
+  let soapFail = false;
+  let soapLoginCookie = 'vmware_soap_session="soap-123"';
   const server = createServer((req, res) => {
     const url = req.url ?? '';
     const parsedUrl = new URL(url, 'http://localhost');
     const pathname = parsedUrl.pathname;
     const searchParams = parsedUrl.searchParams;
     const method = req.method ?? 'GET';
+
+    // Minimal SOAP mock for /sdk.
+    if (method === 'POST' && pathname === '/sdk') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk.toString('utf8');
+      });
+      req.on('end', () => {
+        if (soapFail) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <Fault xmlns="http://schemas.xmlsoap.org/soap/envelope/">
+      <faultcode>500</faultcode>
+      <faultstring>soap failure</faultstring>
+    </Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+
+        if (body.includes('RetrieveServiceContent')) {
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrieveServiceContentResponse xmlns="urn:vim25">
+      <returnval>
+        <sessionManager>SessionManager</sessionManager>
+        <propertyCollector>propertyCollector</propertyCollector>
+      </returnval>
+    </RetrieveServiceContentResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        if (body.includes('Login')) {
+          res.setHeader('Set-Cookie', `${soapLoginCookie}; Path=/sdk; HttpOnly`);
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <LoginResponse xmlns="urn:vim25">
+      <returnval />
+    </LoginResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        // Require the cookie for property retrieval, to ensure caller correctly preserves session.
+        const cookie = req.headers.cookie ?? '';
+        if (!cookie.includes(soapLoginCookie)) {
+          res.statusCode = 401;
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <Fault xmlns="http://schemas.xmlsoap.org/soap/envelope/">
+      <faultcode>401</faultcode>
+      <faultstring>missing cookie</faultstring>
+    </Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        if (body.includes('RetrievePropertiesEx')) {
+          // Provide one host worth of properties.
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesExResponse xmlns="urn:vim25">
+      <returnval>
+        <objects>
+          <obj type="HostSystem">host-1</obj>
+          <propSet><name>summary.config.product.version</name><val>7.0.3</val></propSet>
+          <propSet><name>summary.config.product.build</name><val>20036589</val></propSet>
+          <propSet><name>summary.hardware.numCpuCores</name><val>32</val></propSet>
+          <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
+          <propSet>
+            <name>config.storageDevice.scsiLun</name>
+            <val>
+              <HostScsiDisk>
+                <localDisk>true</localDisk>
+                <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
+              </HostScsiDisk>
+            </val>
+          </propSet>
+        </objects>
+      </returnval>
+    </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <Fault xmlns="http://schemas.xmlsoap.org/soap/envelope/">
+      <faultcode>400</faultcode>
+      <faultstring>unsupported soap op</faultstring>
+    </Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+      });
+      return;
+    }
 
     // Minimal Basic auth check for POST /api/session.
     if (method === 'POST' && url === '/api/session') {
@@ -125,25 +238,6 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify([{ host: 'host-1', name: 'esxi-01', connection_state: 'CONNECTED', power_state: 'POWERED_ON' }]),
-      );
-      return;
-    }
-    if (method === 'GET' && pathname === '/api/vcenter/host/host-1') {
-      if (hostDetailNotFound) {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'not_found' }));
-        return;
-      }
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(
-        JSON.stringify({
-          host: 'host-1',
-          cluster: 'domain-c7',
-          hardware: { system_info: { serial_number: 'SN123' } },
-          vnics: [{ ip: { ip_address: '192.168.1.10' } }],
-        }),
       );
       return;
     }
@@ -240,10 +334,18 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(parsed.relations).toHaveLength(3);
     expect(parsed.stats).toEqual({ assets: 3, relations: 3, inventory_complete: true, warnings: [] });
     expect(parsed.assets.map((a) => a.normalized.version)).toEqual(['normalized-v1', 'normalized-v1', 'normalized-v1']);
+
+    const host = parsed.assets.find((a) => a.external_kind === 'host' && a.external_id === 'host-1');
+    expect(host).toBeTruthy();
+    expect(host?.normalized).toMatchObject({
+      os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
+      hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+      attributes: { disk_total_bytes: 512 * 7814037168 },
+    });
   });
 
-  it('collect tolerates missing host detail endpoint (404) and continues', async () => {
-    hostDetailNotFound = true;
+  it('collect tolerates SOAP failures and continues', async () => {
+    soapFail = true;
     try {
       const request = {
         schema_version: 'collector-request-v1',
@@ -272,9 +374,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       expect(parsed.assets.length).toBe(3);
       expect(parsed.relations.length).toBe(3);
       expect(parsed.stats.inventory_complete).toBe(true);
-      expect(parsed.stats.warnings.length).toBe(1);
+      expect(parsed.stats.warnings.length).toBeGreaterThan(0);
     } finally {
-      hostDetailNotFound = false;
+      soapFail = false;
     }
   });
 

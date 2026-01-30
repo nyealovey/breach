@@ -70,6 +70,9 @@ export function buildAssetListWhere(query: {
         },
       },
       {
+        // NOTE: Host 的 os.fingerprint 用于承接 ESXi build（不纳入 q 搜索）。
+        // VM 的 os.fingerprint 仍用于承接 guest_OS 等指纹（需可搜索）。
+        assetType: AssetType.vm,
         runSnapshots: {
           some: {
             canonical: { path: ['fields', 'os', 'fingerprint', 'value'], string_contains: q, mode: 'insensitive' },

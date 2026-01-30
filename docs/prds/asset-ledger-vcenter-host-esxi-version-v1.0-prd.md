@@ -55,6 +55,7 @@
 - `normalized.os.fingerprint = <soap_build>`（可选；例如 `20036589`）
 
 > 说明：
+>
 > - UI 展示只使用 `name + version`。
 > - fingerprint 用于承接 build（后续可能用于排障/筛选/导出）。
 
@@ -140,4 +141,3 @@
 **Created**: 2026-01-29
 **Clarification Rounds**: 1
 **Quality Score**: 92/100
-

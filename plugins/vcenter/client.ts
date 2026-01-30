@@ -235,7 +235,16 @@ export type VmToolsInfo = {
   /** Whether VMware Tools is running in the guest */
   run_state?: 'NOT_RUNNING' | 'RUNNING' | 'EXECUTING_SCRIPTS';
   /** Version status of VMware Tools */
-  version_status?: 'NOT_INSTALLED' | 'CURRENT' | 'UNMANAGED' | 'TOO_OLD_UNSUPPORTED' | 'TOO_OLD' | 'TOO_NEW' | 'BLACKLISTED' | 'SUPPORTED_OLD' | 'SUPPORTED_NEW';
+  version_status?:
+    | 'NOT_INSTALLED'
+    | 'CURRENT'
+    | 'UNMANAGED'
+    | 'TOO_OLD_UNSUPPORTED'
+    | 'TOO_OLD'
+    | 'TOO_NEW'
+    | 'BLACKLISTED'
+    | 'SUPPORTED_OLD'
+    | 'SUPPORTED_NEW';
   /** VMware Tools version number */
   version_number?: number;
   /** VMware Tools version string */
@@ -246,11 +255,7 @@ export type VmToolsInfo = {
  * Get VMware Tools status for a VM
  * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/tools/get/
  */
-export async function getVmTools(
-  endpoint: string,
-  token: SessionToken,
-  vmId: string,
-): Promise<VmToolsInfo | null> {
+export async function getVmTools(endpoint: string, token: SessionToken, vmId: string): Promise<VmToolsInfo | null> {
   const url = joinUrl(endpoint, `/api/vcenter/vm/${encodeURIComponent(vmId)}/tools`);
   const result = await fetchJson<VmToolsInfo>(url, {
     method: 'GET',

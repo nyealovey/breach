@@ -691,7 +691,10 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 - 空格分词：将 `q` 按空白字符切分为多个词（连续空白视为一个分隔）。
 - AND：每个词都必须命中。
 - 匹配方式：不区分大小写的“包含”匹配（substring）。
-- 范围：对机器名（覆盖值/采集值）、虚拟机名、宿主机名、操作系统（os.name/os.version/os.fingerprint）、externalId、uuid 等文本字段生效。
+- 范围：对机器名（覆盖值/采集值）、虚拟机名、宿主机名、操作系统生效：
+  - `os.name` / `os.version`：所有资产类型均参与；
+  - `os.fingerprint`：仅 VM 参与（用于承接 guest_OS 等指纹）；Host 的 `os.fingerprint` 用于承接 ESXi build，本期不纳入 `q` 搜索。
+  - 以及 externalId、uuid 等文本字段。
 - 空值处理：`q` 为空或仅包含空白时，视为未提供该参数。
 
 **成功响应**（200）：
@@ -721,6 +724,14 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
+
+**字段口径补充（列表聚合字段）**：
+
+- `cpuCount`：取 `canonical.fields.hardware.cpu_count.value`。
+- `memoryBytes`：取 `canonical.fields.hardware.memory_bytes.value`（bytes）。
+- `totalDiskBytes`：
+  - VM：`canonical.fields.hardware.disks.value[].size_bytes` 求和；
+  - Host：优先取 `canonical.fields.attributes.disk_total_bytes.value`（bytes，本地物理盘总量）；缺失时可返回 `null`/`-`（由 UI 缺失策略决定）。
 
 ### 6.1A 更新 Asset（机器名覆盖）
 

@@ -108,6 +108,7 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
+- Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量）通过 vSphere SOAP（`/sdk` + vim25）采集；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
 
 需求文档：
 

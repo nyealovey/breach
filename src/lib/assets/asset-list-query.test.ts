@@ -88,4 +88,30 @@ describe('asset list query', () => {
       ],
     });
   });
+
+  it('restricts os.fingerprint search to VMs (host build is not searchable)', () => {
+    const q = '20036589';
+    const where = buildAssetListWhere({ q });
+
+    const and = (where as any).AND as any[];
+    const or = and?.find((c) => c && typeof c === 'object' && 'OR' in c)?.OR as any[];
+
+    expect(or).toContainEqual({
+      assetType: 'vm',
+      runSnapshots: {
+        some: {
+          canonical: { path: ['fields', 'os', 'fingerprint', 'value'], string_contains: q, mode: 'insensitive' },
+        },
+      },
+    });
+
+    // Must not include an unscoped fingerprint clause that would also match hosts.
+    expect(or).not.toContainEqual({
+      runSnapshots: {
+        some: {
+          canonical: { path: ['fields', 'os', 'fingerprint', 'value'], string_contains: q, mode: 'insensitive' },
+        },
+      },
+    });
+  });
 });
