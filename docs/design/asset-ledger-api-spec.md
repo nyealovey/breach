@@ -542,9 +542,14 @@
 
 ```json
 {
-  "mode": "collect"
+  "mode": "collect|detect|healthcheck"
 }
 ```
+
+说明：
+
+- `detect`：仅做“探测模式”，在不真正采集资产的情况下连通性/能力探测，并返回 `detectResult`（例如 driver/target_version/capabilities）。
+- `collect`：执行实际采集；本期 collect 响应不包含 `detect` 字段，因此 `detectResult` 只有在 `mode=detect` 的 Run 才会写入。
 
 **成功响应**（201）：
 

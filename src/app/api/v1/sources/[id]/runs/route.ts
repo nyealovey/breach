@@ -6,7 +6,7 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { created, fail, ok } from '@/lib/http/response';
 
 const BodySchema = z.object({
-  mode: z.enum(['collect', 'healthcheck']),
+  mode: z.enum(['collect', 'detect', 'healthcheck']),
 });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
