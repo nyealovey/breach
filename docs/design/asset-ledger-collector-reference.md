@@ -1,7 +1,7 @@
 # 资产台账系统采集插件参考（开源组件优先）
 
-版本：v1.2  
-日期：2026-01-29
+版本：v1.3  
+日期：2026-01-30
 
 ## 文档简介
 
@@ -30,7 +30,7 @@
 
 插件通过 **stdin** 接收核心传入的 JSON 请求，最小结构：
 
-```json
+````json
 {
   "schema_version": "collector-request-v1",
   "source": {
@@ -39,15 +39,15 @@
     "config": {},
     "credential": {}
   },
-  "request": {
-    "run_id": "run_456",
-    "mode": "detect|collect|healthcheck",
-    "now": "2026-01-26T12:00:00Z"
-  }
-}
-```
+	  "request": {
+	    "run_id": "run_456",
+	    "mode": "detect|collect|collect_hosts|collect_vms|healthcheck",
+	    "now": "2026-01-26T12:00:00Z"
+	  }
+	}
+	```
 
-> `schema_version` 用于契约版本化；当核心传入插件不支持的版本时，插件应失败并输出可读错误。  
+> `schema_version` 用于契约版本化；当核心传入插件不支持的版本时，插件应失败并输出可读错误。
 > `credential` 字段建议由核心在运行时注入（不落盘），插件不得将其写入日志/输出。
 
 #### 2.1.A vCenter Source 输入字段（v1.0 约定）
@@ -76,7 +76,7 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 - 字段缺失：VM detail 可能不包含 VM 自身 ID 字段；实现侧应以 VM 列表摘要的 `vm` 作为 `external_id` 的单一来源（必要时在 detail 上注入该字段），避免入账阶段出现 `externalId missing`。
 - **IP 地址获取**：VM 详情 API (`GET /api/vcenter/vm/{vm}`) **不返回 IP 地址**，需额外调用 Guest Networking API (`GET /api/vcenter/vm/{vm}/guest/networking/interfaces`) 获取，且需要 VMware Tools 运行。
 - 多版本差异处理（新口径，禁止降级）：必须按 `preferred_vcenter_version` 选择对应 driver；当所选 driver 的关键能力缺失（关键接口不存在/无法取到必备字段）时，采集必须失败（`errors[]`），不得以 warning + fallback 的方式返回成功。
-- 关系边（vCenter 口径）：vCenter 环境应可稳定构建 VM→Host→Cluster 的关系；插件至少必须输出 `runs_on` / `member_of` 之一（更推荐两者同时输出）。若 `relations[]` 为空应视为采集失败（避免 UI/后续能力不可用）。
+	- 关系边（vCenter 口径）：vCenter 环境应可稳定构建 VM→Host→Cluster 的关系；全量 `collect` 模式应尽量同时输出 `runs_on` / `member_of`（并可选输出 `hosts_vm`）。当使用分阶段采集时：`collect_hosts` 至少输出 `member_of`；`collect_vms` 至少输出 `runs_on`（并可选输出 `hosts_vm`）。
 
 #### 2.1.B vSphere REST API 字段映射（v1.0）
 
@@ -152,9 +152,11 @@ TLS 说明：v1.0 允许自签名证书；实现侧固定跳过证书校验，�
 
 获取 VM 和 Host 关系的方法是通过 VM 列表 API 的 `hosts` 过滤参数：
 
-```
+````
+
 GET /api/vcenter/vm?hosts={host_id}
-```
+
+````
 
 **实现策略**：
 
@@ -227,7 +229,7 @@ GET /api/vcenter/vm?hosts={host_id}
   "stats": { "assets": 0, "relations": 0, "inventory_complete": true, "warnings": [] },
   "errors": []
 }
-```
+````
 
 关键约束：
 

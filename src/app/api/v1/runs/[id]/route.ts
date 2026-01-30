@@ -20,7 +20,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     );
   }
 
-  const durationMs = run.startedAt && run.finishedAt ? run.finishedAt.getTime() - run.startedAt.getTime() : null;
+  const durationMs = run.startedAt
+    ? run.finishedAt
+      ? run.finishedAt.getTime() - run.startedAt.getTime()
+      : Date.now() - run.startedAt.getTime()
+    : null;
 
   return ok(
     {

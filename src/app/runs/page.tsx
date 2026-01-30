@@ -10,16 +10,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RunMode, RunStatus, RunTriggerType } from '@prisma/client';
 
 const SUPPORTED_STATUS = new Set<RunStatus>(['Queued', 'Running', 'Succeeded', 'Failed', 'Cancelled']);
-const SUPPORTED_MODE = new Set<RunMode>(['collect', 'detect', 'healthcheck']);
+const SUPPORTED_MODE = new Set<RunMode>(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const SUPPORTED_TRIGGER = new Set<RunTriggerType>(['manual', 'schedule']);
 
 type RunsPageProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function RunsPage({ searchParams }: RunsPageProps) {
+  const resolvedSearchParams = await searchParams;
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(searchParams)) {
+  for (const [key, value] of Object.entries(resolvedSearchParams)) {
     if (typeof value === 'string') params.set(key, value);
   }
 
@@ -84,6 +85,8 @@ export default async function RunsPage({ searchParams }: RunsPageProps) {
             >
               <option value="">全部</option>
               <option value="collect">collect</option>
+              <option value="collect_hosts">collect_hosts</option>
+              <option value="collect_vms">collect_vms</option>
               <option value="healthcheck">healthcheck</option>
               <option value="detect">detect</option>
             </select>

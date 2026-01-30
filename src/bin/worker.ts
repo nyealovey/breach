@@ -7,6 +7,7 @@ import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
 import { logEvent } from '@/lib/logging/logger';
+import { recycleStaleRuns } from '@/lib/runs/recycle-stale-runs';
 
 import type { AppError } from '@/lib/errors/error';
 import type { Prisma, Run, Source } from '@prisma/client';
@@ -364,7 +365,7 @@ async function processRun(run: Run): Promise<ProcessResult> {
     };
   }
 
-  if (run.mode === 'collect') {
+  if (run.mode === 'collect' || run.mode === 'collect_hosts' || run.mode === 'collect_vms') {
     const inventoryComplete =
       typeof statsObj?.inventory_complete === 'boolean'
         ? statsObj.inventory_complete
@@ -518,6 +519,7 @@ async function main() {
   });
 
   let stopping = false;
+  let lastRecycleAtMs = 0;
   const shutdown = async (signal: string) => {
     stopping = true;
     log('shutting down', { signal });
@@ -528,6 +530,30 @@ async function main() {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   while (!stopping) {
+    // Auto-recycle stale `Running` runs (e.g. worker crash left them stuck forever).
+    // Do this at a low frequency to avoid extra DB load on every poll.
+    if (Date.now() - lastRecycleAtMs >= serverEnv.ASSET_LEDGER_SCHEDULER_TICK_MS) {
+      lastRecycleAtMs = Date.now();
+      try {
+        const res = await recycleStaleRuns({
+          prisma,
+          now: new Date(),
+          staleAfterMs: serverEnv.ASSET_LEDGER_RUN_RECYCLE_AFTER_MS,
+        });
+        if (res.recycled > 0) {
+          logEvent({
+            level: 'info',
+            service: 'worker',
+            event_type: 'run.recycled',
+            recycled: res.recycled,
+            stale_before: res.staleBefore.toISOString(),
+          });
+        }
+      } catch (err) {
+        log('failed to recycle stale runs', { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     const runs = await claimQueuedRuns(serverEnv.ASSET_LEDGER_WORKER_BATCH_SIZE);
     if (runs.length === 0) {
       await sleep(serverEnv.ASSET_LEDGER_WORKER_POLL_MS);

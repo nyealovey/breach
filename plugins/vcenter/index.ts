@@ -101,6 +101,181 @@ async function detect(request: CollectorRequestV1): Promise<{ response: Collecto
   }
 }
 
+async function collectHosts(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
+  try {
+    const endpoint = request.source.config.endpoint;
+    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+
+    const warnings: unknown[] = [];
+
+    // Hosts + clusters (REST)
+    const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
+
+    // Best-effort: fetch Host details via SOAP (vim25). Failures should not abort the whole run.
+    const hostSoapPromise = collectHostSoapDetails({
+      endpoint,
+      username: request.source.credential.username,
+      password: request.source.credential.password,
+      hostIds: hostSummaries.map((h) => h.host),
+      runId: request.request.run_id,
+    }).catch((err) => {
+      const status =
+        typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+      const bodyText =
+        typeof err === 'object' && err && 'bodyText' in err ? (err as { bodyText?: string }).bodyText : undefined;
+      warnings.push({
+        code: 'VCENTER_SOAP_FAILED',
+        category: 'network',
+        message: 'failed to collect host details via SOAP; host fields may be missing',
+        redacted_context: {
+          stage: 'soap_collect',
+          ...(status ? { status } : {}),
+          ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+          cause: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return new Map();
+    });
+
+    // Build Host-to-Cluster mapping by querying Hosts per cluster
+    const hostToClusterMap = new Map<string, string>();
+    await Promise.all(
+      clusters.map(async (cluster) => {
+        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster);
+        for (const host of hostsInCluster) hostToClusterMap.set(host.host, cluster.cluster);
+      }),
+    );
+
+    const hostSoapDetails = await hostSoapPromise;
+    const hostDetails = hostSummaries.map((hostSummary) => {
+      const soap = hostSoapDetails.get(hostSummary.host);
+      if (!soap) {
+        warnings.push({
+          code: 'VCENTER_HOST_SOAP_MISSING',
+          category: 'parse',
+          message: 'missing SOAP host details; some fields may be empty',
+          redacted_context: { host_id: hostSummary.host },
+        });
+      }
+
+      // Validate and warn on missing/invalid diskTotalBytes (best-effort; no fallback).
+      const diskTotalBytes = soap?.diskTotalBytes;
+      if (soap && diskTotalBytes === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DISK_TOTAL_MISSING',
+          category: 'parse',
+          message: 'failed to compute local disk total bytes for host',
+          redacted_context: { host_id: hostSummary.host, field: 'attributes.disk_total_bytes' },
+        });
+      }
+
+      // Validate and warn on missing datastoreTotalBytes (best-effort).
+      const datastoreTotalBytes = soap?.datastoreTotalBytes;
+      if (soap && datastoreTotalBytes === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DATASTORE_TOTAL_MISSING',
+          category: 'parse',
+          message: 'failed to compute datastore total bytes for host',
+          redacted_context: { host_id: hostSummary.host, field: 'attributes.datastore_total_bytes' },
+        });
+      }
+
+      return {
+        ...hostSummary,
+        cluster: hostToClusterMap.get(hostSummary.host),
+        soap,
+      } as Record<string, unknown>;
+    });
+
+    const hostAssets = hostDetails.map((host) => normalizeHost(host as any));
+    const clusterAssets = clusters.map((cluster) => normalizeCluster(cluster as any));
+
+    const assets = [...hostAssets, ...clusterAssets];
+    const relations = buildRelations([], hostDetails as any, clusters as any);
+
+    return {
+      response: makeResponse({
+        assets,
+        relations,
+        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings },
+        errors: [],
+      }),
+      exitCode: 0,
+    };
+  } catch (err) {
+    return {
+      response: makeResponse({
+        errors: [toVcenterError(err, 'collect_hosts')],
+        stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
+      }),
+      exitCode: 1,
+    };
+  }
+}
+
+async function collectVMs(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
+  try {
+    const endpoint = request.source.config.endpoint;
+    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+
+    // VMs only (REST). No SOAP in this mode.
+    const hostSummaries = await listHosts(endpoint, token);
+
+    const vmToHostMap = new Map<string, string>();
+    const allVmIds = new Set<string>();
+
+    await Promise.all(
+      hostSummaries.map(async (host) => {
+        const vmsOnHost = await listVMsByHost(endpoint, token, host.host);
+        for (const vm of vmsOnHost) {
+          vmToHostMap.set(vm.vm, host.host);
+          allVmIds.add(vm.vm);
+        }
+      }),
+    );
+
+    const vmDetails = await Promise.all(
+      Array.from(allVmIds).map(async (vmId) => {
+        const [detail, guestNetworking, guestNetworkingInfo, tools] = await Promise.all([
+          getVmDetail(endpoint, token, vmId),
+          getVmGuestNetworking(endpoint, token, vmId),
+          getVmGuestNetworkingInfo(endpoint, token, vmId),
+          getVmTools(endpoint, token, vmId),
+        ]);
+        return {
+          ...(detail as Record<string, unknown>),
+          vm: vmId,
+          host: vmToHostMap.get(vmId),
+          guest_networking: guestNetworking,
+          guest_networking_info: guestNetworkingInfo,
+          tools,
+        };
+      }),
+    );
+
+    const assets = vmDetails.map((vm) => normalizeVM(vm as any));
+    const relations = buildRelations(vmDetails as any, hostSummaries as any, []);
+
+    return {
+      response: makeResponse({
+        assets,
+        relations,
+        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings: [] },
+        errors: [],
+      }),
+      exitCode: 0,
+    };
+  } catch (err) {
+    return {
+      response: makeResponse({
+        errors: [toVcenterError(err, 'collect_vms')],
+        stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
+      }),
+      exitCode: 1,
+    };
+  }
+}
+
 async function collect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const endpoint = request.source.config.endpoint;
@@ -117,6 +292,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       username: request.source.credential.username,
       password: request.source.credential.password,
       hostIds: hostSummaries.map((h) => h.host),
+      runId: request.request.run_id,
     }).catch((err) => {
       const status =
         typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
@@ -299,11 +475,15 @@ async function main(): Promise<number> {
 
   const mode = request.request?.mode;
   const result =
-    mode === 'collect'
-      ? await collect(request)
-      : mode === 'detect'
-        ? await detect(request)
-        : await healthcheck(request);
+    mode === 'collect_hosts'
+      ? await collectHosts(request)
+      : mode === 'collect_vms'
+        ? await collectVMs(request)
+        : mode === 'collect'
+          ? await collect(request)
+          : mode === 'detect'
+            ? await detect(request)
+            : await healthcheck(request);
 
   process.stdout.write(`${JSON.stringify(result.response)}\n`);
   return result.exitCode;

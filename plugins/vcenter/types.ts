@@ -1,6 +1,6 @@
 import type { NormalizedAsset, Relation } from './normalize';
 
-export type CollectorMode = 'healthcheck' | 'detect' | 'collect';
+export type CollectorMode = 'healthcheck' | 'detect' | 'collect' | 'collect_hosts' | 'collect_vms';
 
 export type VCenterConfig = {
   endpoint: string;

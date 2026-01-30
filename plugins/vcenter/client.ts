@@ -3,10 +3,55 @@
  * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/
  */
 
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 type SessionToken = string;
 
 function joinUrl(base: string, path: string) {
   return `${base.replace(/\/+$/, '')}${path}`;
+}
+
+function toBooleanValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+  return undefined;
+}
+
+const VCENTER_DEBUG =
+  toBooleanValue(process.env.ASSET_LEDGER_VCENTER_DEBUG) ?? toBooleanValue(process.env.ASSET_LEDGER_DEBUG) ?? false;
+
+const REST_DEBUG_EXCERPT_LIMIT = 2000;
+
+function excerpt(text: string, limit = REST_DEBUG_EXCERPT_LIMIT): string {
+  return text.length > limit ? text.slice(0, limit) : text;
+}
+
+function debugLog(message: string, data?: unknown) {
+  if (!VCENTER_DEBUG) return;
+  try {
+    const logsDir = join(process.cwd(), 'logs');
+    mkdirSync(logsDir, { recursive: true });
+    const logFile = join(logsDir, `vcenter-rest-debug-${new Date().toISOString().slice(0, 10)}.log`);
+    const payload = {
+      ts: new Date().toISOString(),
+      level: 'debug',
+      component: 'vcenter.rest',
+      message,
+      ...(data !== undefined ? { data } : {}),
+    };
+    appendFileSync(logFile, `${JSON.stringify(payload)}\n`);
+  } catch {
+    // ignore
+  }
 }
 
 function makeHttpError(input: { op: string; status: number; bodyText: string }) {
@@ -20,10 +65,31 @@ async function fetchJson<T>(
   input: string,
   init: RequestInit,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; bodyText: string }> {
+  const start = Date.now();
   const res = await fetch(input, init);
   const bodyText = await res.text();
+  debugLog('http.response', {
+    method: init.method ?? 'GET',
+    url: input,
+    status: res.status,
+    ok: res.ok,
+    duration_ms: Date.now() - start,
+    body_length: bodyText.length,
+    ...(res.ok ? {} : { body_excerpt: excerpt(bodyText) }),
+  });
   if (!res.ok) return { ok: false, status: res.status, bodyText };
-  return { ok: true, data: JSON.parse(bodyText) as T };
+  try {
+    return { ok: true, data: JSON.parse(bodyText) as T };
+  } catch (err) {
+    debugLog('http.json_parse_error', {
+      method: init.method ?? 'GET',
+      url: input,
+      cause: err instanceof Error ? err.message : String(err),
+      body_length: bodyText.length,
+      body_excerpt: excerpt(bodyText),
+    });
+    throw err;
+  }
 }
 
 export async function createSession(endpoint: string, username: string, password: string): Promise<SessionToken> {
@@ -32,7 +98,8 @@ export async function createSession(endpoint: string, username: string, password
 
   const result = await fetchJson<unknown>(url, {
     method: 'POST',
-    headers: { Authorization: `Basic ${auth}` },
+    // Some deployments/proxies require Content-Type for POST even with an empty body.
+    headers: { Authorization: `Basic ${auth}`, 'content-type': 'application/json', accept: 'application/json' },
   });
 
   if (!result.ok) {
@@ -41,6 +108,17 @@ export async function createSession(endpoint: string, username: string, password
 
   // vSphere REST typically returns the session id as a JSON string.
   if (typeof result.data === 'string') return result.data;
+
+  // Some deployments wrap it (e.g. { "value": "..." }).
+  if (result.data && typeof result.data === 'object' && 'value' in (result.data as Record<string, unknown>)) {
+    const value = (result.data as Record<string, unknown>).value;
+    if (typeof value === 'string') return value;
+  }
+
+  debugLog('createSession.unexpected_response', {
+    data_type: typeof result.data,
+    keys: result.data && typeof result.data === 'object' ? Object.keys(result.data as Record<string, unknown>) : [],
+  });
   throw new Error('createSession returned unexpected response');
 }
 

@@ -108,8 +108,9 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
-- Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量、datastore 总容量（排除 NFS/NFS41/vSAN）、整机序列号、硬件厂商/型号、管理 IP）通过 vSphere SOAP（`/sdk` + vim25）采集；优先使用 `RetrievePropertiesEx`，若目标不支持会自动降级到 `RetrieveProperties`；管理 IP 优先取 `vmk0`/`vswif0`（或 portgroup 含 `Management`）的 IPv4；本地盘总量口径为 `config.storageDevice.scsiLun` 中 `lunType="disk"` 且有 `capacity` 的设备容量求和 + `config.storageDevice.nvmeTopology`（`HostNvmeNamespace.blockSize * capacityInBlocks`）求和（若目标不支持 `nvmeTopology` 将自动忽略）；datastore 总容量口径为 Host 的 `datastore` 列表对应 Datastore `summary.capacity` 求和（过滤 `summary.type in {NFS,NFS41,vsan}`）；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
+- Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量、datastore 总容量（排除 NFS/NFS41/vSAN）、整机序列号、硬件厂商/型号、管理 IP）通过 vSphere SOAP（`/sdk` + vim25）采集，并由 `collect_hosts` 模式写入；优先使用 `RetrievePropertiesEx`，若目标不支持会自动降级到 `RetrieveProperties`；管理 IP 优先取 `vmk0`/`vswif0`（或 portgroup 含 `Management`）的 IPv4；本地盘总量口径为 `config.storageDevice.scsiLun` 中 `lunType="disk"` 且有 `capacity` 的设备容量求和 + `config.storageDevice.nvmeTopology`（`HostNvmeNamespace.blockSize * capacityInBlocks`）求和（若目标不支持 `nvmeTopology` 将自动忽略）；datastore 总容量口径为 Host 的 `datastore` 列表对应 Datastore `summary.capacity` 求和（过滤 `summary.type in {NFS,NFS41,vsan}`）；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
 - 手动触发 Source Run 支持 `mode=detect`（探测模式），用于写入 `detectResult`（driver/target_version/capabilities 等元信息）。
+- vCenter Source 的调度/采集会拆成两条独立 Run：`collect_hosts`（仅 Host/Cluster + SOAP 详情）与 `collect_vms`（仅 VM + VM↔Host 关系）；两条 Run 独立执行/独立落库，任一失败不影响另一条。
 
 需求文档：
 
@@ -152,7 +153,8 @@ List of websites that started off with Next.js TypeScript Starter:
 环境变量（服务端）：
 
 - `DATABASE_URL`：PostgreSQL 连接串（Prisma 使用）
-- `ASSET_LEDGER_DEBUG`：debug 总开关（默认关闭）。开启后：worker 会回显插件 stderr；vCenter SOAP 会输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log`（`logs/` 已加入 `.gitignore`，请勿提交）。
+- `ASSET_LEDGER_DEBUG`：debug 总开关（默认关闭）。开启后：worker 会回显插件 stderr（用于排查插件启动/崩溃）。
+- `ASSET_LEDGER_VCENTER_DEBUG`：vCenter 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log` / `logs/vcenter-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。
 - `ASSET_LEDGER_ADMIN_PASSWORD`：首次启动用于初始化默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。
@@ -163,6 +165,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
 - `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）
 - `ASSET_LEDGER_PLUGIN_TIMEOUT_MS`：插件执行超时（默认 300000）
+- `ASSET_LEDGER_RUN_RECYCLE_AFTER_MS`：自动回收卡死的 Running Run（默认 900000；超过该时长仍未结束会被标记为 Failed，避免阻塞后续调度/手工触发）。
 
 生成示例：
 

@@ -32,8 +32,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const result = await prisma.$transaction(async (tx): Promise<TxResult> => {
     // Concurrency control: lock eligible sources in the group to avoid duplicate enqueue.
-    const sources = await tx.$queryRaw<Array<{ id: string; credentialId: string | null }>>`
-      SELECT id, "credentialId"
+    const sources = await tx.$queryRaw<Array<{ id: string; credentialId: string | null; sourceType: string }>>`
+      SELECT id, "credentialId", "sourceType"
       FROM "Source"
       WHERE "scheduleGroupId" = ${group.id}
         AND "deletedAt" IS NULL
@@ -42,7 +42,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     `;
 
     const skipped_missing_credential = sources.filter((s) => s.credentialId === null).length;
-    const eligibleSourceIds = sources.filter((s) => s.credentialId !== null).map((s) => s.id);
+    const eligibleSources = sources.filter((s) => s.credentialId !== null);
+    const eligibleSourceIds = eligibleSources.map((s) => s.id);
 
     if (eligibleSourceIds.length === 0) {
       return { queued: 0, skipped_active: 0, skipped_missing_credential, message: 'no eligible sources' };
@@ -50,28 +51,55 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const active = await tx.run.findMany({
       where: { sourceId: { in: eligibleSourceIds }, status: { in: ['Queued', 'Running'] } },
-      select: { sourceId: true },
-      distinct: ['sourceId'],
+      select: { sourceId: true, mode: true },
+      distinct: ['sourceId', 'mode'],
     });
-    const activeSet = new Set(active.map((r) => r.sourceId));
+    const activeSet = new Set(active.map((r) => `${r.sourceId}:${r.mode}`));
 
-    const toQueue = eligibleSourceIds.filter((sourceId) => !activeSet.has(sourceId));
+    const vcenterSources = eligibleSources.filter((s) => s.sourceType === 'vcenter');
+    const otherSources = eligibleSources.filter((s) => s.sourceType !== 'vcenter');
 
-    if (toQueue.length > 0) {
-      await tx.run.createMany({
-        data: toQueue.map((sourceId) => ({
-          sourceId,
-          scheduleGroupId: group.id,
-          triggerType: 'manual',
-          mode: 'collect',
-          status: 'Queued',
-        })),
-      });
-    }
+    const hostRuns = vcenterSources
+      .filter((s) => !activeSet.has(`${s.id}:collect_hosts`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'manual' as const,
+        mode: 'collect_hosts' as const,
+        status: 'Queued' as const,
+      }));
 
-    const queued = toQueue.length;
-    const skipped_active = activeSet.size;
-    const message = queued === 0 ? 'no eligible sources' : 'queued';
+    const vmRuns = vcenterSources
+      .filter((s) => !activeSet.has(`${s.id}:collect_vms`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'manual' as const,
+        mode: 'collect_vms' as const,
+        status: 'Queued' as const,
+      }));
+
+    const collectRuns = otherSources
+      .filter((s) => !activeSet.has(`${s.id}:collect`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'manual' as const,
+        mode: 'collect' as const,
+        status: 'Queued' as const,
+      }));
+
+    // Create in order so hosts runs are likely processed before vm runs.
+    if (hostRuns.length > 0) await tx.run.createMany({ data: hostRuns });
+    if (vmRuns.length > 0) await tx.run.createMany({ data: vmRuns });
+    if (collectRuns.length > 0) await tx.run.createMany({ data: collectRuns });
+
+    const queued = hostRuns.length + vmRuns.length + collectRuns.length;
+    const wanted = vcenterSources.length * 2 + otherSources.length;
+    const skipped_active = Math.max(0, wanted - queued);
+
+    const message =
+      queued === 0 ? (skipped_active > 0 ? 'all eligible sources have active runs' : 'no eligible sources') : 'queued';
 
     return { queued, skipped_active, skipped_missing_credential, message };
   });

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { logEvent } from '@/lib/logging/logger';
+import { recycleStaleRuns } from '@/lib/runs/recycle-stale-runs';
 import { getLocalParts, localDateToUtcDateOnly } from '@/lib/timezone';
 
 function log(message: string, extra?: Record<string, unknown>) {
@@ -47,7 +48,7 @@ async function enqueueDueGroups(now: Date) {
 
     const sources = await prisma.source.findMany({
       where: { enabled: true, scheduleGroupId: group.id, deletedAt: null, credentialId: { not: null } },
-      select: { id: true },
+      select: { id: true, sourceType: true },
     });
     const sourceIds = sources.map((s) => s.id);
 
@@ -60,26 +61,48 @@ async function enqueueDueGroups(now: Date) {
       continue;
     }
 
-    // Single-source single-flight (MVP): do not enqueue if an active run exists.
+    // Single-source single-flight (MVP): do not enqueue if an active run exists for the same (source, mode).
     const active = await prisma.run.findMany({
       where: { sourceId: { in: sourceIds }, status: { in: ['Queued', 'Running'] } },
-      select: { sourceId: true },
-      distinct: ['sourceId'],
+      select: { sourceId: true, mode: true },
+      distinct: ['sourceId', 'mode'],
     });
-    const activeSet = new Set(active.map((r) => r.sourceId));
+    const activeSet = new Set(active.map((r) => `${r.sourceId}:${r.mode}`));
 
-    const toQueue = sourceIds.filter((id) => !activeSet.has(id));
+    const vcenterSources = sources.filter((s) => s.sourceType === 'vcenter');
+    const otherSources = sources.filter((s) => s.sourceType !== 'vcenter');
 
-    if (toQueue.length > 0) {
-      await prisma.run.createMany({
-        data: toQueue.map((sourceId) => ({
-          sourceId,
-          scheduleGroupId: group.id,
-          triggerType: 'schedule',
-          mode: 'collect',
-        })),
-      });
-    }
+    const hostRuns = vcenterSources
+      .filter((s) => !activeSet.has(`${s.id}:collect_hosts`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'schedule' as const,
+        mode: 'collect_hosts' as const,
+      }));
+
+    const vmRuns = vcenterSources
+      .filter((s) => !activeSet.has(`${s.id}:collect_vms`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'schedule' as const,
+        mode: 'collect_vms' as const,
+      }));
+
+    const collectRuns = otherSources
+      .filter((s) => !activeSet.has(`${s.id}:collect`))
+      .map((s) => ({
+        sourceId: s.id,
+        scheduleGroupId: group.id,
+        triggerType: 'schedule' as const,
+        mode: 'collect' as const,
+      }));
+
+    // Create in order so hosts runs are likely processed before vm runs.
+    if (hostRuns.length > 0) await prisma.run.createMany({ data: hostRuns });
+    if (vmRuns.length > 0) await prisma.run.createMany({ data: vmRuns });
+    if (collectRuns.length > 0) await prisma.run.createMany({ data: collectRuns });
 
     logEvent({
       level: 'info',
@@ -89,8 +112,13 @@ async function enqueueDueGroups(now: Date) {
       timezone: group.timezone,
       local_date: local.localDate,
       hhmm: local.hhmm,
-      queued: toQueue.length,
-      skipped_active: activeSet.size,
+      queued: hostRuns.length + vmRuns.length + collectRuns.length,
+      queued_by_mode: { collect_hosts: hostRuns.length, collect_vms: vmRuns.length, collect: collectRuns.length },
+      skipped_active_by_mode: {
+        collect_hosts: vcenterSources.length - hostRuns.length,
+        collect_vms: vcenterSources.length - vmRuns.length,
+        collect: otherSources.length - collectRuns.length,
+      },
     });
   }
 }
@@ -100,6 +128,21 @@ async function main() {
 
   const tick = async () => {
     try {
+      const recycleRes = await recycleStaleRuns({
+        prisma,
+        now: new Date(),
+        staleAfterMs: serverEnv.ASSET_LEDGER_RUN_RECYCLE_AFTER_MS,
+      });
+      if (recycleRes.recycled > 0) {
+        logEvent({
+          level: 'info',
+          service: 'scheduler',
+          event_type: 'run.recycled',
+          recycled: recycleRes.recycled,
+          stale_before: recycleRes.staleBefore.toISOString(),
+        });
+      }
+
       await enqueueDueGroups(new Date());
     } catch (err) {
       log('tick failed', { error: err instanceof Error ? err.message : String(err) });

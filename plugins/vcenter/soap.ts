@@ -22,11 +22,12 @@ import { XMLParser } from 'fast-xml-parser';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SOAP_DEBUG = toBooleanValue(process.env.ASSET_LEDGER_DEBUG) ?? false;
+const VCENTER_DEBUG =
+  toBooleanValue(process.env.ASSET_LEDGER_VCENTER_DEBUG) ?? toBooleanValue(process.env.ASSET_LEDGER_DEBUG) ?? false;
 
 // DEBUG: 写入调试日志到文件
-function debugLog(hostId: string, message: string, data?: unknown) {
-  if (!SOAP_DEBUG) return;
+function debugLog(hostId: string, message: string, data?: unknown, meta?: { runId?: string }) {
+  if (!VCENTER_DEBUG) return;
   try {
     const logsDir = join(process.cwd(), 'logs');
     mkdirSync(logsDir, { recursive: true });
@@ -35,6 +36,7 @@ function debugLog(hostId: string, message: string, data?: unknown) {
       ts: new Date().toISOString(),
       level: 'debug',
       component: 'vcenter.soap',
+      ...(meta?.runId ? { run_id: meta.runId } : {}),
       host_id: hostId,
       message,
       ...(data !== undefined ? { data } : {}),
@@ -432,8 +434,9 @@ function extractCookie(headers: Headers): string | undefined {
   return setCookie.split(';')[0];
 }
 
-function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, HostSoapDetails> {
+function parseHostSoapDetailsFromObjectContents(objects: unknown, runId?: string): Map<string, HostSoapDetails> {
   const out = new Map<string, HostSoapDetails>();
+  const meta = runId ? { runId } : undefined;
 
   for (const object of toArray(objects as unknown)) {
     if (!object || typeof object !== 'object') continue;
@@ -477,11 +480,11 @@ function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, H
         if (!details.systemSerialNumber) {
           details.systemSerialNumber = extractSystemSerialNumberFromOtherIdentifyingInfo(val);
         }
-        debugLog(hostId, name, { shape: summarizeValue(val), system_serial_number: details.systemSerialNumber });
+        debugLog(hostId, name, { shape: summarizeValue(val), system_serial_number: details.systemSerialNumber }, meta);
       } else if (name === 'datastore') {
         const datastoreIds = parseDatastoreIds(val);
         if (datastoreIds.length > 0) details.datastoreIds = datastoreIds;
-        debugLog(hostId, 'datastore', { shape: summarizeValue(val), datastore_ids_count: datastoreIds.length });
+        debugLog(hostId, 'datastore', { shape: summarizeValue(val), datastore_ids_count: datastoreIds.length }, meta);
       } else if (name === 'config.storageDevice.scsiLun') {
         const bytes = parseDiskTotalBytes(val);
         // DEBUG: 写入 scsiLun 原始数据 + 解析结果（用于排查不同 ESXi 版本的数据结构差异）
@@ -489,7 +492,7 @@ function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, H
           shape: summarizeValue(val),
           disk_total_bytes: bytes,
           raw: val,
-        });
+        }, meta);
         addDiskTotalBytes(details, bytes);
       } else if (name === 'config.storageDevice.nvmeTopology') {
         const bytes = parseNvmeTotalBytes(val);
@@ -498,12 +501,12 @@ function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, H
           shape: summarizeValue(val),
           disk_total_bytes: bytes,
           raw: val,
-        });
+        }, meta);
         addDiskTotalBytes(details, bytes);
       } else if (name === 'config.network.vnic' || name === 'config.network.consoleVnic') {
         const parsed = parseHostIps(val);
         // DEBUG: 写入 vNIC 原始数据（探索可采集字段）+ 解析结果（IP/management IP）
-        debugLog(hostId, name, { shape: summarizeValue(val), parsed, raw: val });
+        debugLog(hostId, name, { shape: summarizeValue(val), parsed, raw: val }, meta);
         ipCandidates.push(parsed);
       }
     }
@@ -528,7 +531,10 @@ function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, H
 
     out.set(hostId, details);
 
-    debugLog(hostId, 'host.soap.details', {
+    debugLog(
+      hostId,
+      'host.soap.details',
+      {
       esxi_version: details.esxiVersion,
       esxi_build: details.esxiBuild,
       disk_total_bytes: details.diskTotalBytes,
@@ -536,29 +542,31 @@ function parseHostSoapDetailsFromObjectContents(objects: unknown): Map<string, H
       system_serial_number: details.systemSerialNumber,
       management_ip: details.managementIp,
       ip_addresses_count: details.ipAddresses?.length ?? 0,
-    });
+      },
+      meta,
+    );
   }
 
   return out;
 }
 
-export function parseRetrievePropertiesExHostResult(xml: string): Map<string, HostSoapDetails> {
+export function parseRetrievePropertiesExHostResult(xml: string, runId?: string): Map<string, HostSoapDetails> {
   const parsed = parser.parse(xml) as Record<string, unknown>;
   const envelope = parsed.Envelope as Record<string, unknown> | undefined;
   const body = envelope?.Body as Record<string, unknown> | undefined;
 
   const response = body?.RetrievePropertiesExResponse as Record<string, unknown> | undefined;
   const returnval = response?.returnval as Record<string, unknown> | undefined;
-  return parseHostSoapDetailsFromObjectContents(returnval?.objects);
+  return parseHostSoapDetailsFromObjectContents(returnval?.objects, runId);
 }
 
-export function parseRetrievePropertiesHostResult(xml: string): Map<string, HostSoapDetails> {
+export function parseRetrievePropertiesHostResult(xml: string, runId?: string): Map<string, HostSoapDetails> {
   const parsed = parser.parse(xml) as Record<string, unknown>;
   const envelope = parsed.Envelope as Record<string, unknown> | undefined;
   const body = envelope?.Body as Record<string, unknown> | undefined;
 
   const response = body?.RetrievePropertiesResponse as Record<string, unknown> | undefined;
-  return parseHostSoapDetailsFromObjectContents(response?.returnval);
+  return parseHostSoapDetailsFromObjectContents(response?.returnval, runId);
 }
 
 type DatastoreSoapSummary = {
@@ -626,6 +634,7 @@ export async function collectHostSoapDetails(input: {
   username: string;
   password: string;
   hostIds: string[];
+  runId?: string;
   timeoutMs?: number;
 }): Promise<Map<string, HostSoapDetails>> {
   const hostIds = input.hostIds.filter((id) => id.trim().length > 0);
@@ -633,13 +642,14 @@ export async function collectHostSoapDetails(input: {
 
   const timeoutMs = input.timeoutMs ?? 30_000;
   const sdkEndpoint = toSdkEndpoint(input.endpoint);
+  const meta = input.runId ? { runId: input.runId } : undefined;
 
   debugLog('global', 'collectHostSoapDetails.start', {
     sdk_endpoint: sdkEndpoint,
     timeout_ms: timeoutMs,
     host_ids_count: hostIds.length,
     host_ids_sample: hostIds.slice(0, 10),
-  });
+  }, meta);
 
   // 1) Retrieve service content (SessionManager + PropertyCollector).
   const serviceContentRes = await soapPost({
@@ -655,7 +665,7 @@ export async function collectHostSoapDetails(input: {
     status: serviceContentRes.status,
     body_length: serviceContentRes.bodyText.length,
     body_excerpt: excerpt(serviceContentRes.bodyText),
-  });
+  }, meta);
   if (serviceContentRes.status < 200 || serviceContentRes.status >= 300) {
     throw makeHttpError({
       op: 'RetrieveServiceContent',
@@ -667,7 +677,7 @@ export async function collectHostSoapDetails(input: {
   debugLog('global', 'RetrieveServiceContent.parsed', {
     session_manager: sessionManager,
     property_collector: propertyCollector,
-  });
+  }, meta);
 
   // 2) Login and store session cookie.
   const loginRes = await soapPost({
@@ -685,12 +695,12 @@ export async function collectHostSoapDetails(input: {
     status: loginRes.status,
     body_length: loginRes.bodyText.length,
     body_excerpt: excerpt(loginRes.bodyText),
-  });
+  }, meta);
   if (loginRes.status < 200 || loginRes.status >= 300) {
     throw makeHttpError({ op: 'Login', status: loginRes.status, bodyText: loginRes.bodyText });
   }
   const cookie = extractCookie(loginRes.headers);
-  debugLog('global', 'Login.cookie', { has_cookie: !!cookie });
+  debugLog('global', 'Login.cookie', { has_cookie: !!cookie }, meta);
   if (!cookie) throw new Error('Login did not return session cookie');
 
   // 3) Retrieve host properties in one batch.
@@ -785,7 +795,7 @@ export async function collectHostSoapDetails(input: {
         .join('');
 
       const requestMsg = preferEx ? 'RetrievePropertiesEx' : 'RetrieveProperties';
-      debugLog('global', 'DatastoreSummary.request', { op: requestMsg, datastores_count: datastoreIdsAll.length });
+      debugLog('global', 'DatastoreSummary.request', { op: requestMsg, datastores_count: datastoreIdsAll.length }, meta);
 
       let dsSummaries: Map<string, DatastoreSoapSummary> | null = null;
 
@@ -796,7 +806,7 @@ export async function collectHostSoapDetails(input: {
           status: dsRes.status,
           body_length: dsRes.bodyText.length,
           body_excerpt: excerpt(dsRes.bodyText),
-        });
+        }, meta);
         if (dsRes.status >= 200 && dsRes.status < 300) {
           dsSummaries = parseRetrievePropertiesExDatastoreResult(dsRes.bodyText);
         } else {
@@ -809,7 +819,7 @@ export async function collectHostSoapDetails(input: {
           debugLog('global', 'DatastoreSummary.fault', {
             ex_unsupported: exUnsupported,
             fault_string_excerpt: faultString ? excerpt(faultString) : undefined,
-          });
+          }, meta);
 
           if (exUnsupported) {
             const legacyRes = await retrieveProperties(dsPropSetXml, dsObjectSetXml);
@@ -818,7 +828,7 @@ export async function collectHostSoapDetails(input: {
               status: legacyRes.status,
               body_length: legacyRes.bodyText.length,
               body_excerpt: excerpt(legacyRes.bodyText),
-            });
+            }, meta);
             if (legacyRes.status >= 200 && legacyRes.status < 300) {
               dsSummaries = parseRetrievePropertiesDatastoreResult(legacyRes.bodyText);
             } else {
@@ -843,7 +853,7 @@ export async function collectHostSoapDetails(input: {
           status: dsRes.status,
           body_length: dsRes.bodyText.length,
           body_excerpt: excerpt(dsRes.bodyText),
-        });
+        }, meta);
         if (dsRes.status >= 200 && dsRes.status < 300) {
           dsSummaries = parseRetrievePropertiesDatastoreResult(dsRes.bodyText);
         } else {
@@ -892,22 +902,22 @@ export async function collectHostSoapDetails(input: {
           missing_summary_count: missingSummaryCount,
           missing_capacity_count: missingCapacityCount,
           datastore_total_bytes: details.datastoreTotalBytes,
-        });
+        }, meta);
       }
     } catch (err) {
-      debugLog('global', 'DatastoreSummary.error', { cause: err instanceof Error ? err.message : String(err) });
+      debugLog('global', 'DatastoreSummary.error', { cause: err instanceof Error ? err.message : String(err) }, meta);
     }
   };
 
-  debugLog('global', 'RetrievePropertiesEx.request', { host_ids_count: hostIds.length, path_set: pathSet });
+  debugLog('global', 'RetrievePropertiesEx.request', { host_ids_count: hostIds.length, path_set: pathSet }, meta);
   const retrieveExRes = await retrievePropertiesEx(hostPropSetXml, hostObjectSetXml);
   debugLog('global', 'RetrievePropertiesEx.response', {
     status: retrieveExRes.status,
     body_length: retrieveExRes.bodyText.length,
     body_excerpt: excerpt(retrieveExRes.bodyText),
-  });
+  }, meta);
   if (retrieveExRes.status >= 200 && retrieveExRes.status < 300) {
-    const details = parseRetrievePropertiesExHostResult(retrieveExRes.bodyText);
+    const details = parseRetrievePropertiesExHostResult(retrieveExRes.bodyText, input.runId);
     await attachDatastoreTotals(details, true);
     debugLog('global', 'collectHostSoapDetails.success', {
       op: 'RetrievePropertiesEx',
@@ -918,7 +928,7 @@ export async function collectHostSoapDetails(input: {
         .filter(([, d]) => d.diskTotalBytes === undefined)
         .map(([id]) => id)
         .slice(0, 10),
-    });
+    }, meta);
     return details;
   }
 
@@ -933,17 +943,17 @@ export async function collectHostSoapDetails(input: {
   debugLog('global', 'RetrievePropertiesEx.fault', {
     ex_unsupported: exUnsupported,
     fault_string_excerpt: faultString ? excerpt(faultString) : undefined,
-  });
+  }, meta);
   if (exUnsupported) {
-    debugLog('global', 'RetrieveProperties.request', { host_ids_count: hostIds.length, path_set: pathSet });
+    debugLog('global', 'RetrieveProperties.request', { host_ids_count: hostIds.length, path_set: pathSet }, meta);
     const retrieveRes = await retrieveProperties(hostPropSetXml, hostObjectSetXml);
     debugLog('global', 'RetrieveProperties.response', {
       status: retrieveRes.status,
       body_length: retrieveRes.bodyText.length,
       body_excerpt: excerpt(retrieveRes.bodyText),
-    });
+    }, meta);
     if (retrieveRes.status >= 200 && retrieveRes.status < 300) {
-      const details = parseRetrievePropertiesHostResult(retrieveRes.bodyText);
+      const details = parseRetrievePropertiesHostResult(retrieveRes.bodyText, input.runId);
       await attachDatastoreTotals(details, false);
       debugLog('global', 'collectHostSoapDetails.success', {
         op: 'RetrieveProperties',
@@ -954,7 +964,7 @@ export async function collectHostSoapDetails(input: {
           .filter(([, d]) => d.diskTotalBytes === undefined)
           .map(([id]) => id)
           .slice(0, 10),
-      });
+      }, meta);
       return details;
     }
 
@@ -963,15 +973,15 @@ export async function collectHostSoapDetails(input: {
       debugLog('global', 'RetrieveProperties.retry_no_nvme.request', {
         host_ids_count: hostIds.length,
         path_set: pathSetNoNvme,
-      });
+      }, meta);
       const retryRes = await retrieveProperties(hostPropSetNoNvmeXml, hostObjectSetXml);
       debugLog('global', 'RetrieveProperties.retry_no_nvme.response', {
         status: retryRes.status,
         body_length: retryRes.bodyText.length,
         body_excerpt: excerpt(retryRes.bodyText),
-      });
+      }, meta);
       if (retryRes.status >= 200 && retryRes.status < 300) {
-        const details = parseRetrievePropertiesHostResult(retryRes.bodyText);
+        const details = parseRetrievePropertiesHostResult(retryRes.bodyText, input.runId);
         await attachDatastoreTotals(details, false);
         debugLog('global', 'collectHostSoapDetails.success', {
           op: 'RetrieveProperties (no nvmeTopology)',
@@ -982,7 +992,7 @@ export async function collectHostSoapDetails(input: {
             .filter(([, d]) => d.diskTotalBytes === undefined)
             .map(([id]) => id)
             .slice(0, 10),
-        });
+        }, meta);
         return details;
       }
       throw makeHttpError({ op: 'RetrieveProperties', status: retryRes.status, bodyText: retryRes.bodyText });
@@ -996,15 +1006,15 @@ export async function collectHostSoapDetails(input: {
     debugLog('global', 'RetrievePropertiesEx.retry_no_nvme.request', {
       host_ids_count: hostIds.length,
       path_set: pathSetNoNvme,
-    });
+    }, meta);
     const retryRes = await retrievePropertiesEx(hostPropSetNoNvmeXml, hostObjectSetXml);
     debugLog('global', 'RetrievePropertiesEx.retry_no_nvme.response', {
       status: retryRes.status,
       body_length: retryRes.bodyText.length,
       body_excerpt: excerpt(retryRes.bodyText),
-    });
+    }, meta);
     if (retryRes.status >= 200 && retryRes.status < 300) {
-      const details = parseRetrievePropertiesExHostResult(retryRes.bodyText);
+      const details = parseRetrievePropertiesExHostResult(retryRes.bodyText, input.runId);
       await attachDatastoreTotals(details, true);
       debugLog('global', 'collectHostSoapDetails.success', {
         op: 'RetrievePropertiesEx (no nvmeTopology)',
@@ -1015,7 +1025,7 @@ export async function collectHostSoapDetails(input: {
           .filter(([, d]) => d.diskTotalBytes === undefined)
           .map(([id]) => id)
           .slice(0, 10),
-      });
+      }, meta);
       return details;
     }
     throw makeHttpError({ op: 'RetrievePropertiesEx', status: retryRes.status, bodyText: retryRes.bodyText });

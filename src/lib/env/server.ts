@@ -17,6 +17,8 @@ export const serverEnv = createEnv({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
     ASSET_LEDGER_DEBUG: zEnvBool,
+    // vCenter collector debug logs (written to ./logs; may contain sensitive infrastructure data)
+    ASSET_LEDGER_VCENTER_DEBUG: zEnvBool,
 
     // Auth / security (MVP: optional at runtime; production should set them)
     ASSET_LEDGER_ADMIN_PASSWORD: z.string().min(1).optional(),
@@ -29,6 +31,8 @@ export const serverEnv = createEnv({
     ASSET_LEDGER_WORKER_POLL_MS: z.coerce.number().int().positive().default(2_000),
     ASSET_LEDGER_WORKER_BATCH_SIZE: z.coerce.number().int().positive().default(1),
     ASSET_LEDGER_PLUGIN_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+    // Recycle `Running` runs when they exceed this age (protects against worker crashes leaving runs stuck forever).
+    ASSET_LEDGER_RUN_RECYCLE_AFTER_MS: z.coerce.number().int().positive().default(900_000),
 
     ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).default('plugins/vcenter/index.ts'),
   },

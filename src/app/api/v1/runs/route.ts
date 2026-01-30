@@ -6,7 +6,7 @@ import { fail, okPaginated } from '@/lib/http/response';
 import { RunMode, RunStatus, RunTriggerType } from '@prisma/client';
 
 const SUPPORTED_STATUS = new Set<RunStatus>(['Queued', 'Running', 'Succeeded', 'Failed', 'Cancelled']);
-const SUPPORTED_MODE = new Set<RunMode>(['collect', 'detect', 'healthcheck']);
+const SUPPORTED_MODE = new Set<RunMode>(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const SUPPORTED_TRIGGER = new Set<RunTriggerType>(['manual', 'schedule']);
 
 export async function GET(request: Request) {
@@ -61,8 +61,13 @@ export async function GET(request: Request) {
     }),
   ]);
 
+  const now = Date.now();
   const data = runs.map((run) => {
-    const durationMs = run.startedAt && run.finishedAt ? run.finishedAt.getTime() - run.startedAt.getTime() : null;
+    const durationMs = run.startedAt
+      ? run.finishedAt
+        ? run.finishedAt.getTime() - run.startedAt.getTime()
+        : now - run.startedAt.getTime()
+      : null;
     const warningsCount = Array.isArray(run.warnings) ? run.warnings.length : 0;
     const errorsCount = Array.isArray(run.errors) ? run.errors.length : 0;
     return {

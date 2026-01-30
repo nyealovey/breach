@@ -83,6 +83,51 @@ export async function ingestCollectRun(args: {
 
       const sourceRecordIdsByAssetUuid = new Map<string, string>();
 
+      const externalLinkCache = new Map<
+        string,
+        { linkId: string; assetUuid: string; assetDisplayName: string | null; assetType: AssetType } | null
+      >();
+
+      const resolveLink = async (input: {
+        external_kind: AssetType;
+        external_id: string;
+      }): Promise<{
+        linkId: string;
+        assetUuid: string;
+        assetDisplayName: string | null;
+        assetType: AssetType;
+      } | null> => {
+        const k = key(input.external_kind, input.external_id);
+
+        const local = linksByExternal.get(k);
+        if (local) return local;
+
+        if (externalLinkCache.has(k)) return externalLinkCache.get(k) ?? null;
+
+        const link = await tx.assetSourceLink.findUnique({
+          where: {
+            sourceId_externalKind_externalId: {
+              sourceId: args.sourceId,
+              externalKind: input.external_kind,
+              externalId: input.external_id,
+            },
+          },
+          include: { asset: true },
+        });
+
+        const resolved = link
+          ? {
+              linkId: link.id,
+              assetUuid: link.assetUuid,
+              assetDisplayName: link.asset.displayName,
+              assetType: link.asset.assetType,
+            }
+          : null;
+
+        externalLinkCache.set(k, resolved);
+        return resolved;
+      };
+
       for (const entry of compressedAssets) {
         const { asset } = entry;
         const displayName = deriveAssetDisplayName(asset.normalized);
@@ -158,8 +203,8 @@ export async function ingestCollectRun(args: {
       for (const entry of compressedRelations) {
         const { relation } = entry;
 
-        const fromLink = linksByExternal.get(key(relation.from.external_kind, relation.from.external_id));
-        const toLink = linksByExternal.get(key(relation.to.external_kind, relation.to.external_id));
+        const fromLink = await resolveLink(relation.from);
+        const toLink = await resolveLink(relation.to);
         if (!fromLink || !toLink) {
           warnings.push({
             type: 'relation.skipped_missing_endpoint',

@@ -22,6 +22,8 @@ enum RunTriggerType {
 
 enum RunMode {
   collect
+  collect_hosts
+  collect_vms
   detect
   healthcheck
 }

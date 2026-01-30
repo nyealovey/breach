@@ -60,7 +60,7 @@ const AssetListItemSchema = z.object({
 });
 
 const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
-const RunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
+const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 
 const CredentialListItemSchema = z.object({
   credentialId: z.string(),

@@ -467,6 +467,96 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(parsed.detect?.driver).toBe('vcenter@v1');
   });
 
+  it('collect_hosts returns host + cluster assets + relations', async () => {
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_1',
+        source_type: 'vcenter',
+        config: { endpoint },
+        credential: { username: 'user', password: 'pass' },
+      },
+      request: { run_id: 'run_hosts', mode: 'collect_hosts', now: new Date().toISOString() },
+    };
+
+    const result = await runCollector(request);
+    expect(result.exitCode).toBe(0);
+
+    const parsed = JSON.parse(result.stdout) as {
+      schema_version: string;
+      assets: Array<{ external_kind: string; external_id: string; normalized: { version: string } }>;
+      relations: unknown[];
+      stats: { assets: number; relations: number; inventory_complete: boolean; warnings: unknown[] };
+      errors?: unknown[];
+    };
+
+    expect(parsed.schema_version).toBe('collector-response-v1');
+    expect(parsed.errors ?? []).toEqual([]);
+    expect(parsed.assets).toHaveLength(2);
+    expect(parsed.relations).toHaveLength(1);
+    expect(parsed.stats).toEqual({ assets: 2, relations: 1, inventory_complete: true, warnings: [] });
+
+    const host = parsed.assets.find((a) => a.external_kind === 'host' && a.external_id === 'host-1');
+    expect(host).toBeTruthy();
+    expect(host?.normalized).toMatchObject({
+      os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
+      hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+      identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+      network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+      attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
+    });
+  });
+
+  it('collect_vms returns vm assets + vm-host relations', async () => {
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_1',
+        source_type: 'vcenter',
+        config: { endpoint },
+        credential: { username: 'user', password: 'pass' },
+      },
+      request: { run_id: 'run_vms', mode: 'collect_vms', now: new Date().toISOString() },
+    };
+
+    const result = await runCollector(request);
+    expect(result.exitCode).toBe(0);
+
+    const parsed = JSON.parse(result.stdout) as {
+      schema_version: string;
+      assets: Array<{ external_kind: string; external_id: string; normalized: { version: string } }>;
+      relations: Array<{
+        type: string;
+        from: { external_kind: string; external_id: string };
+        to: { external_kind: string; external_id: string };
+      }>;
+      stats: { assets: number; relations: number; inventory_complete: boolean; warnings: unknown[] };
+      errors?: unknown[];
+    };
+
+    expect(parsed.schema_version).toBe('collector-response-v1');
+    expect(parsed.errors ?? []).toEqual([]);
+    expect(parsed.assets).toHaveLength(1);
+    expect(parsed.relations).toHaveLength(2);
+    expect(parsed.stats).toEqual({ assets: 1, relations: 2, inventory_complete: true, warnings: [] });
+
+    expect(parsed.assets[0]).toMatchObject({ external_kind: 'vm', external_id: 'vm-1' });
+    expect(parsed.relations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runs_on',
+          from: { external_kind: 'vm', external_id: 'vm-1' },
+          to: { external_kind: 'host', external_id: 'host-1' },
+        }),
+        expect.objectContaining({
+          type: 'hosts_vm',
+          from: { external_kind: 'host', external_id: 'host-1' },
+          to: { external_kind: 'vm', external_id: 'vm-1' },
+        }),
+      ]),
+    );
+  });
+
   it('collect returns assets + relations', async () => {
     const request = {
       schema_version: 'collector-request-v1',

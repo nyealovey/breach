@@ -39,6 +39,12 @@ describe('POST /api/v1/sources/:id/runs', () => {
     });
     const res = await POST(req, { params: Promise.resolve({ id: 'src_1' }) } as any);
 
+    expect(prisma.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ sourceId: 'src_1', mode: 'detect' }),
+      }),
+    );
+
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data).toMatchObject({ sourceId: 'src_1', mode: 'detect', triggerType: 'manual', status: 'Queued' });
