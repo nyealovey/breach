@@ -19,7 +19,7 @@
     - `os.version` / `os.fingerprint` / `hardware.cpu_count` / `hardware.memory_bytes`：
       - 分母 = SOAP 登录成功且该 Host 可读取到 `summary.*` 的 Host。
     - `attributes.disk_total_bytes`：
-      - 分母 = 可判定 `HostScsiDisk.localDisk` 的 Host（无法判定者允许缺失并告警，不纳入分母）。
+      - 分母 = 可判定本地盘容量口径的 Host（可解析 `HostScsiDisk.localDisk` 或 `HostNvmeNamespace`；无法判定者允许缺失并告警，不纳入分母）。
 
 ### Feature Overview
 
@@ -46,7 +46,7 @@
 
 3. **通过 SOAP 采集 Host（ESXi）的“本地物理盘总量”（仅 total，不采集 used）**
 
-- 口径：只统计 **本地物理盘**（`HostScsiDisk.localDisk == true`）的容量总和。
+- 口径：只统计 **本地物理盘** 的容量总和：`HostScsiDisk.localDisk == true` 的容量之和 + `HostNvmeNamespace(blockSize * capacityInBlocks)` 之和。
 - 不做 fallback：若无法读取/无法判定本地盘，则该 Host 的 `disk_total_bytes` 视为缺失（UI 显示 `-`，并记录 warning）。
 
 4. **资产列表（/assets）展示对齐**
@@ -128,7 +128,7 @@
    - CPU/内存：`summary.hardware.numCpuCores/memorySize` 与建议的 CPU 明细字段
 4. 再批量读取（或同批次读取）本地物理盘信息：
    - 读取 `config.storageDevice.scsiLun`（或等价可获得 `HostScsiDisk` 的路径）
-   - 仅统计 `HostScsiDisk.localDisk == true` 的容量之和，写入 `attributes.disk_total_bytes`
+   - 仅统计 `HostScsiDisk.localDisk == true` 的容量之和 + `HostNvmeNamespace(blockSize * capacityInBlocks)` 之和，写入 `attributes.disk_total_bytes`
 5. 将结果回填到对应 Host 的 normalized 中，最终由核心 ingest 写入 canonical 快照。
 
 ### UI & API（展示与搜索）

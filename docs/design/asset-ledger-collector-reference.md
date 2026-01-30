@@ -177,17 +177,17 @@ GET /api/vcenter/vm?hosts={host_id}
 
 **HostSystem 字段映射到 normalized-v1**：
 
-| HostSystem（SOAP）字段                                                  | normalized-v1 字段            | 说明                                                              |
-| ----------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
-| `summary.config.product.version`                                        | `os.version`                  | 必采；列表展示 `ESXi {version}`                                   |
-| `summary.config.product.build`                                          | `os.fingerprint`              | 必采必落库；**Host build 本期不用于搜索/展示**                    |
-| `summary.hardware.numCpuCores`                                          | `hardware.cpu_count`          | 必采（核心数）                                                    |
-| `summary.hardware.memorySize`                                           | `hardware.memory_bytes`       | 必采（bytes）                                                     |
-| `summary.hardware.cpuModel`                                             | `attributes.cpu_model`        | 可选                                                              |
-| `summary.hardware.cpuMhz`                                               | `attributes.cpu_mhz`          | 可选                                                              |
-| `summary.hardware.numCpuPkgs`                                           | `attributes.cpu_packages`     | 可选                                                              |
-| `summary.hardware.numCpuThreads`                                        | `attributes.cpu_threads`      | 可选                                                              |
-| `config.storageDevice.scsiLun`（HostScsiDisk.localDisk==true 容量求和） | `attributes.disk_total_bytes` | 必采（仅本地物理盘 total，不采集 used；无法判定则缺失并 warning） |
+| HostSystem（SOAP）字段                                                                                                                                                 | normalized-v1 字段            | 说明                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `summary.config.product.version`                                                                                                                                       | `os.version`                  | 必采；列表展示 `ESXi {version}`                                   |
+| `summary.config.product.build`                                                                                                                                         | `os.fingerprint`              | 必采必落库；**Host build 本期不用于搜索/展示**                    |
+| `summary.hardware.numCpuCores`                                                                                                                                         | `hardware.cpu_count`          | 必采（核心数）                                                    |
+| `summary.hardware.memorySize`                                                                                                                                          | `hardware.memory_bytes`       | 必采（bytes）                                                     |
+| `summary.hardware.cpuModel`                                                                                                                                            | `attributes.cpu_model`        | 可选                                                              |
+| `summary.hardware.cpuMhz`                                                                                                                                              | `attributes.cpu_mhz`          | 可选                                                              |
+| `summary.hardware.numCpuPkgs`                                                                                                                                          | `attributes.cpu_packages`     | 可选                                                              |
+| `summary.hardware.numCpuThreads`                                                                                                                                       | `attributes.cpu_threads`      | 可选                                                              |
+| `config.storageDevice.scsiLun`（HostScsiDisk.localDisk==true 容量求和） + `config.storageDevice.nvmeTopology`（HostNvmeNamespace: blockSize \* capacityInBlocks 求和） | `attributes.disk_total_bytes` | 必采（仅本地物理盘 total，不采集 used；无法判定则缺失并 warning） |
 
 **约束建议**：
 

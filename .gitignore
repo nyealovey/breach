@@ -48,3 +48,6 @@ yarn-error.log*
 .bun-tmp/
 .tmp/
 tmp/
+
+# local logs (may contain sensitive debug data)
+logs/

@@ -246,6 +246,11 @@ async function processRun(run: Run): Promise<ProcessResult> {
     timeoutMs: serverEnv.ASSET_LEDGER_PLUGIN_TIMEOUT_MS,
   });
 
+  // DEBUG: 仅在 debug 开关开启时回显插件 stderr（避免污染常规日志）
+  if (serverEnv.ASSET_LEDGER_DEBUG && stderr.trim()) {
+    console.error(`[Worker DEBUG] Plugin stderr for run ${run.id}:\n${stderr}`);
+  }
+
   if (spawnError) {
     const error: AppError = {
       code: ErrorCode.PLUGIN_EXEC_FAILED,

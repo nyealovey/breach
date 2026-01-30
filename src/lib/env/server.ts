@@ -2,10 +2,21 @@ import { z } from 'zod/v4';
 
 import { createEnv } from '@t3-oss/env-nextjs';
 
+const zEnvBool = z
+  .string()
+  .optional()
+  .transform((v) => (v ?? '').trim().toLowerCase())
+  .refine((v) => v === '' || v === 'true' || v === 'false' || v === '1' || v === '0', {
+    message: 'must be one of true/false/1/0',
+  })
+  .transform((v) => v === 'true' || v === '1');
+
 export const serverEnv = createEnv({
   server: {
     DATABASE_URL: z.string().min(1),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+
+    ASSET_LEDGER_DEBUG: zEnvBool,
 
     // Auth / security (MVP: optional at runtime; production should set them)
     ASSET_LEDGER_ADMIN_PASSWORD: z.string().min(1).optional(),

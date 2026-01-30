@@ -36,6 +36,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   let endpoint = '';
   let soapFail = false;
   let soapRetrievePropertiesExUnsupported = false;
+  let soapNvmeTopologyUnsupported = false;
   let soapLoginCookie = 'vmware_soap_session="soap-123"';
   const server = createServer((req, res) => {
     const url = req.url ?? '';
@@ -127,6 +128,20 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           return;
         }
 
+        if (soapNvmeTopologyUnsupported && body.includes('RetrievePropertiesEx') && body.includes('nvmeTopology')) {
+          res.statusCode = 500;
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>ServerFaultCode</faultcode>
+      <faultstring>InvalidProperty: config.storageDevice.nvmeTopology</faultstring>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
         if (body.includes('RetrievePropertiesEx')) {
           // Provide one host worth of properties.
           res.end(`<?xml version="1.0" encoding="UTF-8"?>
@@ -155,10 +170,10 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           <propSet>
             <name>config.storageDevice.scsiLun</name>
             <val>
-              <HostScsiDisk>
-                <localDisk>true</localDisk>
+              <ScsiLun>
+                <lunType>disk</lunType>
                 <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
-              </HostScsiDisk>
+              </ScsiLun>
             </val>
           </propSet>
         </objects>
@@ -196,10 +211,10 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         <propSet>
           <name>config.storageDevice.scsiLun</name>
           <val>
-            <HostScsiDisk>
-              <localDisk>true</localDisk>
+            <ScsiLun>
+              <lunType>disk</lunType>
               <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
-            </HostScsiDisk>
+            </ScsiLun>
           </val>
         </propSet>
       </returnval>
@@ -455,6 +470,51 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       });
     } finally {
       soapRetrievePropertiesExUnsupported = false;
+    }
+  });
+
+  it('collect retries without nvmeTopology when the property is unsupported', async () => {
+    soapNvmeTopologyUnsupported = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_2_nvme_fallback', mode: 'collect', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        assets: Array<{ external_kind: string; external_id: string; normalized: { version: string } }>;
+        relations: unknown[];
+        stats: { assets: number; relations: number; inventory_complete: boolean; warnings: unknown[] };
+        errors?: unknown[];
+      };
+
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+
+      // SOAP should succeed after retry, so no warnings.
+      expect(parsed.stats.warnings).toEqual([]);
+
+      const host = parsed.assets.find((a) => a.external_kind === 'host' && a.external_id === 'host-1');
+      expect(host).toBeTruthy();
+      expect(host?.normalized).toMatchObject({
+        os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
+        hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+        identity: { vendor: 'HP', model: 'ProLiant DL380p Gen8' },
+        network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+        attributes: { disk_total_bytes: 512 * 7814037168 },
+      });
+    } finally {
+      soapNvmeTopologyUnsupported = false;
     }
   });
 

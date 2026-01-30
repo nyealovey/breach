@@ -2,7 +2,8 @@ import { expect, it } from 'vitest';
 
 import { parseRetrievePropertiesExHostResult } from '../soap';
 
-it('parses RetrievePropertiesEx host properties + localDisk total', () => {
+// 新逻辑：基于 lunType === "disk" 来识别磁盘，不再依赖 localDisk 字段
+it('parses RetrievePropertiesEx host properties + disk total (lunType=disk)', () => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
@@ -17,14 +18,17 @@ it('parses RetrievePropertiesEx host properties + localDisk total', () => {
           <propSet>
             <name>config.storageDevice.scsiLun</name>
             <val>
-              <HostScsiDisk>
-                <localDisk>true</localDisk>
+              <ScsiLun>
+                <lunType>storageArrayController</lunType>
+              </ScsiLun>
+              <ScsiLun>
+                <lunType>disk</lunType>
                 <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
-              </HostScsiDisk>
-              <HostScsiDisk>
-                <localDisk>false</localDisk>
-                <capacity><blockSize>512</blockSize><block>1</block></capacity>
-              </HostScsiDisk>
+              </ScsiLun>
+              <ScsiLun>
+                <lunType>disk</lunType>
+                <capacity><blockSize>512</blockSize><block>1000000</block></capacity>
+              </ScsiLun>
             </val>
           </propSet>
         </objects>
@@ -39,11 +43,11 @@ it('parses RetrievePropertiesEx host properties + localDisk total', () => {
     esxiBuild: '20036589',
     cpuCores: 32,
     memoryBytes: 274877906944,
-    diskTotalBytes: 512 * 7814037168,
+    diskTotalBytes: 512 * 7814037168 + 512 * 1000000,
   });
 });
 
-it('treats no-local-disk hosts as diskTotalBytes=0 (not missing)', () => {
+it('returns undefined when no disk devices found', () => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
@@ -54,10 +58,9 @@ it('treats no-local-disk hosts as diskTotalBytes=0 (not missing)', () => {
           <propSet>
             <name>config.storageDevice.scsiLun</name>
             <val>
-              <HostScsiDisk>
-                <localDisk>false</localDisk>
-                <capacity><blockSize>512</blockSize><block>7814037168</block></capacity>
-              </HostScsiDisk>
+              <ScsiLun>
+                <lunType>storageArrayController</lunType>
+              </ScsiLun>
             </val>
           </propSet>
         </objects>
@@ -67,10 +70,10 @@ it('treats no-local-disk hosts as diskTotalBytes=0 (not missing)', () => {
 </soapenv:Envelope>`;
 
   const out = parseRetrievePropertiesExHostResult(xml);
-  expect(out.get('host-1')?.diskTotalBytes).toBe(0);
+  expect(out.get('host-1')?.diskTotalBytes).toBeUndefined();
 });
 
-it('parses localDisk values expressed as 1/0', () => {
+it('parses disk with lunType=disk and capacity', () => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
@@ -81,14 +84,81 @@ it('parses localDisk values expressed as 1/0', () => {
           <propSet>
             <name>config.storageDevice.scsiLun</name>
             <val>
-              <HostScsiDisk>
-                <localDisk>1</localDisk>
+              <ScsiLun>
+                <lunType>disk</lunType>
                 <capacity><blockSize>512</blockSize><block>10</block></capacity>
-              </HostScsiDisk>
-              <HostScsiDisk>
-                <localDisk>0</localDisk>
-                <capacity><blockSize>512</blockSize><block>999</block></capacity>
-              </HostScsiDisk>
+              </ScsiLun>
+            </val>
+          </propSet>
+        </objects>
+      </returnval>
+    </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const out = parseRetrievePropertiesExHostResult(xml);
+  expect(out.get('host-1')?.diskTotalBytes).toBe(512 * 10);
+});
+
+it('parses multiple disks and sums capacity', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesExResponse xmlns="urn:vim25">
+      <returnval>
+        <objects>
+          <obj type="HostSystem">host-1</obj>
+          <propSet>
+            <name>config.storageDevice.scsiLun</name>
+            <val>
+              <ScsiLun>
+                <lunType>disk</lunType>
+                <capacity><blockSize>512</blockSize><block>10</block></capacity>
+              </ScsiLun>
+              <ScsiLun>
+                <lunType>disk</lunType>
+                <capacity><blockSize>512</blockSize><block>20</block></capacity>
+              </ScsiLun>
+            </val>
+          </propSet>
+        </objects>
+      </returnval>
+    </RetrievePropertiesExResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const out = parseRetrievePropertiesExHostResult(xml);
+  expect(out.get('host-1')?.diskTotalBytes).toBe(512 * 10 + 512 * 20);
+});
+
+it('parses nvmeTopology namespaces into diskTotalBytes', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <RetrievePropertiesExResponse xmlns="urn:vim25">
+      <returnval>
+        <objects>
+          <obj type="HostSystem">host-1</obj>
+          <propSet>
+            <name>config.storageDevice.nvmeTopology</name>
+            <val>
+              <HostNvmeTopology>
+                <adapter>
+                  <HostNvmeTopologyInterface>
+                    <connectedController>
+                      <HostNvmeController>
+                        <attachedNamespace>
+                          <HostNvmeNamespace>
+                            <uuid>ns-1</uuid>
+                            <blockSize>512</blockSize>
+                            <capacityInBlocks>10</capacityInBlocks>
+                          </HostNvmeNamespace>
+                        </attachedNamespace>
+                      </HostNvmeController>
+                    </connectedController>
+                  </HostNvmeTopologyInterface>
+                </adapter>
+              </HostNvmeTopology>
             </val>
           </propSet>
         </objects>
