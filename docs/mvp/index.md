@@ -30,4 +30,3 @@
 ### 技术设计（MVP）
 
 - 技术设计（vCenter MVP v1.0）：`docs/mvp/design/asset-ledger-vcenter-mvp-design.md`
-

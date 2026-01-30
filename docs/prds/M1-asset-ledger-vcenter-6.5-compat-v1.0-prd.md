@@ -64,7 +64,7 @@
 - 若 detect 判断“所选版本范围与目标不匹配”或“关键能力缺失”：
   - 必须返回结构化错误（错误码稳定、可展示），并给出可执行建议（调整版本范围/检查权限/升级 vCenter）。
 
-3. **collect_*：关键字段与关系必须满足**
+3. **collect\_\*：关键字段与关系必须满足**
 
 - `collect_vms` 成功的最低条件：
   - VM 必须包含 `cpu_count`、`memory_bytes`、`runtime.power_state`

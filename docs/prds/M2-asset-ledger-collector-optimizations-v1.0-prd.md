@@ -20,7 +20,6 @@
 **In Scope**
 
 - vCenter（SOAP/REST 以现有实现为准）采集 Host 的 datastore 明细：
-  - `datastores[].id`（best-effort：尝试从原始数据中提取唯一标识；例如 MoRef/moid；若无法获取则允许缺失）
   - `datastores[].name`
   - `datastores[].capacity_bytes`
 - 保留现有 datastore 总容量字段与口径（当前只有总容量）。
@@ -47,7 +46,6 @@
 
 - 在 `normalized-v1` 中新增结构化字段（避免塞入 `attributes.*`）：
   - `storage.datastores[]`：对象数组
-    - `id`（string，可选；best-effort 唯一标识）
     - `name`（string，必需）
     - `capacity_bytes`（number/int，bytes，必需）
 
@@ -76,7 +74,6 @@
 - `storage`（object，可选）
   - `datastores`（array，可选）
     - item:
-      - `id`（string，可选，minLength=1）
       - `name`（string，minLength=1）
       - `capacity_bytes`（integer >= 0）
 
@@ -84,10 +81,15 @@
 
 canonical 聚合后字段落点：
 
-- `canonical.fields.storage.datastores.value`：数组（对象：id?/name/capacity_bytes）
+- `canonical.fields.storage.datastores.value`：数组（对象：name/capacity_bytes）
 - `canonical.fields.storage.datastores.sources[]`：保留来源证据（source_id/run_id/record_id）
 
-> 备注：canonical 的数组字段去重建议优先使用 `id`；若 `id` 缺失则回退用 `name`（同 source/run 内不应重复；跨来源可并集去重）。
+其中 value 的单个对象最小字段集为：
+
+- `name`
+- `capacity_bytes`
+
+> 备注：本期不做 datastore 的稳定唯一标识（`id`）；canonical 的数组字段去重暂以 `name` 为主（同 source/run 内不应重复；跨来源按并集去重）。
 
 ### 2) 采集口径（Host）
 
@@ -106,7 +108,6 @@ canonical 聚合后字段落点：
 ### Functional Acceptance
 
 - [ ] Host 的 `normalized-v1` 输出包含 `storage.datastores[]`（name + capacity_bytes）。
-- [ ] `storage.datastores[].id` 为 best-effort：若来源可提供唯一标识则应写入；否则允许缺失，但不得影响总容量口径与展示。
 - [ ] Host 的 canonical 快照中包含 `fields.storage.datastores`，并且保留来源证据。
 - [ ] 系统保留现有 datastore 总容量字段（当前已有的 sum），并保证与明细求和口径一致。
 - [ ] 资产详情页（Host）展示 Datastores 表格（名称 + 容量），并展示总容量。
@@ -126,7 +127,7 @@ canonical 聚合后字段落点：
 
 ### Phase 2: 采集与落库
 
-- [ ] 插件采集 Host datastores（id?/name/capacity_bytes）
+- [ ] 插件采集 Host datastores（name/capacity_bytes）
 - [ ] Core 入库与 canonical 聚合（含 provenance）
 
 ### Phase 3: UI 展示（详情页）
