@@ -128,13 +128,25 @@
 - PRD（自定义字段）：`docs/prds/M8-asset-ledger-custom-fields-v1.0-prd.md`
 - PRD（导出 CSV）：`docs/prds/M8-asset-ledger-export-csv-v1.0-prd.md`
 
-### M9：资产历史追溯（按 Run）
+### M9：批量维护台账字段（批量编辑自定义字段 + 资产详情一键保存）
 
-目标：资产详情提供“历史/时间线”入口，按 Run 展示关键字段变化与关系变化摘要，满足可追溯验收要求。
+目标：为“自定义字段（台账字段扩展）”补齐可持续的维护能力：
+
+- 多资产：在资产列表中选择一批资产，并一次性设置某个自定义字段的值，用于快速完成资产归类（分级/负责人/地区/公司等）。
+- 单资产：在资产详情中一次保存多个台账字段变更（自定义字段 + 覆盖机器名 + 覆盖 IP），替代原“编辑机器名”列表弹窗。
+
+范围（草案）：
+
+- 入口：资产列表（/assets）提供“批量编辑”入口（admin-only）。
+- 选择：仅支持“当前页勾选”（分页建议提升为 100 行/页）。
+- 操作：一次仅设置 1 个启用的自定义字段；值可为 `null`（等价于清空/未设置）；总是覆盖。
+- 辅助筛选：新增“最近入账 7 天”筛选，以便快速定位新起服务器；自定义字段筛选（含空值筛选）由后续版本补齐。
+- 单资产编辑：在资产详情（/assets/[uuid]）提供“编辑模式”，可一次提交多个自定义字段 + `machineNameOverride` + `ipOverride`（仅 IPv4，做格式校验）。
+- 审计：批量变更与单资产一键保存都必须写入审计事件（操作者/变更摘要/requestId）。
 
 交付物（计划）：
 
-- PRD：`docs/prds/M9-asset-ledger-asset-history-v1.0-prd.md`
+- PRD：`docs/prds/M9-asset-ledger-bulk-edit-custom-fields-v1.0-prd.md`
 
 ### M10：物理机采集（Windows + Linux）
 
@@ -152,3 +164,11 @@
 交付物（计划）：
 
 - PRD：`docs/prds/M11-asset-ledger-aliyun-collector-v1.0-prd.md`
+
+### M12：资产历史追溯（按 Run）
+
+目标：资产详情提供“历史/时间线”入口，按 Run 展示关键字段变化与关系变化摘要，满足可追溯验收要求。
+
+交付物（计划）：
+
+- PRD：`docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`

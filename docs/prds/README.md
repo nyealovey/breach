@@ -19,7 +19,8 @@
 - M7：普通用户（user）只读访问：`docs/prds/M7-asset-ledger-user-readonly-access-v1.0-prd.md`
 - M8：自定义字段（台账字段扩展）：`docs/prds/M8-asset-ledger-custom-fields-v1.0-prd.md`
 - M8：导出全量台账（CSV）：`docs/prds/M8-asset-ledger-export-csv-v1.0-prd.md`
-- M9：资产历史追溯（按 Run）：`docs/prds/M9-asset-ledger-asset-history-v1.0-prd.md`
+- M9：批量维护台账字段（批量编辑自定义字段 + 资产详情一键保存）：`docs/prds/M9-asset-ledger-bulk-edit-custom-fields-v1.0-prd.md`
 - M10：Windows 物理机采集：`docs/prds/M10-asset-ledger-windows-physical-collector-v1.0-prd.md`
 - M10：Linux 物理机采集：`docs/prds/M10-asset-ledger-linux-physical-collector-v1.0-prd.md`
 - M11：阿里云采集（ECS 为主）：`docs/prds/M11-asset-ledger-aliyun-collector-v1.0-prd.md`
+- M12：资产历史追溯（按 Run）：`docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`

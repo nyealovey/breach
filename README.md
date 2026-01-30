@@ -126,6 +126,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施计划：[`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md`](docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.md)
 - vCenter MVP v1.0（含增量：凭据模块 + 调度组手动运行）实施进度（执行记录）：[`docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md`](docs/mvp/plans/2026-01-28-asset-ledger-vcenter-mvp.progress.md)
 - 后续里程碑规划（草案）：[`docs/roadmap.md`](docs/roadmap.md)
+- 后续 PRD 列表（Post-MVP）：[`docs/prds/README.md`](docs/prds/README.md)
 
 设计文档：
 
