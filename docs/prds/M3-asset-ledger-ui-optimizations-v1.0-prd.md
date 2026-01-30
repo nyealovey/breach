@@ -106,12 +106,48 @@
   - CPU/内存/磁盘（格式化）
   - VM：电源状态、Tools 状态
 
-2. **分组展示（替代 flatten 大表的默认视图）**
+2. **分块 + 分组展示（替代 flatten 大表的默认视图）**
 
-- 将 canonical.fields 按一级分组（identity/network/os/hardware/runtime/storage/attributes 等）展示
-- 每组内：
-  - 关键字段优先展示为表格/卡片
+- 外层分块（业务视角，A）：
+  - 通用字段
+  - VM 专用字段
+  - Host/物理机专用字段
+  - Cluster 专用字段
+  - 扩展字段（attributes.\*）
+  - 自定义字段（台账字段；本 PRD 仅定义页面布局与展示占位，编辑能力由 M8/M9 提供）
+- 内层分组（schema 视角，B）：
+  - 每个分块内部，将 canonical.fields 按一级分组（identity/network/os/hardware/runtime/storage/location/ownership/service/physical/attributes 等）展示
+- 每组内字段展示规则：
+  - 表格列：`字段ID（英文 path）` + `字段名（中文）` + `值（人类可读）` + `来源数` + `冲突`
+  - 冲突字段遵循 `docs/design/asset-ledger-ui-spec.md` 的冲突标记规范
   - 仍提供“查看原始 canonical（JSON）”的调试入口（折叠/Advanced）
+
+3. **字段名本地化（中文字段名）**
+
+- 字段名必须基于 canonical schema（`docs/design/asset-ledger-json-schema.md`）覆盖全部结构化字段：
+  - structured fields：schema 中明确列出的结构化路径（例如 `identity.hostname`、`network.ip_addresses`、`hardware.memory_bytes` 等）
+  - dynamic fields：`attributes.*` 只做“扩展字段：{key}”的展示与兜底，不要求穷举翻译
+- 推荐实现方式：维护一个“字段字典（field registry）”，为每个结构化字段提供：
+  - `labelZh`（中文名）
+  - `groupA`（通用/VM/Host/Cluster/扩展/自定义）
+  - `groupB`（一级分组：identity/network/...）
+  - `formatHint`（可选：bytes/datetime/enum 等，用于值渲染）
+- 兜底策略：
+  - 若字段不在字典中：中文列显示 `-`，字段仍必须展示（不可隐藏）
+
+4. **值渲染（人类可读，替代 JSON 默认视图）**
+
+- 基础类型：
+  - string：直接展示（必要时换行/截断）
+  - number：直接展示；对 bytes 字段需格式化（GiB/TiB，1024 进制）
+  - boolean：展示“是/否”
+  - null：展示 `-`
+- array：
+  - 基础数组（string/number/bool）：用逗号分隔或 tag 形式展示（不展示 JSON）
+  - 对象数组（例如 `hardware.disks[]`、`storage.datastores[]`）：默认以“列表卡片”展示（每项一张卡片/一行，内含关键键值）
+- object：
+  - 对 schema 明确的对象：按 key-value 形式展示（优先使用字段字典对内部 key 做中文化）
+  - 对未知对象：不作为默认展示内容，提供“查看原始值（JSON）”折叠入口
 
 > 依赖：如需展示 Datastore 明细，可依赖采集项优化 PRD：`docs/prds/M2-asset-ledger-collector-optimizations-v1.0-prd.md`
 
@@ -136,6 +172,9 @@
 - [ ] 列配置支持显示/隐藏并可恢复默认；默认列不变。
 - [ ] 列配置按用户写入 DB；用户再次进入 `/assets` 能自动恢复。
 - [ ] 资产详情页提供“盘点摘要 + 分组展示”；canonical flatten 大表不再作为默认主视图，但仍保留调试入口。
+- [ ] Canonical 字段表格同时展示：字段ID（英文 path）+ 字段名（中文）。
+- [ ] Canonical 字段值默认以“人类可读”方式展示（不以 JSON 作为默认值视图）；对象数组默认以“列表卡片”展示。
+- [ ] Canonical 字段按“外层分块（业务视角）+ 内层分组（schema 一级 key）”组织展示。
 - [ ] 关系展示提供关系链视图，并可点击导航到相关资产。
 
 ### Quality Standards
@@ -171,4 +210,4 @@
 
 **Document Version**: 1.0  
 **Created**: 2026-01-30  
-**Quality Score**: 90/100
+**Quality Score**: 92/100

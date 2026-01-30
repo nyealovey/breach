@@ -8,6 +8,28 @@
 - MVP 相关 PRD/计划/追溯矩阵/技术设计已归档到：`docs/mvp/`
 - 后续新增/迭代需求文档（PRD）统一放到：`docs/prds/`
 
+## 优先级原则（建议）
+
+> 说明：里程碑编号（M1/M2/…）用于“主题拆分”，不等同于“开发顺序”。  
+> 本节给出一个以“减少返工/降低耦合”为目标的推荐顺序。
+
+优先级策略（你已确认）：**C（稳定性/可定位） > B（覆盖面/新来源） > A（治理/权限/协作）**。
+
+建议执行顺序（草案，按低耦合优先）：
+
+1. C：/runs 失败可定位（错误码 + 建议动作）：`docs/prds/M3-asset-ledger-runs-ui-optimizations-v1.0-prd.md`
+2. C：vCenter 6.5 兼容性增强：`docs/prds/M1-asset-ledger-vcenter-6.5-compat-v1.0-prd.md`
+3. C：/assets/[uuid] 详情字段可读化底座（中文字段名 + 分块/分组 + 值渲染规范）：包含在 `docs/prds/M3-asset-ledger-ui-optimizations-v1.0-prd.md`
+4. B：采集字段覆盖面增强（示例：Host Datastore 明细）：`docs/prds/M2-asset-ledger-collector-optimizations-v1.0-prd.md`
+5. B：新增来源（按实际场景优先级微调）：PVE（M6）→ Hyper-V（M4）→ 物理机（M10）→ 阿里云（M11）
+6. A：治理与协作能力（建议在多来源落地后再做）：重复中心/合并（M5）→ 自定义字段（M8）→ 台账字段批量维护（M9）→ 历史追溯（M12）→ 导出（M8）→ user 只读（M7）
+
+减少返工的关键约束（建议作为“稳定契约”先定）：
+
+- **Schema 先行**：新增字段尽量落到 `docs/design/asset-ledger-json-schema.md` 约定的结构化路径；无法结构化才进 `attributes.*`。
+- **UI 展示层稳定**：资产详情的 canonical 展示遵循“字段字典（field registry）+ 分块/分组 + 值渲染”规范；后续新增字段/新增来源以“补字典/补格式化规则”为主，避免推倒页面结构。
+- **错误口径稳定**：错误码（error.code）必须稳定枚举；UI 映射表增量维护，不依赖 message 文本。
+
 ## 里程碑拆分（建议）
 
 ### M0：vCenter MVP（已完成/归档）

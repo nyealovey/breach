@@ -219,6 +219,73 @@ VM: vm-app-01
 - 悬停节点：显示资产摘要 Tooltip
 - 展开/收起：支持折叠长关系链
 
+## 资产详情字段展示规范（Canonical）
+
+目标：将资产详情页的 canonical 字段展示从“调试视角（JSON/flatten）”升级为“盘点视角（可读/可扫/可分组）”，并确保后续新增字段/新增来源不会反复推倒 UI。
+
+### 字段列（英文 ID + 中文名）
+
+在资产详情 `/assets/[uuid]` 的 canonical 字段区域，默认表格列必须包含：
+
+- 字段ID：canonical path（例如 `identity.hostname`、`hardware.memory_bytes`）
+- 字段名：中文字段名（基于字段字典；详见“字段字典”小节）
+- 值：人类可读渲染（详见“值渲染规范”小节）
+- 来源数：`FieldValue.sources.length`
+- 冲突：`FieldValue.conflict`（遵循第 4 章冲突标记规范）
+
+### 分块 + 分组（A 外层 + B 内层）
+
+字段展示必须支持：
+
+- 外层分块（业务视角，A）：
+  - 通用字段
+  - VM 专用字段
+  - Host/物理机专用字段
+  - Cluster 专用字段
+  - 扩展字段（attributes.\*）
+  - 自定义字段（台账字段；若未启用则隐藏或显示空状态）
+- 内层分组（schema 视角，B）：
+  - 每个分块内部按 canonical 一级 key 分组（identity/network/os/hardware/runtime/storage/location/ownership/service/physical/attributes 等）
+
+> 说明：分块/分组的目标是“盘点时能快速扫到关键信息”，而不是完整替代调试视图。调试视图必须保留（见“调试入口”小节）。
+
+### 字段字典（Field Registry）
+
+为避免“新增字段 → 全页面到处改”，建议以单一来源维护字段字典（实现形态可为 TS 常量或 JSON 文件）：
+
+- key：canonical path（例如 `network.ip_addresses`）
+- value：
+  - `labelZh`：中文名（用于 UI 展示）
+  - `groupA`：外层分块归属（通用/VM/Host/Cluster/扩展/自定义）
+  - `groupB`：内层一级分组（identity/network/...）
+  - `formatHint`：可选（bytes/datetime/enum 等）
+
+兜底：
+
+- 若字段未在字典中：中文名显示 `-`，字段仍必须展示（不可隐藏/不可静默丢失）。
+
+### 值渲染规范（默认可读）
+
+默认值视图不得以 JSON 作为主展示形式（JSON 仅作为“查看原始值”的调试入口）。
+
+- string：直接展示（必要时截断 + 可展开）
+- number：直接展示；对 bytes 字段格式化为 GiB/TiB（1024 进制）
+- boolean：展示“是/否”
+- null：展示 `-`
+- array：
+  - 基础数组：以逗号分隔或 tag 展示
+  - 对象数组：以“列表卡片”展示（每项一行/一张卡片；优先展示关键键值）
+- object：
+  - schema 明确的对象：key-value 形式展示（优先中文化 key）
+  - 未知对象：默认不展开，需通过调试入口查看 JSON
+
+### 调试入口（必须保留）
+
+资产详情必须保留调试入口（折叠/Advanced），至少包含：
+
+- 查看原始 canonical（JSON）
+- 查看单字段原始值（JSON）
+
 ## 6. 状态标签规范
 
 ### 6.1 Run 状态
