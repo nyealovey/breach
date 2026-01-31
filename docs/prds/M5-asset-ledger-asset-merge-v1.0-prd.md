@@ -46,6 +46,7 @@
 1. **合并合法性**
 
 - 仅 admin 可合并。
+- 禁止任何自动合并：系统最多“提示合并”，合并必须由管理员在 UI/API **手动发起**（无后台 job/策略自动合并）。
 - 仅允许同 `asset_type` 的资产合并（dup-rules-v1 也仅会产生同类候选）。
 - 被合并资产不能已处于 `merged` 状态；主资产也不能是 `merged` 资产。
 - 不能产生合并环（A 合并到 B，同时 B 合并到 A）。
@@ -62,6 +63,19 @@
 
 - UI 必须展示“关键冲突字段”对比与最终采用值（主资产值）。
 - 合并审计必须记录冲突摘要（哪些字段冲突、采用了哪个策略）。
+
+4. **可合并窗口（VM 迁移场景门槛）**
+
+> 背景：当 VM 从“宿主 A”迁移到“宿主 B”后，可能出现“新旧两份 VM 资产同时存在”的重复候选。若旧对象只是关机但仍存在于 inventory，立刻合并会把两台真实对象错误合并（并且后续仍会持续出现重复）。
+
+强约束（本期固定，不提供 override）：
+
+- **仅允许合并“已下线的 VM”到“在线的 VM”**：
+  - `primaryAsset.status` 必须为 `in_service`
+  - 所有 `mergedAsset.status` 必须为 `offline`
+- “下线/离线”语义以 M5 重复中心的 presence/offline 为准（`asset.status=offline`），**不等同于 VM 的 `power_state=poweredOff`**：
+  - 旧 VM “被删除/不再出现在最新成功的 inventory_complete collect 中” → 会进入 `offline` → 允许合并
+  - 旧 VM “仍存在但仅关机（power_state=poweredOff）” → 仍会被采集到、仍为 `in_service` → **不允许合并**
 
 ## Detailed Requirements
 
@@ -102,6 +116,11 @@
   - primary 不能是 merged（否则无法作为主资产）
   - mergedAsset 不能是 merged（避免“合并已合并资产”）
   - primary 不能出现在 mergedAssetUuids 中
+- VM 合并门槛（强约束，见上文“可合并窗口”）：
+  - 当 `asset_type=vm`：
+    - primary 必须为 `in_service`
+    - mergedAssetUuids 中的每个 asset 必须为 `offline`
+  - 否则拒绝合并，返回 400（建议新增错误码 `CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE`，并在 `redacted_context` 返回双方 status 摘要，便于 UI 提示“仅关机不等于下线”）
 - 环检测：若 mergedAsset 已经通过链条合并到 primary（或 primary 合并到 mergedAsset）必须拒绝，避免环（建议错误码 `CONFIG_ASSET_MERGE_CYCLE_DETECTED`）。
 
 ### 3) 数据迁移：asset_source_link / source_record
@@ -209,6 +228,7 @@
 ### Functional Acceptance
 
 - [ ] admin-only：只有管理员可发起合并；user 发起返回 403（AUTH_FORBIDDEN）。
+- [ ] 禁止自动合并：系统不会基于分数/规则自动合并；只能由管理员手动发起（UI/API）。
 - [ ] 支持一次合并多个从资产到一个主资产（N>=1）。
 - [ ] 合并后从资产：`status=merged` 且 `merged_into_asset_uuid=primary`；资产列表默认隐藏 merged 资产。
 - [ ] 主资产可在资产详情查看“合并提示/合并历史摘要”（至少能追溯 merge_audit）。
@@ -216,6 +236,9 @@
 - [ ] 合并后主资产来源明细（source_records）可看到从资产历史（不丢）。
 - [ ] 合并后关系边重定向到主资产且去重；不得产生自环关系。
 - [ ] 直接访问 merged 资产时 UI 引导/跳转到主资产（可追溯，不迷路）。
+- [ ] VM 合并窗口门槛：
+  - [ ] 当两个 VM 都是 `in_service`（即使其中一个 `power_state=poweredOff`），合并必须被拒绝（400 + 稳定错误码），UI 必须提示“仅关机不等于下线”。
+  - [ ] 当 VM 迁移导致“旧 VM 已下线（offline）+ 新 VM 在线（in_service）”时，允许合并，并能在合并摘要中看到双方 status 与 last_seen 差异。
 
 ### Audit Acceptance
 
@@ -256,5 +279,5 @@
 
 **Document Version**: 1.0
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
+**Clarification Rounds**: 1
 **Quality Score**: 100/100

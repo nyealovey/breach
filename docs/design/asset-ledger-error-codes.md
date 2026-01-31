@@ -64,6 +64,9 @@
 | CONFIG_CREDENTIAL_NOT_FOUND       | web    | config     | false     | 404              | 凭据不存在（Credential 不存在）                                                                                  |
 | CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                                                                       |
 | CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                                                                       |
+| CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH | web | config   | false     | 400              | 合并资产类型不一致（禁止跨 asset_type 合并）                                                                    |
+| CONFIG_ASSET_MERGE_CYCLE_DETECTED | web    | config     | false     | 400              | 检测到合并环/链冲突（禁止产生环）                                                                               |
+| CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE | web | config   | false     | 400              | VM 合并门槛未满足：仅允许将 offline VM 合并到 in_service VM（仅关机不等于下线）                                  |
 | CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                                                                              |
 | CONFIG_PREFERENCE_NOT_FOUND       | web    | config     | false     | 404              | 用户偏好不存在（preference key 未设置）                                                                         |
 | CONFIG_EXPORT_NOT_FOUND           | web    | config     | false     | 404              | 导出任务不存在（Export 不存在）                                                                                 |
@@ -165,6 +168,9 @@ export const ErrorCode = {
   CONFIG_CREDENTIAL_NOT_FOUND: 'CONFIG_CREDENTIAL_NOT_FOUND',
   CONFIG_RUN_NOT_FOUND: 'CONFIG_RUN_NOT_FOUND',
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
+  CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH: 'CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH',
+  CONFIG_ASSET_MERGE_CYCLE_DETECTED: 'CONFIG_ASSET_MERGE_CYCLE_DETECTED',
+  CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE: 'CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE',
   CONFIG_SOURCE_RECORD_NOT_FOUND: 'CONFIG_SOURCE_RECORD_NOT_FOUND',
   CONFIG_PREFERENCE_NOT_FOUND: 'CONFIG_PREFERENCE_NOT_FOUND',
   CONFIG_EXPORT_NOT_FOUND: 'CONFIG_EXPORT_NOT_FOUND',
@@ -355,6 +361,18 @@ export const ErrorMessages: Record<
   CONFIG_ASSET_NOT_FOUND: {
     zh: '资产不存在：{{asset_uuid}}',
     en: 'Asset not found: {{asset_uuid}}',
+  },
+  CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH: {
+    zh: '合并失败：资产类型不一致',
+    en: 'Merge failed: asset types mismatch',
+  },
+  CONFIG_ASSET_MERGE_CYCLE_DETECTED: {
+    zh: '合并失败：检测到合并环/链冲突',
+    en: 'Merge failed: merge cycle detected',
+  },
+  CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE: {
+    zh: '合并失败：VM 仅允许“offline → in_service”合并（仅关机不等于下线）',
+    en: 'Merge failed: VM merge requires offline -> in_service (poweredOff is not offline)',
   },
   CONFIG_SOURCE_RECORD_NOT_FOUND: {
     zh: '源记录不存在：{{record_id}}',
