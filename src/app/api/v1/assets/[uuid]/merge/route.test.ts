@@ -19,6 +19,7 @@ vi.mock('@/lib/db/prisma', () => {
   const duplicateCandidate = { updateMany: vi.fn() };
   const mergeAudit = { create: vi.fn() };
   const auditEvent = { create: vi.fn() };
+  const assetHistoryEvent = { create: vi.fn() };
 
   const prismaMock = {
     asset,
@@ -28,6 +29,7 @@ vi.mock('@/lib/db/prisma', () => {
     duplicateCandidate,
     mergeAudit,
     auditEvent,
+    assetHistoryEvent,
   };
 
   return {
@@ -44,7 +46,11 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
   });
 
   it('returns 404 when primary asset is not found', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue(null);
 
     const req = new Request('http://localhost/api/v1/assets/a1/merge', {
@@ -61,7 +67,11 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
   });
 
   it('returns 400 when asset types mismatch', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({
       uuid: 'a1',
       assetType: 'vm',
@@ -86,7 +96,11 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
   });
 
   it('returns 400 when VM merge requires primary in_service and secondary offline', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({
       uuid: 'a1',
       assetType: 'vm',
@@ -111,7 +125,11 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
   });
 
   it('returns 400 when cycle is detected via mergedIntoAssetUuid', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({
       uuid: 'a1',
       assetType: 'host',
@@ -133,7 +151,11 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
   });
 
   it('merges assets and writes audits (host happy path)', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({
       uuid: 'a1',
       assetType: 'host',
@@ -151,6 +173,7 @@ describe('POST /api/v1/assets/:uuid/merge', () => {
     (prisma.duplicateCandidate.updateMany as any).mockResolvedValue({ count: 4 });
     (prisma.mergeAudit.create as any).mockResolvedValue({ id: 'ma_1' });
     (prisma.auditEvent.create as any).mockResolvedValue({ id: 'ae_1' });
+    (prisma.assetHistoryEvent.create as any).mockResolvedValue({ id: 'he_1' });
 
     const req = new Request('http://localhost/api/v1/assets/a1/merge', {
       method: 'POST',

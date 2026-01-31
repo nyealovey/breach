@@ -12,6 +12,7 @@ import {
 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AppError } from '@/lib/errors/error';
+import type { Prisma } from '@prisma/client';
 
 const BodySchema = z.object({
   assetUuids: z.array(z.string().min(1)).min(1),
@@ -26,6 +27,7 @@ function isAppError(err: unknown): err is AppError {
 export async function POST(request: Request) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
+  const now = new Date();
 
   let body: z.infer<typeof BodySchema>;
   try {
@@ -127,7 +129,7 @@ export async function POST(request: Request) {
         ),
       );
 
-      await tx.auditEvent.create({
+      const audit = await tx.auditEvent.create({
         data: {
           eventType: 'asset.ledger_fields_bulk_set',
           actorUserId: auth.session.user.id,
@@ -138,6 +140,24 @@ export async function POST(request: Request) {
             valueSummary: summarizeLedgerValue(normalized.displayValue),
           },
         },
+        select: { id: true },
+      });
+
+      await tx.assetHistoryEvent.createMany({
+        data: assetUuids.map((assetUuid) => ({
+          assetUuid,
+          eventType: 'ledger_fields.changed',
+          occurredAt: now,
+          title: '台账字段变更',
+          summary: {
+            actor: { userId: auth.session.user.id, username: auth.session.user.username },
+            requestId: auth.requestId,
+            mode: 'bulk_set',
+            key: meta.key,
+            valueSummary: summarizeLedgerValue(normalized.displayValue),
+          } as Prisma.InputJsonValue,
+          refs: { auditEventId: audit.id } as Prisma.InputJsonValue,
+        })),
       });
     });
 

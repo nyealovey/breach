@@ -52,7 +52,30 @@ type RelationItem = {
   lastSeenAt: string;
 };
 
+type AssetHistoryEventItem = {
+  eventId: string;
+  assetUuid: string;
+  sourceAssetUuid: string | null;
+  eventType: string;
+  occurredAt: string;
+  title: string;
+  summary: unknown;
+  refs: Record<string, unknown>;
+};
+
+type AssetHistoryResponse = {
+  items: AssetHistoryEventItem[];
+  nextCursor: string | null;
+};
+
 const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
+
+const HISTORY_TYPE_OPTIONS: Array<{ type: string; label: string }> = [
+  { type: 'collect.changed', label: '采集变化' },
+  { type: 'ledger_fields.changed', label: '台账字段' },
+  { type: 'asset.merged', label: '合并' },
+  { type: 'asset.status_changed', label: '状态变化' },
+];
 
 type FlattenedField = {
   path: string;
@@ -112,6 +135,12 @@ export default function AssetDetailPage() {
 
   const [role, setRole] = useState<'admin' | 'user' | null>(null);
   const isAdmin = role === 'admin';
+
+  const [historyTypes, setHistoryTypes] = useState<string[]>([]);
+  const [historyItems, setHistoryItems] = useState<AssetHistoryEventItem[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [ledgerEditing, setLedgerEditing] = useState(false);
   const [ledgerDraft, setLedgerDraft] = useState<Partial<Record<LedgerFieldKey, string>>>({});
@@ -208,6 +237,46 @@ export default function AssetDetailPage() {
       active = false;
     };
   }, [params.uuid, router]);
+
+  const loadHistoryPage = async (args: { cursor: string | null; replace: boolean }) => {
+    if (historyLoading) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+
+    try {
+      const qs = new URLSearchParams();
+      qs.set('limit', '20');
+      if (args.cursor) qs.set('cursor', args.cursor);
+      if (historyTypes.length > 0) qs.set('types', historyTypes.join(','));
+
+      const res = await fetch(`/api/v1/assets/${encodeURIComponent(params.uuid)}/history?${qs.toString()}`);
+      if (!res.ok) {
+        setHistoryError(`加载失败（${res.status}）`);
+        return;
+      }
+
+      const body = (await res.json().catch(() => null)) as { data?: AssetHistoryResponse } | null;
+      const data = body?.data;
+      const items = Array.isArray(data?.items) ? data!.items : [];
+      const nextCursor = typeof data?.nextCursor === 'string' ? data.nextCursor : null;
+
+      setHistoryItems((prev) => (args.replace ? items : [...prev, ...items]));
+      setHistoryCursor(nextCursor);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Reload history when asset changes or filter changes.
+    setHistoryItems([]);
+    setHistoryCursor(null);
+    setHistoryError(null);
+    void loadHistoryPage({ cursor: null, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.uuid, historyTypes.join(',')]);
 
   useEffect(() => {
     if (asset?.assetType !== 'vm') {
@@ -456,6 +525,159 @@ export default function AssetDetailPage() {
               ) : null}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>历史 / 时间线</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant={historyTypes.length === 0 ? 'default' : 'outline'}
+                onClick={() => setHistoryTypes([])}
+              >
+                全部
+              </Button>
+              {HISTORY_TYPE_OPTIONS.map((o) => {
+                const active = historyTypes.includes(o.type);
+                return (
+                  <Button
+                    key={o.type}
+                    size="sm"
+                    variant={active ? 'default' : 'outline'}
+                    onClick={() => {
+                      setHistoryTypes((prev) => {
+                        if (prev.length === 0) return [o.type];
+                        if (prev.includes(o.type)) {
+                          const next = prev.filter((t) => t !== o.type);
+                          return next.length === 0 ? [] : next;
+                        }
+                        return [...prev, o.type];
+                      });
+                    }}
+                  >
+                    {o.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {historyLoading && historyItems.length === 0 ? (
+            <div className="text-sm text-muted-foreground">加载中…</div>
+          ) : historyError ? (
+            <div className="text-sm text-destructive">加载失败：{historyError}</div>
+          ) : historyItems.length === 0 ? (
+            <div className="text-sm text-muted-foreground">暂无历史事件（可能尚未发生变化/尚无审计操作）。</div>
+          ) : (
+            <div className="space-y-3">
+              {historyItems.map((e) => {
+                const label = HISTORY_TYPE_OPTIONS.find((o) => o.type === e.eventType)?.label ?? e.eventType;
+                const summaryObj =
+                  e.summary && typeof e.summary === 'object' ? (e.summary as Record<string, unknown>) : null;
+
+                const lines: string[] = [];
+                if (e.eventType === 'collect.changed') {
+                  const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
+                  for (const c of changes.slice(0, 5)) {
+                    if (!c || typeof c !== 'object') continue;
+                    const obj = c as Record<string, unknown>;
+                    const labelZh =
+                      typeof obj.labelZh === 'string' ? obj.labelZh : typeof obj.path === 'string' ? obj.path : '-';
+                    const before = typeof obj.before === 'string' ? obj.before : '';
+                    const after = typeof obj.after === 'string' ? obj.after : '';
+                    lines.push(`${labelZh}: ${before || '-'} -> ${after || '-'}`);
+                  }
+                  const relChanges = Array.isArray(summaryObj?.relationChanges)
+                    ? (summaryObj?.relationChanges as unknown[])
+                    : [];
+                  for (const r of relChanges.slice(0, 3)) {
+                    if (!r || typeof r !== 'object') continue;
+                    const obj = r as Record<string, unknown>;
+                    const type = typeof obj.type === 'string' ? obj.type : 'relation';
+                    const before = typeof obj.before === 'string' ? obj.before : '';
+                    const after = typeof obj.after === 'string' ? obj.after : '';
+                    lines.push(`${type}: ${before || '-'} -> ${after || '-'}`);
+                  }
+                } else if (e.eventType === 'asset.status_changed') {
+                  const before = typeof summaryObj?.before === 'string' ? summaryObj.before : '';
+                  const after = typeof summaryObj?.after === 'string' ? summaryObj.after : '';
+                  lines.push(`${before || '-'} -> ${after || '-'}`);
+                } else if (e.eventType === 'asset.merged') {
+                  const merged = Array.isArray(summaryObj?.mergedAssetUuids)
+                    ? (summaryObj?.mergedAssetUuids as unknown[]).filter((v) => typeof v === 'string')
+                    : [];
+                  lines.push(`合并数量：${merged.length}`);
+                } else if (e.eventType === 'ledger_fields.changed') {
+                  const actor =
+                    summaryObj?.actor && typeof summaryObj.actor === 'object' ? (summaryObj.actor as any) : null;
+                  const actorName = typeof actor?.username === 'string' ? actor.username : '-';
+                  lines.push(`操作者：${actorName}`);
+                  const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
+                  for (const c of changes.slice(0, 5)) {
+                    if (!c || typeof c !== 'object') continue;
+                    const obj = c as Record<string, unknown>;
+                    const key = typeof obj.key === 'string' ? obj.key : '-';
+                    const before = typeof obj.before === 'string' ? obj.before : '';
+                    const after = typeof obj.after === 'string' ? obj.after : '';
+                    lines.push(`${key}: ${before || '-'} -> ${after || '-'}`);
+                  }
+                  const key = typeof summaryObj?.key === 'string' ? summaryObj.key : '';
+                  const valueSummary = typeof summaryObj?.valueSummary === 'string' ? summaryObj.valueSummary : '';
+                  if (key) lines.push(`${key}: ${valueSummary || '-'}`);
+                }
+
+                const refs = e.refs && typeof e.refs === 'object' ? (e.refs as Record<string, unknown>) : {};
+                const runId = typeof refs.runId === 'string' ? refs.runId : null;
+
+                return (
+                  <div key={e.eventId} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-medium">{e.title}</div>
+                        <Badge variant="secondary">{label}</Badge>
+                        {e.sourceAssetUuid ? (
+                          <Badge variant="outline" title={e.sourceAssetUuid}>
+                            来自合并资产
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="font-mono text-xs text-muted-foreground">{e.occurredAt}</div>
+                    </div>
+
+                    {lines.length > 0 ? (
+                      <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                        {lines.slice(0, 6).map((t, idx) => (
+                          <div key={`${e.eventId}:${idx}`}>{t}</div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {runId ? (
+                      <div className="mt-3">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/runs/${runId}`}>查看 Run</Link>
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {historyCursor ? (
+            <Button
+              variant="outline"
+              disabled={historyLoading}
+              onClick={() => void loadHistoryPage({ cursor: historyCursor, replace: false })}
+            >
+              {historyLoading ? '加载中…' : '加载更多'}
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
 

@@ -2,6 +2,7 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { validateCanonicalV1 } from '@/lib/schema/validate';
 import { buildCanonicalV1 } from '@/lib/ingest/canonical';
 import { compressRaw } from '@/lib/ingest/raw';
+import { computeCollectChangedSummary } from '@/lib/history/collect-changed';
 
 import type { AppError } from '@/lib/errors/error';
 import type { AssetType, Prisma, PrismaClient, RelationType, RunMode } from '@prisma/client';
@@ -210,6 +211,19 @@ export async function ingestCollectRun(args: {
         sourceRecordIdsByAssetUuid.set(link.assetUuid, record.id);
       }
 
+      // Preload "previous snapshot" for collect.changed diffing (per-asset latest snapshot excluding this run).
+      const snapshotAssetUuids = Array.from(sourceRecordIdsByAssetUuid.keys());
+      const previousSnapshots =
+        snapshotAssetUuids.length > 0
+          ? await tx.assetRunSnapshot.findMany({
+              where: { assetUuid: { in: snapshotAssetUuids }, runId: { not: args.runId } },
+              orderBy: { createdAt: 'desc' },
+              distinct: ['assetUuid'],
+              select: { assetUuid: true, canonical: true },
+            })
+          : [];
+      const previousCanonicalByAssetUuid = new Map(previousSnapshots.map((s) => [s.assetUuid, s.canonical]));
+
       // After a successful inventory-complete run, mark "not seen this run" links as missing (scope-limited).
       const existingLinks = await tx.assetSourceLink.findMany({
         where: { sourceId: args.sourceId, externalKind: { in: scopeKinds } },
@@ -237,6 +251,12 @@ export async function ingestCollectRun(args: {
       // NOTE: merged status must be preserved (never overwritten by presence).
       const touched = Array.from(touchedAssetUuids);
       if (touched.length > 0) {
+        const previousStatuses = await tx.asset.findMany({
+          where: { uuid: { in: touched } },
+          select: { uuid: true, status: true },
+        });
+        const prevStatusByUuid = new Map(previousStatuses.map((r) => [r.uuid, r.status]));
+
         const linkRows = await tx.assetSourceLink.findMany({
           where: { assetUuid: { in: touched } },
           select: { assetUuid: true, presenceStatus: true },
@@ -250,9 +270,27 @@ export async function ingestCollectRun(args: {
 
         const toInService: string[] = [];
         const toOffline: string[] = [];
+        const statusEvents: Prisma.AssetHistoryEventCreateManyInput[] = [];
         for (const assetUuid of touched) {
-          if (anyPresent.get(assetUuid)) toInService.push(assetUuid);
+          const before = prevStatusByUuid.get(assetUuid);
+          if (!before) continue;
+          if (before === 'merged') continue; // status changes must not override merged semantics
+
+          const after = anyPresent.get(assetUuid) ? 'in_service' : 'offline';
+
+          if (after === 'in_service') toInService.push(assetUuid);
           else toOffline.push(assetUuid);
+
+          if (before !== after) {
+            statusEvents.push({
+              assetUuid,
+              eventType: 'asset.status_changed',
+              occurredAt: args.collectedAt,
+              title: '资产状态变化',
+              summary: { before, after } as Prisma.InputJsonValue,
+              refs: { runId: args.runId, sourceId: args.sourceId } as Prisma.InputJsonValue,
+            });
+          }
         }
 
         for (let i = 0; i < toInService.length; i += chunkSize) {
@@ -268,6 +306,10 @@ export async function ingestCollectRun(args: {
             where: { uuid: { in: chunk }, status: { not: 'merged' } },
             data: { status: 'offline' },
           });
+        }
+
+        if (statusEvents.length > 0) {
+          await tx.assetHistoryEvent.createMany({ data: statusEvents });
         }
       }
 
@@ -344,6 +386,7 @@ export async function ingestCollectRun(args: {
       }
 
       // canonical-v1 snapshot per asset in this run (v1.0: single source, simple provenance).
+      const collectChangedEvents: Prisma.AssetHistoryEventCreateManyInput[] = [];
       for (const entry of compressedAssets) {
         const { asset } = entry;
         const link = linksByExternal.get(key(asset.external_kind, asset.external_id));
@@ -386,6 +429,29 @@ export async function ingestCollectRun(args: {
             canonical: canonical as Prisma.InputJsonValue,
           },
         });
+
+        const prevCanonical = previousCanonicalByAssetUuid.get(link.assetUuid) ?? null;
+        if (prevCanonical) {
+          const summary = computeCollectChangedSummary({
+            assetType: link.assetType,
+            prevCanonical,
+            nextCanonical: canonical,
+          });
+          if (summary) {
+            collectChangedEvents.push({
+              assetUuid: link.assetUuid,
+              eventType: 'collect.changed',
+              occurredAt: args.collectedAt,
+              title: '采集变化',
+              summary: summary as Prisma.InputJsonValue,
+              refs: { runId: args.runId, sourceId: args.sourceId } as Prisma.InputJsonValue,
+            });
+          }
+        }
+      }
+
+      if (collectChangedEvents.length > 0) {
+        await tx.assetHistoryEvent.createMany({ data: collectChangedEvents });
       }
 
       return { ingestedAssets: compressedAssets.length, ingestedRelations };

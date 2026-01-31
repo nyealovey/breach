@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 
+import type { Prisma } from '@prisma/client';
+
 const BodySchema = z.object({
   mergedAssetUuids: z.array(z.string()).min(1),
   conflictStrategy: z.literal('primary_wins').optional(),
@@ -256,6 +258,24 @@ export async function POST(request: Request, context: { params: Promise<{ uuid: 
           },
           mergeAuditIds,
         },
+      },
+    });
+
+    await tx.assetHistoryEvent.create({
+      data: {
+        assetUuid: primaryAssetUuid,
+        eventType: 'asset.merged',
+        occurredAt: now,
+        title: '资产合并',
+        summary: {
+          actor: { userId: auth.session.user.id, username: auth.session.user.username },
+          requestId: auth.requestId,
+          primaryAssetUuid,
+          mergedAssetUuids,
+          conflictStrategy,
+          mergeAuditIds,
+        } as Prisma.InputJsonValue,
+        refs: { mergeAuditIds } as Prisma.InputJsonValue,
       },
     });
 

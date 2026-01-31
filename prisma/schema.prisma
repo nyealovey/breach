@@ -252,6 +252,22 @@ model AssetLedgerExport {
   @@index([requestedByUserId, createdAt(sort: Desc)])
 }
 
+model AssetHistoryEvent {
+  id         String   @id @default(cuid())
+  assetUuid  String   @db.Uuid
+  eventType  String
+  occurredAt DateTime
+  title      String
+  summary    Json
+  refs       Json?
+  createdAt  DateTime @default(now())
+
+  asset Asset @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+
+  @@index([assetUuid, occurredAt(sort: Desc)])
+  @@index([eventType, occurredAt(sort: Desc)])
+}
+
 model MergeAudit {
   id                String                @id @default(cuid())
   primaryAssetUuid  String                @db.Uuid
@@ -301,6 +317,7 @@ model Asset {
   mergedAssets    Asset[] @relation("AssetMerge")
 
   ledgerFields  AssetLedgerFields?
+  historyEvents AssetHistoryEvent[]
   sourceLinks   AssetSourceLink[]
   sourceRecords SourceRecord[]
   runSnapshots  AssetRunSnapshot[]

@@ -10,8 +10,9 @@ vi.mock('@/lib/db/prisma', () => {
   const asset = { findMany: vi.fn() };
   const assetLedgerFields = { upsert: vi.fn() };
   const auditEvent = { create: vi.fn() };
+  const assetHistoryEvent = { createMany: vi.fn() };
 
-  const prismaMock = { asset, assetLedgerFields, auditEvent };
+  const prismaMock = { asset, assetLedgerFields, auditEvent, assetHistoryEvent };
   return {
     prisma: {
       ...prismaMock,
@@ -26,7 +27,11 @@ describe('POST /api/v1/assets/ledger-fields/bulk-set', () => {
   });
 
   it('returns 400 when assetUuids exceed limit', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
 
     const assetUuids = Array.from({ length: 101 }).map(
       (_, i) => `550e8400-e29b-41d4-a716-44665544${String(i).padStart(4, '0')}`,
@@ -44,7 +49,11 @@ describe('POST /api/v1/assets/ledger-fields/bulk-set', () => {
   });
 
   it('returns 400 when key not allowed for asset type', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findMany as any).mockResolvedValue([{ uuid: 'a1', assetType: 'vm' }]);
 
     const req = new Request('http://localhost/api/v1/assets/ledger-fields/bulk-set', {
@@ -60,12 +69,17 @@ describe('POST /api/v1/assets/ledger-fields/bulk-set', () => {
   });
 
   it('upserts all assets and writes audit event', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findMany as any).mockResolvedValue([
       { uuid: 'a1', assetType: 'host' },
       { uuid: 'a2', assetType: 'host' },
     ]);
     (prisma.assetLedgerFields.upsert as any).mockResolvedValue({ assetUuid: 'a1' });
+    (prisma.auditEvent.create as any).mockResolvedValue({ id: 'ae_1' });
 
     const req = new Request('http://localhost/api/v1/assets/ledger-fields/bulk-set', {
       method: 'POST',

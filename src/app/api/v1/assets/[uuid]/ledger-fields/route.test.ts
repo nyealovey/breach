@@ -10,8 +10,9 @@ vi.mock('@/lib/db/prisma', () => {
   const asset = { findUnique: vi.fn() };
   const assetLedgerFields = { findUnique: vi.fn(), upsert: vi.fn() };
   const auditEvent = { create: vi.fn() };
+  const assetHistoryEvent = { create: vi.fn() };
 
-  const prismaMock = { asset, assetLedgerFields, auditEvent };
+  const prismaMock = { asset, assetLedgerFields, auditEvent, assetHistoryEvent };
   return { prisma: { ...prismaMock, $transaction: vi.fn(async (cb: any) => cb(prismaMock)) } };
 });
 
@@ -21,7 +22,11 @@ describe('PUT /api/v1/assets/:uuid/ledger-fields', () => {
   });
 
   it('returns 404 when asset missing', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue(null);
 
     const req = new Request('http://localhost/api/v1/assets/a1/ledger-fields', {
@@ -37,7 +42,11 @@ describe('PUT /api/v1/assets/:uuid/ledger-fields', () => {
   });
 
   it('returns 400 when key is invalid', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({ uuid: 'a1', assetType: 'host' });
     (prisma.assetLedgerFields.findUnique as any).mockResolvedValue(null);
 
@@ -54,7 +63,11 @@ describe('PUT /api/v1/assets/:uuid/ledger-fields', () => {
   });
 
   it('returns 400 when writing host-only key to VM', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({ uuid: 'a1', assetType: 'vm' });
     (prisma.assetLedgerFields.findUnique as any).mockResolvedValue(null);
 
@@ -71,7 +84,11 @@ describe('PUT /api/v1/assets/:uuid/ledger-fields', () => {
   });
 
   it('upserts ledger fields and writes audit event', async () => {
-    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1', username: 'admin' } },
+    });
     (prisma.asset.findUnique as any).mockResolvedValue({ uuid: 'a1', assetType: 'host' });
     (prisma.assetLedgerFields.findUnique as any).mockResolvedValue({ company: 'OldCo' });
     (prisma.assetLedgerFields.upsert as any).mockResolvedValue({
@@ -89,6 +106,8 @@ describe('PUT /api/v1/assets/:uuid/ledger-fields', () => {
       managementCode: null,
       fixedAssetNo: null,
     });
+    (prisma.auditEvent.create as any).mockResolvedValue({ id: 'ae_1' });
+    (prisma.assetHistoryEvent.create as any).mockResolvedValue({ id: 'he_1' });
 
     const req = new Request('http://localhost/api/v1/assets/a1/ledger-fields', {
       method: 'PUT',

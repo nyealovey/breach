@@ -28,6 +28,7 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
   if (!auth.ok) return auth.response;
 
   const { uuid } = await context.params;
+  const now = new Date();
 
   let body: z.infer<typeof BodySchema>;
   try {
@@ -144,7 +145,7 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
         },
       });
 
-      await tx.auditEvent.create({
+      const audit = await tx.auditEvent.create({
         data: {
           eventType: 'asset.ledger_fields_saved',
           actorUserId: auth.session.user.id,
@@ -154,6 +155,23 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
             updatedKeys,
             changes,
           },
+        },
+        select: { id: true },
+      });
+
+      await tx.assetHistoryEvent.create({
+        data: {
+          assetUuid: uuid,
+          eventType: 'ledger_fields.changed',
+          occurredAt: now,
+          title: '台账字段变更',
+          summary: {
+            actor: { userId: auth.session.user.id, username: auth.session.user.username },
+            requestId: auth.requestId,
+            updatedKeys,
+            changes,
+          } as Prisma.InputJsonValue,
+          refs: { auditEventId: audit.id } as Prisma.InputJsonValue,
         },
       });
 

@@ -86,6 +86,10 @@ describe('ingestCollectRun (relation endpoint lookup)', () => {
         create: vi.fn(async () => ({ id: 'sr_1' })),
       },
       asset: {
+        findMany: vi.fn(async (args: any) => {
+          const uuids = (args.where?.uuid?.in as string[] | undefined) ?? [];
+          return uuids.map((uuid) => ({ uuid, status: 'in_service' }));
+        }),
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
       relation: {
@@ -98,10 +102,14 @@ describe('ingestCollectRun (relation endpoint lookup)', () => {
         create: vi.fn(async () => ({})),
       },
       assetRunSnapshot: {
+        findMany: vi.fn(async () => []),
         create: vi.fn(async (args: any) => {
           snapshots.push(args.data);
           return {};
         }),
+      },
+      assetHistoryEvent: {
+        createMany: vi.fn(async () => ({ count: 0 })),
       },
     };
 
