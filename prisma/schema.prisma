@@ -71,6 +71,14 @@ enum DuplicateCandidateJobStatus {
   Failed
 }
 
+enum AssetLedgerExportStatus {
+  Queued
+  Running
+  Succeeded
+  Failed
+  Expired
+}
+
 enum MergeConflictStrategy {
   primary_wins
   latest_wins
@@ -191,6 +199,7 @@ model User {
   sessions                 Session[]
   auditEvents              AuditEvent[]        @relation("AuditActor")
   mergeAudits              MergeAudit[]        @relation("MergeAuditActor")
+  assetLedgerExports       AssetLedgerExport[] @relation("AssetLedgerExportRequestedBy")
   preferences              UserPreference[]
   ignoredDuplicateCandidates DuplicateCandidate[] @relation("DuplicateCandidateIgnoredBy")
 }
@@ -218,6 +227,29 @@ model AuditEvent {
 
   @@index([eventType, createdAt])
   @@index([actorUserId, createdAt])
+}
+
+model AssetLedgerExport {
+  id                String                 @id @default(cuid())
+  requestedByUserId String?
+  status            AssetLedgerExportStatus @default(Queued)
+  requestId         String?
+  params            Json
+  rowCount          Int?
+  fileName          String?
+  fileSizeBytes     Int?
+  fileSha256        String?
+  fileBytes         Bytes?
+  error             Json?
+  createdAt         DateTime @default(now())
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  expiresAt         DateTime?
+
+  requestedByUser User? @relation("AssetLedgerExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([requestedByUserId, createdAt(sort: Desc)])
 }
 
 model MergeAudit {

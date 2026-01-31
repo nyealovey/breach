@@ -13,9 +13,10 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
 import { logEvent } from '@/lib/logging/logger';
 import { recycleStaleRuns } from '@/lib/runs/recycle-stale-runs';
+import { processAssetLedgerExport } from '@/lib/exports/asset-ledger-export-job';
 
 import type { AppError } from '@/lib/errors/error';
-import type { Prisma, Run, Source } from '@prisma/client';
+import type { AssetLedgerExport, Prisma, Run, Source } from '@prisma/client';
 
 function log(message: string, extra?: Record<string, unknown>) {
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
@@ -87,6 +88,24 @@ async function claimQueuedRuns(batchSize: number): Promise<Run[]> {
     FROM next
     WHERE r.id = next.id
     RETURNING r.*;
+  `;
+}
+
+async function claimQueuedAssetLedgerExports(batchSize: number): Promise<AssetLedgerExport[]> {
+  return prisma.$queryRaw<AssetLedgerExport[]>`
+    WITH next AS (
+      SELECT id
+      FROM "AssetLedgerExport"
+      WHERE status = 'Queued'
+      ORDER BY "createdAt" ASC
+      LIMIT ${batchSize}
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "AssetLedgerExport" e
+    SET status = 'Running', "startedAt" = NOW()
+    FROM next
+    WHERE e.id = next.id
+    RETURNING e.*;
   `;
 }
 
@@ -612,6 +631,46 @@ async function main() {
               job_id: job.id,
               run_id: job.runId,
               error: message,
+            });
+          }
+        }
+        continue;
+      }
+
+      const exports = await claimQueuedAssetLedgerExports(1);
+      if (exports.length > 0) {
+        for (const exp of exports) {
+          log('processing asset-ledger export', { exportId: exp.id, status: exp.status });
+          try {
+            await processAssetLedgerExport({
+              prisma,
+              exportRow: {
+                id: exp.id,
+                requestedByUserId: exp.requestedByUserId,
+                params: exp.params,
+                requestId: exp.requestId,
+              },
+            });
+          } catch (err) {
+            log('export processing crashed', {
+              exportId: exp.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            const error: AppError = {
+              code: ErrorCode.INTERNAL_ERROR,
+              category: 'unknown',
+              message: 'worker crashed while processing export',
+              retryable: true,
+              redacted_context: { cause: err instanceof Error ? err.message : String(err) },
+            };
+            await prisma.assetLedgerExport.update({
+              where: { id: exp.id },
+              data: {
+                status: 'Failed',
+                finishedAt: new Date(),
+                error: error as Prisma.InputJsonValue,
+                fileBytes: null,
+              },
             });
           }
         }
