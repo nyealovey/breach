@@ -225,6 +225,64 @@ best-effort 字段（缺失则 warning，不阻断成功）：
 - [ ] 文档同步：补充错误码到 `docs/design/asset-ledger-error-codes.md`（如未注册）；补充 physical 插件示例到 `docs/design/asset-ledger-collector-reference.md`（如需要）。
 - [ ] 回归清单：至少 1 套真实 Linux 物理机环境回归（手工步骤 + 期望输出摘要）。
 
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T10L-01 | healthcheck 成功 | Linux 主机、SSH 可达、凭证正确 | 执行 `healthcheck` | Run 成功 |
+| T10L-02 | detect 成功 | 同上 | 执行 `detect` | 输出 `target_version`、`capabilities`、`driver` |
+| T10L-03 | collect 成功 | 同上 | 执行 `collect` | 输出 1 Host；`inventory_complete=true`；`identity.hostname` 非空 |
+| T10L-04 | best-effort 字段采集 | 有 root 权限 | 执行 `collect` | 包含 machine_uuid/serial_number/vendor/model |
+
+### 异常场景（Error Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
+|---------|----------|----------|----------|------------|----------|
+| T10L-E01 | SSH 认证失败 | 凭证错误 | 执行 `healthcheck` | `PHYSICAL_AUTH_FAILED` | Run 失败；retryable=false |
+| T10L-E02 | 权限不足 | 无法读取 hostname | 执行 `collect` | `PHYSICAL_PERMISSION_DENIED` | Run 失败 |
+| T10L-E03 | 网络超时 | SSH 端口不可达 | 执行 `healthcheck` | `PHYSICAL_NETWORK_ERROR` | Run 失败；retryable=true |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T10L-B01 | DMI 不可读 | 非 root 用户 | 执行 `collect` | machine_uuid/serial_number 为空；记录 warning；Run 成功 |
+| T10L-B02 | 不同发行版 | Ubuntu/CentOS/Debian | 执行 `collect` | 均可成功采集 hostname/os 信息 |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| SSH 客户端库 | 硬依赖 | 需选择合适的 SSH 库 |
+| 错误码注册表 | 硬依赖 | `PHYSICAL_*` 错误码需先注册 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `linux_physical_collect_success_rate` | Gauge | Linux 物理机 collect 成功率 | < 95% 触发告警 |
+| `linux_physical_dmi_unavailable_rate` | Gauge | DMI 不可读率 | > 50% 触发告警（提示检查权限） |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `linux_physical.dmi_unavailable` | DMI 不可读 | WARN | `source_id`, `hostname` |
+| `linux_physical.field_fallback` | 字段降级 | WARN | `source_id`, `field`, `reason` |
+
+## Prerequisites Checklist
+
+> 目标环境需满足以下前置条件。
+
+- [ ] SSH 服务已启用（端口 22 或自定义）
+- [ ] 防火墙允许 SSH 端口
+- [ ] 账号具备读取 `/etc/os-release`、`/proc/meminfo`、`hostname` 的权限
+- [ ] （可选）root 权限用于读取 `/sys/class/dmi/id/*`
+
 ## Execution Phases
 
 ### Phase 1: 契约与配置定稿
@@ -250,7 +308,8 @@ best-effort 字段（缺失则 warning，不阻断成功）：
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 1
+**Quality Score**: 100/100 (audited)

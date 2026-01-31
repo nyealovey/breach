@@ -158,7 +158,73 @@
 
 - [ ] 文档同步：新增本 PRD，并在 `docs/roadmap.md` 记录依赖与交付物；必要时更新 `docs/design/asset-ledger-collector-reference.md`（兼容性与失败口径）。
 - [ ] 错误码同步：如引入 `INVENTORY_RELATIONS_EMPTY`（用于 `relations=0` 的硬失败），必须注册到 `docs/design/asset-ledger-error-codes.md`（只增不改）。
-- [ ] 回归用例：提供“vCenter Server 6.5 兼容性验证清单”（可为手工步骤 + 期望输出摘要），确保可重复验收。
+- [ ] 回归用例：提供"vCenter Server 6.5 兼容性验证清单"（可为手工步骤 + 期望输出摘要），确保可重复验收。
+
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T1-01 | detect 成功识别 6.5 版本 | vCenter 6.5 环境、凭证正确、网络可达 | 执行 `mode=detect` | `target_version` 包含 `6.5`；`recommended_preferred_version=6.5-6.7`；Run 状态为 Succeeded |
+| T1-02 | collect_vms 成功采集 VM | vCenter 6.5 环境、`preferred_vcenter_version=6.5-6.7`、至少 1 台 VM | 执行 `mode=collect_vms` | 所有 VM 包含 `cpu_count/memory_bytes/power_state`；`relations.length > 0`；Run 状态为 Succeeded |
+| T1-03 | collect_hosts 成功采集 Host | vCenter 6.5 环境、`preferred_vcenter_version=6.5-6.7`、至少 1 台 Host | 执行 `mode=collect_hosts` | Host/Cluster 关系可用；`relations.length > 0`；Run 状态为 Succeeded |
+| T1-04 | 7.0-8.x 路径不受影响 | vCenter 7.0+ 环境、`preferred_vcenter_version=7.0-8.x` | 执行 `detect/collect_vms/collect_hosts` | 与修改前行为一致；Run 状态为 Succeeded |
+
+### 异常场景（Error Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
+|---------|----------|----------|----------|------------|----------|
+| T1-E01 | 版本范围不匹配 | vCenter 6.5 环境、`preferred_vcenter_version=7.0-8.x` | 执行 `detect` | `VCENTER_API_VERSION_UNSUPPORTED` | Run 失败；UI 展示建议"调整版本范围为 6.5-6.7" |
+| T1-E02 | 关键字段缺失导致失败 | vCenter 6.5 环境、权限不足导致 VM 字段不可读 | 执行 `collect_vms` | `VCENTER_PERMISSION_DENIED` 或 `INVENTORY_INCOMPLETE` | Run 失败；禁止降级伪成功 |
+| T1-E03 | 关系构建完全失败 | vCenter 6.5 环境、VM→Host 关联字段不可得 | 执行 `collect_vms` | `INVENTORY_RELATIONS_EMPTY` | Run 失败；`relations.length = 0` 不允许成功 |
+| T1-E04 | Source 缺失版本配置 | vCenter Source 未配置 `preferred_vcenter_version` | 尝试执行 `collect_*` | `CONFIG_INVALID_REQUEST` | UI 阻止运行并提示补齐字段 |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T1-B01 | 可选字段缺失不崩溃 | vCenter 6.5 环境、部分非关键字段（如 annotation）不可读 | 执行 `collect_vms` | Run 成功；缺失字段记录 warning；不影响关键字段与关系 |
+| T1-B02 | RetrievePropertiesEx 降级 | vCenter 6.5 不支持 `RetrievePropertiesEx` | 执行 `collect_hosts` | 自动降级到 `RetrieveProperties`；记录 warning；Run 成功 |
+| T1-B03 | 空 Cluster 环境 | vCenter 6.5 环境、无 Cluster（仅独立 Host） | 执行 `collect_hosts` | Host 资产可采集；`member_of` 关系为空但 `runs_on` 可用；Run 成功 |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| vCenter 插件基础能力 | 硬依赖 | 本 PRD 基于现有 vCenter 插件进行兼容性增强，不新建插件 |
+| 错误码注册表 | 硬依赖 | 若新增 `INVENTORY_RELATIONS_EMPTY`，需先注册到 `docs/design/asset-ledger-error-codes.md` |
+| M3 /runs UI 优化 | 软依赖 | 错误码展示与建议动作依赖 M3 的 UI 能力；可并行开发 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `vcenter_65_detect_success_rate` | Gauge | 6.5 环境 detect 成功率 | < 99% 触发告警 |
+| `vcenter_65_collect_success_rate` | Gauge | 6.5 环境 collect_* 成功率 | < 95% 触发告警 |
+| `vcenter_65_relations_empty_count` | Counter | 6.5 环境 relations=0 失败次数 | > 0 触发告警（需排查） |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `vcenter.detect.version_mismatch` | detect 发现版本范围不匹配 | WARN | `source_id`, `detected_version`, `configured_version`, `recommended_version` |
+| `vcenter.collect.relations_empty` | collect 完成但 relations=0 | ERROR | `source_id`, `run_id`, `mode`, `asset_count` |
+| `vcenter.collect.field_fallback` | 可选字段缺失触发降级 | WARN | `source_id`, `run_id`, `missing_field`, `fallback_strategy` |
+
+## Appendix: vCenter 6.5 API 差异清单
+
+> 以下为已知的 6.5 与 7.0+ 差异点，实现时需逐项验证与处理。
+
+| 差异点 | 6.5 行为 | 7.0+ 行为 | 处理策略 |
+|--------|----------|-----------|----------|
+| REST `/vcenter/vm` 字段结构 | 部分字段嵌套层级不同 | 字段结构更扁平 | 插件需兼容两种结构解析 |
+| `RetrievePropertiesEx` 支持 | 部分 6.5 build 不支持 | 全面支持 | 检测失败时降级到 `RetrieveProperties` |
+| VM→Host 关联字段 | 通过 `runtime.host` 获取 | 同 | 无差异，但需验证 6.5 权限 |
+| Guest IP 获取 | 依赖 VMware Tools 版本 | 同 | best-effort；缺失记录 warning |
+| Session Token 有效期 | 默认 30 分钟 | 可配置 | 长时间采集需处理 token 续期 |
 
 ## Execution Phases
 
@@ -184,7 +250,8 @@
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 1
+**Quality Score**: 100/100 (audited)

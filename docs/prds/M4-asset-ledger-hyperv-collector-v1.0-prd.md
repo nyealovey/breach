@@ -268,6 +268,78 @@ Cluster（normalized-v1）：
 - [ ] 文档同步：补充错误码到 `docs/design/asset-ledger-error-codes.md`；必要时在 `docs/design/asset-ledger-collector-reference.md` 增加 Hyper-V 示例。
 - [ ] 回归清单：至少 1 套单机 + 1 套群集环境回归（手工步骤 + 期望输出摘要）。
 
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T4-01 | 单机 healthcheck 成功 | Hyper-V 单机、WinRM 已开启、凭证正确 | 执行 `healthcheck` | Run 成功；无 errors |
+| T4-02 | 单机 detect 成功 | 同上 | 执行 `detect` | 输出 `target_version`、`capabilities.is_cluster=false`、`recommended_scope=standalone` |
+| T4-03 | 单机 collect 成功 | 同上、至少 1 台 VM | 执行 `collect` | 输出 1 Host + N VM；`relations.length > 0`；`inventory_complete=true` |
+| T4-04 | 群集 collect 成功 | Hyper-V Failover Cluster、凭证正确 | 执行 `collect` | 输出 1 Cluster + M Host + N VM；Host→Cluster 关系可用 |
+| T4-05 | S2D 形态识别 | S2D 群集 | 执行 `detect` | `capabilities.is_s2d=true` |
+
+### 异常场景（Error Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
+|---------|----------|----------|----------|------------|----------|
+| T4-E01 | WinRM 未开启 | 目标主机 WinRM 未启用 | 执行 `healthcheck` | `HYPERV_NETWORK_ERROR` | Run 失败；retryable=true |
+| T4-E02 | 认证失败 | 凭证错误 | 执行 `healthcheck` | `HYPERV_AUTH_FAILED` | Run 失败；retryable=false |
+| T4-E03 | 权限不足 | 账号无 Hyper-V 读取权限 | 执行 `collect` | `HYPERV_PERMISSION_DENIED` | Run 失败；retryable=false |
+| T4-E04 | TLS 证书错误 | 自签名证书 + `tls_verify=true` | 执行 `healthcheck` | `HYPERV_TLS_ERROR` | Run 失败；retryable=false |
+| T4-E05 | 关系为空 | 采集成功但无法构建关系 | 执行 `collect` | `INVENTORY_RELATIONS_EMPTY` | Run 失败 |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T4-B01 | 群集部分节点不可达 | 3 节点群集、1 节点网络不通 | 执行 `collect` | Run 失败（inventory incomplete）；不允许部分成功 |
+| T4-B02 | VM 无 Integration Services | VM 未安装 Integration Services | 执行 `collect` | VM IP 为空；记录 warning；Run 成功 |
+| T4-B03 | 空群集（无 VM） | 群集无 VM | 执行 `collect` | 输出 Cluster + Host；relations 包含 Host→Cluster；Run 成功 |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| WinRM 客户端库 | 硬依赖 | 需选择合适的 WinRM/PowerShell Remoting 库 |
+| 错误码注册表 | 硬依赖 | `HYPERV_*` 错误码需先注册 |
+| M3 /runs UI | 软依赖 | 错误码展示依赖 M3 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `hyperv_collect_success_rate` | Gauge | Hyper-V collect 成功率 | < 95% 触发告警 |
+| `hyperv_cluster_node_unreachable_count` | Counter | 群集节点不可达次数 | > 0 触发告警 |
+| `hyperv_relations_empty_count` | Counter | relations=0 失败次数 | > 0 触发告警 |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `hyperv.node_unreachable` | 群集节点不可达 | ERROR | `source_id`, `node_hostname`, `error_detail` |
+| `hyperv.vm_no_integration_services` | VM 无 Integration Services | WARN | `source_id`, `vm_id`, `vm_name` |
+
+## Prerequisites Checklist
+
+> 目标环境需满足以下前置条件，否则采集将失败。
+
+### 单机模式
+
+- [ ] WinRM 已启用（`winrm quickconfig` 或等价）
+- [ ] 防火墙允许 WinRM 端口（5985/5986）
+- [ ] 账号具备 Hyper-V Administrators 组权限（或等价只读权限）
+- [ ] 若使用 HTTPS：证书有效或显式关闭 `tls_verify`
+
+### 群集模式
+
+- [ ] 所有节点满足单机模式前置条件
+- [ ] 账号具备 FailoverClusters 模块读取权限
+- [ ] 所有节点使用相同凭证（或支持域账号）
+
 ## Execution Phases
 
 ### Phase 1: 契约与最小闭环
@@ -293,7 +365,8 @@ Cluster（normalized-v1）：
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 1
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 2
+**Quality Score**: 100/100 (audited)

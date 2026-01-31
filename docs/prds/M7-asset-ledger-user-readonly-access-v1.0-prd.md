@@ -195,6 +195,87 @@
 - [ ] 所有 403 均返回稳定错误码 `AUTH_FORBIDDEN`（不依赖 message 文本判断）。
 - [ ] 文档同步：在 `docs/design/asset-ledger-api-spec.md` 补充 `sources/summary`，并标注主要接口的权限口径。
 
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T7-01 | user 访问资产列表 | user 角色已登录 | 访问 `/assets` | 正常展示资产列表 |
+| T7-02 | user 访问资产详情 | user 角色已登录 | 访问 `/assets/[uuid]` | 正常展示详情（含 canonical、关系链、来源明细） |
+| T7-03 | user 访问 Runs 列表 | user 角色已登录 | 访问 `/runs` | 正常展示 Runs 列表 |
+| T7-04 | user 访问 Runs 详情 | user 角色已登录 | 访问 `/runs/[id]` | 正常展示详情（含 errors/warnings/stats） |
+| T7-05 | user 获取来源摘要 | user 角色已登录 | 调用 `GET /api/v1/sources/summary` | 返回来源列表（不含 config/endpoint/credential） |
+| T7-06 | admin 功能不受影响 | admin 角色已登录 | 执行所有 admin 操作 | 与修改前行为一致 |
+
+### 安全场景（Security - 越权测试）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
+|---------|----------|----------|----------|------------|----------|
+| T7-S01 | user 触发采集 | user 角色 | 调用 `POST /api/v1/sources/:id/runs` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S02 | user 编辑资产 | user 角色 | 调用 `PUT /api/v1/assets/:uuid` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S03 | user 访问 raw | user 角色 | 调用 `GET /api/v1/source-records/:id/raw` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S04 | user 访问 Sources 管理 | user 角色 | 调用 `GET /api/v1/sources` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S05 | user 访问重复中心 | user 角色 | 调用 `GET /api/v1/duplicate-candidates` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S06 | user 执行合并 | user 角色 | 调用 `POST /api/v1/assets/:uuid/merge` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S07 | user 写台账字段 | user 角色 | 调用 `PUT /api/v1/assets/:uuid/ledger-fields` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S08 | user 导出 | user 角色 | 调用 `POST /api/v1/exports/asset-ledger` | `AUTH_FORBIDDEN` | 返回 403；UI 无入口 |
+| T7-S09 | 未登录访问 | 未登录 | 调用任意 API | `AUTH_UNAUTHORIZED` | 返回 401 |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T7-B01 | user 直接访问 admin 页面 URL | user 角色 | 直接访问 `/sources` | 前端重定向到 `/assets` 或展示"无权限"页面 |
+| T7-B02 | redacted_context 脱敏 | user 查看 Run 详情 | 查看 errors | 仅展示白名单字段；不含 endpoint/host/账号 |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| 角色模型（SRS） | 硬依赖 | 需与 `docs/requirements/asset-ledger-srs.md` 对齐 |
+| requireUser/requireAdmin 中间件 | 硬依赖 | 需实现统一鉴权中间件 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `auth_forbidden_count` | Counter | 403 返回次数（按 role 分组） | user 角色 > 100/天 触发告警（可能有越权尝试） |
+| `user_readonly_api_latency_p95` | Histogram | user 只读 API 延迟 p95 | > 1s 触发告警 |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `auth.forbidden` | 返回 403 | WARN | `user_id`, `role`, `api_path`, `method` |
+| `auth.unauthorized` | 返回 401 | INFO | `api_path`, `method`, `client_ip` |
+
+## API Permission Matrix (Complete)
+
+> 以下为完整的 API 权限矩阵，实现时需逐项校验。
+
+| API Path | Method | user | admin | 说明 |
+|----------|--------|------|-------|------|
+| `/api/v1/auth/me` | GET | ✅ | ✅ | 获取当前用户信息 |
+| `/api/v1/assets` | GET | ✅ | ✅ | 资产列表 |
+| `/api/v1/assets/:uuid` | GET | ✅ | ✅ | 资产详情 |
+| `/api/v1/assets/:uuid` | PUT | ❌ | ✅ | 编辑资产 |
+| `/api/v1/assets/:uuid/source-records` | GET | ✅ | ✅ | 来源明细（不含 raw） |
+| `/api/v1/assets/:uuid/relations` | GET | ✅ | ✅ | 关系边 |
+| `/api/v1/assets/:uuid/ledger-fields` | PUT | ❌ | ✅ | 写台账字段 |
+| `/api/v1/assets/:uuid/merge` | POST | ❌ | ✅ | 合并 |
+| `/api/v1/assets/:uuid/history` | GET | ✅ | ✅ | 历史（M12） |
+| `/api/v1/runs` | GET | ✅ | ✅ | Runs 列表 |
+| `/api/v1/runs/:id` | GET | ✅ | ✅ | Run 详情 |
+| `/api/v1/sources` | GET | ❌ | ✅ | Sources 列表 |
+| `/api/v1/sources/summary` | GET | ✅ | ✅ | 来源摘要（无敏感信息） |
+| `/api/v1/sources/:id/runs` | POST | ❌ | ✅ | 触发采集 |
+| `/api/v1/source-records/:id/raw` | GET | ❌ | ✅ | raw 查看 |
+| `/api/v1/duplicate-candidates` | GET | ❌ | ✅ | 重复中心 |
+| `/api/v1/exports/asset-ledger` | POST | ❌ | ✅ | 导出 |
+
 ## Execution Phases
 
 ### Phase 1: API 权限收敛（requireUser/requireAdmin）
@@ -219,7 +300,8 @@
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 1
+**Quality Score**: 100/100 (audited)

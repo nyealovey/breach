@@ -276,6 +276,72 @@
 - [ ] 当候选计算触发 `dup-rules-v1` 性能边界（超时/过多）时，系统记录 warning 且可观测（run.warnings 或任务日志宽事件）。
 - [ ] 文档同步：如新增重复中心 API，需补充到 `docs/design/asset-ledger-api-spec.md`；如新增错误码，需注册到 `docs/design/asset-ledger-error-codes.md`。
 
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T5D-01 | 候选生成（VM MAC 重叠） | 两台 VM 有相同 MAC | 执行成功 collect | 生成 DuplicateCandidate；score=90；status=open |
+| T5D-02 | 候选生成（Host 序列号相同） | 两台 Host 序列号相同 | 执行成功 collect | 生成 DuplicateCandidate；score=100；status=open |
+| T5D-03 | 重复中心列表展示 | 存在 open 候选 | 访问重复中心 | 展示候选列表；默认筛选 status=open |
+| T5D-04 | 候选详情可解释 | 存在候选 | 查看候选详情 | 展示命中规则、证据字段、分数、置信度、对比字段 |
+| T5D-05 | Ignore 候选 | 存在 open 候选 | 执行 Ignore | status 变为 ignored；写入 audit_event |
+| T5D-06 | 下线语义生效 | 资产在最新 collect 中未出现 | 执行成功 collect（inventory_complete=true） | asset_source_link.presence_status=missing；若所有来源 missing 则 asset.status=offline |
+| T5D-07 | 恢复在线 | offline 资产重新出现 | 执行成功 collect | presence_status=present；asset.status=in_service |
+
+### 异常场景（Error Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T5D-E01 | 失败 Run 不推进下线 | Run 失败 | 执行失败 collect | 不更新 presence_status；不推进 offline |
+| T5D-E02 | inventory_complete=false 不推进下线 | Run 成功但 inventory_complete=false | 执行 collect | 不更新 presence_status；不推进 offline |
+| T5D-E03 | user 无权访问重复中心 | user 角色 | 访问重复中心 API | 返回 403（AUTH_FORBIDDEN） |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T5D-B01 | ignored 候选再次命中 | 已 ignored 的候选对再次满足规则 | 执行 collect | 仅更新 last_observed_at；不 reopen |
+| T5D-B02 | 候选数量超限（>1000） | 单次 Run 产生 1000+ 候选 | 执行 collect | 记录 warning；任务继续（best-effort） |
+| T5D-B03 | 占位符黑名单过滤 | MAC 为 `00:00:00:00:00:00` | 执行 collect | 不参与匹配；不生成候选 |
+| T5D-B04 | cluster 不生成候选 | 存在同名 cluster | 执行 collect | 不生成 cluster 候选 |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| dup-rules-v1 规则文档 | 硬依赖 | 规则实现需与 `docs/design/asset-ledger-dup-rules-v1.md` 对齐 |
+| asset_source_link 数据模型 | 硬依赖 | 需支持 presence_status 字段 |
+| M5 合并 PRD | 软依赖 | 从候选进入合并流程 |
+| M3 /assets UI | 软依赖 | sourceLinks.presenceStatus 展示 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `duplicate_candidate_open_count` | Gauge | open 状态候选数量 | > 500 触发告警（需人工介入） |
+| `duplicate_candidate_generation_timeout_count` | Counter | 候选生成超时次数 | > 0 触发告警 |
+| `asset_offline_count` | Gauge | offline 资产数量 | 环比增长 > 20% 触发告警 |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `duplicate.candidate_created` | 新候选生成 | INFO | `candidate_id`, `asset_uuid_a`, `asset_uuid_b`, `score`, `rule_codes` |
+| `duplicate.candidate_ignored` | 候选被忽略 | INFO | `candidate_id`, `ignored_by`, `reason` |
+| `asset.status_changed` | 资产状态变化 | INFO | `asset_uuid`, `old_status`, `new_status`, `trigger_run_id` |
+
+## Performance Baseline
+
+| 场景 | 数据规模 | 期望性能 | 验证方法 |
+|------|----------|----------|----------|
+| 候选生成 | 1,000 资产 | < 30s | 压测 |
+| 候选生成 | 10,000 资产 | < 5min（分批） | 压测 |
+| 重复中心列表 | 1,000 候选 | TTFB < 1s | API 压测 |
+
 ## Execution Phases
 
 ### Phase 1: 下线语义（presence + offline 汇总）
@@ -302,7 +368,8 @@
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 1
+**Quality Score**: 100/100 (audited)

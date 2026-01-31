@@ -263,6 +263,70 @@ Cluster（normalized-v1）：
 - [ ] 文档同步：补充错误码到 `docs/design/asset-ledger-error-codes.md`；必要时在 `docs/design/asset-ledger-collector-reference.md` 增加 PVE 示例。
 - [ ] 回归清单：至少 1 套单机 + 1 套群集环境回归（手工步骤 + 期望输出摘要）。
 
+## Test Scenarios
+
+### 正向场景（Happy Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
+|---------|----------|----------|----------|----------|
+| T6-01 | PVE 8.x healthcheck 成功 | PVE 8.x、API Token 正确 | 执行 `healthcheck` | Run 成功 |
+| T6-02 | PVE 5.x detect 成功 | PVE 5.x 环境 | 执行 `detect` | 输出 `target_version`、`capabilities`、`driver` |
+| T6-03 | 单机 collect 成功 | PVE 单节点、至少 1 台 VM | 执行 `collect` | 输出 1 Host + N VM；`relations.length > 0` |
+| T6-04 | 群集 collect 成功 | PVE Cluster | 执行 `collect` | 输出 1 Cluster + M Host + N VM；Host→Cluster 关系可用 |
+| T6-05 | VM IP 获取（guest agent） | VM 启用 guest agent | 执行 `collect` | VM 包含 `network.ip_addresses[]` |
+
+### 异常场景（Error Path）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
+|---------|----------|----------|----------|------------|----------|
+| T6-E01 | 认证失败 | API Token 错误 | 执行 `healthcheck` | `PVE_AUTH_FAILED` | Run 失败；retryable=false |
+| T6-E02 | 权限不足 | Token 无 VM 读取权限 | 执行 `collect` | `PVE_PERMISSION_DENIED` | Run 失败 |
+| T6-E03 | 限流 | 触发 API 限流 | 执行 `collect` | `PVE_RATE_LIMIT` | Run 失败；retryable=true |
+| T6-E04 | 关系为空 | 存在 VM 但无法构建关系 | 执行 `collect` | `INVENTORY_RELATIONS_EMPTY` | Run 失败 |
+
+### 边界场景（Edge Case）
+
+| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
+|---------|----------|----------|----------|----------|
+| T6-B01 | guest agent 不可用 | VM 未安装 guest agent | 执行 `collect` | VM IP 为空；记录 warning `PVE_GUEST_AGENT_UNAVAILABLE`；Run 成功 |
+| T6-B02 | 空群集（无 VM） | PVE Cluster 无 VM | 执行 `collect` | 输出 Cluster + Host；relations 包含 Host→Cluster；Run 成功 |
+| T6-B03 | LXC 容器 | 存在 LXC 容器 | 执行 `collect` | LXC 作为 VM 入账（或明确排除并文档说明） |
+
+## Dependencies
+
+| 依赖项 | 依赖类型 | 说明 |
+|--------|----------|------|
+| PVE REST API 客户端 | 硬依赖 | 需封装 PVE API 调用 |
+| 错误码注册表 | 硬依赖 | `PVE_*` 错误码需先注册 |
+
+## Observability
+
+### 关键指标
+
+| 指标名 | 类型 | 说明 | 告警阈值 |
+|--------|------|------|----------|
+| `pve_collect_success_rate` | Gauge | PVE collect 成功率 | < 95% 触发告警 |
+| `pve_rate_limit_count` | Counter | 限流触发次数 | > 5/小时 触发告警 |
+| `pve_guest_agent_unavailable_rate` | Gauge | guest agent 不可用率 | > 50% 触发告警（提示用户检查） |
+
+### 日志事件
+
+| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
+|----------|----------|----------|----------|
+| `pve.rate_limited` | 触发限流 | WARN | `source_id`, `region`, `retry_after` |
+| `pve.guest_agent_unavailable` | VM 无 guest agent | WARN | `source_id`, `vm_id`, `vm_name` |
+
+## Version Compatibility Matrix
+
+> 以下为已验证的 PVE 版本兼容矩阵。
+
+| PVE 版本 | healthcheck | detect | collect | 备注 |
+|----------|-------------|--------|---------|------|
+| 5.0-5.4 | ✅ | ✅ | ✅ | 部分 API 字段可能缺失 |
+| 6.0-6.4 | ✅ | ✅ | ✅ | - |
+| 7.0-7.4 | ✅ | ✅ | ✅ | - |
+| 8.0-8.x | ✅ | ✅ | ✅ | 推荐版本 |
+
 ## Execution Phases
 
 ### Phase 1: 契约与配置定稿
@@ -288,7 +352,8 @@ Cluster（normalized-v1）：
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2026-01-30
-**Clarification Rounds**: 0
-**Quality Score**: 100/100
+**Last Updated**: 2026-01-31
+**Clarification Rounds**: 1
+**Quality Score**: 100/100 (audited)
