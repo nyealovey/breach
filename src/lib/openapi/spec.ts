@@ -53,6 +53,7 @@ const AssetListItemSchema = z.object({
   vmName: z.string().nullable(),
   os: z.string().nullable(),
   vmPowerState: z.string().nullable(),
+  toolsRunning: z.boolean().nullable(),
   ip: z.string().nullable(),
   cpuCount: z.number().int().nullable(),
   memoryBytes: z.number().int().nullable(),
@@ -80,6 +81,79 @@ const TriggerRunResponseSchema = z.object({
   createdAt: z.string(),
 });
 
+const DuplicateCandidateStatusSchema = z.enum(['open', 'ignored', 'merged']);
+const DuplicateCandidateConfidenceSchema = z.enum(['High', 'Medium']);
+const DuplicateCandidateAssetSummarySchema = z.object({
+  assetUuid: z.string(),
+  assetType: z.string(),
+  status: z.string(),
+  displayName: z.string().nullable(),
+  lastSeenAt: z.string().nullable(),
+});
+const DuplicateCandidateListItemSchema = z.object({
+  candidateId: z.string(),
+  status: DuplicateCandidateStatusSchema,
+  score: z.number().int(),
+  confidence: DuplicateCandidateConfidenceSchema,
+  lastObservedAt: z.string(),
+  assetA: DuplicateCandidateAssetSummarySchema,
+  assetB: DuplicateCandidateAssetSummarySchema,
+});
+const DuplicateCandidateSourceLinkSchema = z.object({
+  sourceId: z.string(),
+  sourceName: z.string(),
+  externalKind: z.string(),
+  externalId: z.string(),
+  presenceStatus: z.string(),
+  lastSeenAt: z.string(),
+  lastSeenRunId: z.string().nullable(),
+});
+const DuplicateCandidateDetailSchema = z.object({
+  candidateId: z.string(),
+  status: DuplicateCandidateStatusSchema,
+  score: z.number().int(),
+  confidence: DuplicateCandidateConfidenceSchema,
+  reasons: z.unknown(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastObservedAt: z.string(),
+  ignore: z
+    .object({
+      ignoredByUserId: z.string().nullable(),
+      ignoredAt: z.string().nullable(),
+      ignoreReason: z.string().nullable(),
+    })
+    .nullable(),
+  assetA: DuplicateCandidateAssetSummarySchema.extend({ sourceLinks: z.array(DuplicateCandidateSourceLinkSchema) }),
+  assetB: DuplicateCandidateAssetSummarySchema.extend({ sourceLinks: z.array(DuplicateCandidateSourceLinkSchema) }),
+});
+const IgnoreDuplicateCandidateResponseSchema = z.object({
+  candidateId: z.string(),
+  status: DuplicateCandidateStatusSchema,
+  ignoredAt: z.string().nullable(),
+  ignoreReason: z.string().nullable(),
+});
+
+const MergeConflictStrategySchema = z.enum(['primary_wins']);
+const MergeAssetsRequestSchema = z.object({
+  mergedAssetUuids: z.array(z.string()).min(1),
+  conflictStrategy: MergeConflictStrategySchema.optional(),
+});
+const MergeAssetsResponseSchema = z.object({
+  primaryAssetUuid: z.string(),
+  mergedAssetUuids: z.array(z.string()).min(1),
+  conflictStrategy: MergeConflictStrategySchema,
+  mergeAuditIds: z.array(z.string()),
+  migrated: z.object({
+    assetsUpdatedCount: z.number().int(),
+    sourceLinksMovedCount: z.number().int(),
+    sourceRecordsMovedCount: z.number().int(),
+    relationsRewrittenCount: z.number().int(),
+    dedupedRelationsCount: z.number().int(),
+    duplicateCandidatesUpdatedCount: z.number().int(),
+  }),
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/v1/assets',
@@ -92,12 +166,142 @@ registry.registerPath({
       asset_type: z.string().optional(),
       source_id: z.string().optional(),
       exclude_asset_type: z.string().optional(),
+      vm_power_state: z.enum(['poweredOn', 'poweredOff', 'suspended']).optional(),
+      ip_missing: z.enum(['true']).optional(),
     }),
   },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: okPaginatedResponse(AssetListItemSchema) } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/assets/{uuid}/merge',
+  tags: ['assets'],
+  request: {
+    params: z.object({ uuid: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: MergeAssetsRequestSchema },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(MergeAssetsResponseSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/duplicate-candidates',
+  tags: ['duplicate-candidates'],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().optional(),
+      status: DuplicateCandidateStatusSchema.optional(),
+      assetType: z.enum(['vm', 'host']).optional(),
+      confidence: DuplicateCandidateConfidenceSchema.optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okPaginatedResponse(DuplicateCandidateListItemSchema) } },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/duplicate-candidates/{candidateId}',
+  tags: ['duplicate-candidates'],
+  request: { params: z.object({ candidateId: z.string() }) },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(DuplicateCandidateDetailSchema) } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/duplicate-candidates/{candidateId}/ignore',
+  tags: ['duplicate-candidates'],
+  request: {
+    params: z.object({ candidateId: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: z.object({ reason: z.string().optional() }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okResponse(IgnoreDuplicateCandidateResponseSchema) } },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+const PreferenceKeySchema = z.literal('assets.table.columns.v1');
+const AssetsTableColumnsPreferenceValueSchema = z.object({
+  visibleColumns: z.array(z.string()).min(1),
+});
+const UserPreferenceSchema = z.object({
+  key: PreferenceKeySchema,
+  value: AssetsTableColumnsPreferenceValueSchema,
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/me/preferences',
+  tags: ['me'],
+  request: {
+    query: z.object({
+      key: PreferenceKeySchema,
+    }),
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(UserPreferenceSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/me/preferences',
+  tags: ['me'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            key: PreferenceKeySchema,
+            value: AssetsTableColumnsPreferenceValueSchema,
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(UserPreferenceSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
   },
 });
 

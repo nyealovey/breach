@@ -72,6 +72,7 @@
 | CONFIG_EXPORT_NOT_FOUND                 | web    | config     | false     | 404              | 导出任务不存在（Export 不存在）                                                                                  |
 | CONFIG_EXPORT_EXPIRED                   | web    | config     | false     | 410              | 导出文件已下载失效（下载即失效策略）                                                                             |
 | CONFIG_SCHEDULE_GROUP_NOT_FOUND         | web    | config     | false     | 404              | 调度组不存在                                                                                                     |
+| CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND    | web    | config     | false     | 404              | 重复候选不存在（DuplicateCandidate 不存在）                                                                      |
 | CONFIG_DUPLICATE_NAME                   | web    | config     | false     | 409              | 名称重复导致冲突                                                                                                 |
 | CONFIG_RESOURCE_CONFLICT                | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                                                                            |
 | PLUGIN_EXEC_FAILED                      | worker | unknown    | false     |                  | 插件进程无法启动（文件不存在/权限/exec 失败）                                                                    |
@@ -176,6 +177,7 @@ export const ErrorCode = {
   CONFIG_EXPORT_NOT_FOUND: 'CONFIG_EXPORT_NOT_FOUND',
   CONFIG_EXPORT_EXPIRED: 'CONFIG_EXPORT_EXPIRED',
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: 'CONFIG_SCHEDULE_GROUP_NOT_FOUND',
+  CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND: 'CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND',
   CONFIG_DUPLICATE_NAME: 'CONFIG_DUPLICATE_NAME',
   CONFIG_RESOURCE_CONFLICT: 'CONFIG_RESOURCE_CONFLICT',
 
@@ -393,6 +395,10 @@ export const ErrorMessages: Record<
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: {
     zh: '调度组不存在：{{group_id}}',
     en: 'Schedule group not found: {{group_id}}',
+  },
+  CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND: {
+    zh: '重复候选不存在：{{candidate_id}}',
+    en: 'Duplicate candidate not found: {{candidate_id}}',
   },
   CONFIG_DUPLICATE_NAME: {
     zh: '名称已存在：{{name}}',

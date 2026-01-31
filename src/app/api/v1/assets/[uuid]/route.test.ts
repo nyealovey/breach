@@ -61,6 +61,7 @@ describe('GET /api/v1/assets/:uuid', () => {
       assetUuid: '550e8400-e29b-41d4-a716-446655440000',
       assetType: 'vm',
       status: 'in_service',
+      mergedIntoAssetUuid: null,
       displayName: 'vm-01',
       machineNameOverride: null,
       lastSeenAt: '2026-01-28T00:00:00.000Z',

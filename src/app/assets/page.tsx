@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
+
+import type { AssetListUrlState, VmPowerStateParam } from '@/lib/assets/asset-list-url';
 
 type AssetListItem = {
   assetUuid: string;
@@ -46,6 +52,50 @@ type Pagination = {
 };
 
 type SourceOption = { sourceId: string; name: string };
+
+type AssetListColumnId =
+  | 'machineName'
+  | 'vmName'
+  | 'hostName'
+  | 'os'
+  | 'ip'
+  | 'cpuCount'
+  | 'memoryBytes'
+  | 'totalDiskBytes'
+  | 'vmPowerState';
+
+const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v1' as const;
+
+const ASSET_LIST_COLUMNS: Array<{
+  id: AssetListColumnId;
+  label: string;
+  description?: string;
+}> = [
+  { id: 'machineName', label: '机器名', description: '支持“覆盖显示”，并标记覆盖≠采集。' },
+  { id: 'vmName', label: '虚拟机名' },
+  { id: 'hostName', label: '宿主机名', description: 'VM --runs_on--> Host 的 displayName。' },
+  { id: 'os', label: '操作系统' },
+  { id: 'ip', label: 'IP', description: 'VM 若 Tools 未运行可能缺失。' },
+  { id: 'cpuCount', label: 'CPU' },
+  { id: 'memoryBytes', label: '内存' },
+  { id: 'totalDiskBytes', label: '总分配磁盘' },
+  { id: 'vmPowerState', label: '状态', description: 'VM 电源状态（poweredOn/off/suspended）。' },
+];
+
+const DEFAULT_VISIBLE_COLUMNS: AssetListColumnId[] = ASSET_LIST_COLUMNS.map((c) => c.id);
+const ASSET_LIST_COLUMN_ID_SET = new Set<AssetListColumnId>(DEFAULT_VISIBLE_COLUMNS);
+
+function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
+  if (!Array.isArray(input)) return null;
+
+  const ids = input
+    .filter((v) => typeof v === 'string')
+    .map((v) => v.trim())
+    .filter((v): v is AssetListColumnId => ASSET_LIST_COLUMN_ID_SET.has(v as AssetListColumnId));
+
+  const unique = Array.from(new Set(ids));
+  return unique.length > 0 ? unique : null;
+}
 
 function powerStateLabel(powerState: string) {
   if (powerState === 'poweredOn') return '运行';
@@ -78,18 +128,30 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function AssetsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [items, setItems] = useState<AssetListItem[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [sourceOptions, setSourceOptions] = useState<SourceOption[]>([]);
 
+  const [visibleColumns, setVisibleColumns] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
+  const visibleColumnSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
+  const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
+  const [columnDraft, setColumnDraft] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
+  const [columnSaving, setColumnSaving] = useState(false);
+
   const [qInput, setQInput] = useState('');
   const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host' | 'cluster'>('all');
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
+  const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
+  const [ipMissingInput, setIpMissingInput] = useState(false);
 
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(20);
 
   const [editMachineNameOpen, setEditMachineNameOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AssetListItem | null>(null);
@@ -97,15 +159,54 @@ export default function AssetsPage() {
   const [editSaving, setEditSaving] = useState(false);
 
   const query = useMemo(() => {
+    const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
+    const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
+    const ipMissing = ipMissingInput ? true : undefined;
+
+    // Both vm_power_state and ip_missing are VM-only filters; selecting them implies `asset_type=vm`.
+    const impliedAssetType = vmPowerState || ipMissing ? ('vm' as const) : assetType;
+
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
-      assetType: assetTypeInput === 'all' ? undefined : assetTypeInput,
-      excludeAssetType: assetTypeInput === 'all' ? ('cluster' as const) : undefined,
+      assetType: impliedAssetType,
+      excludeAssetType: impliedAssetType ? undefined : ('cluster' as const),
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
+      vmPowerState,
+      ipMissing,
       page,
       pageSize,
     };
-  }, [assetTypeInput, page, qInput, sourceIdInput]);
+  }, [assetTypeInput, ipMissingInput, page, pageSize, qInput, sourceIdInput, vmPowerStateInput]);
+
+  useEffect(() => {
+    const parsed = parseAssetListUrlState(new URLSearchParams(searchParams.toString()));
+    setQInput(parsed.q ?? '');
+    setAssetTypeInput(parsed.assetType ?? 'all');
+    setSourceIdInput(parsed.sourceId ?? 'all');
+    setVmPowerStateInput(parsed.vmPowerState ?? 'all');
+    setIpMissingInput(parsed.ipMissing === true);
+    setPage(parsed.page);
+    setPageSize(parsed.pageSize);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const current = searchParams.toString();
+
+    const nextParams = buildAssetListUrlSearchParams({
+      q: query.q,
+      assetType: query.assetType,
+      excludeAssetType: query.excludeAssetType,
+      sourceId: query.sourceId,
+      vmPowerState: query.vmPowerState,
+      ipMissing: query.ipMissing,
+      page: query.page,
+      pageSize: query.pageSize,
+    } satisfies AssetListUrlState);
+
+    const next = nextParams.toString();
+    if (next === current) return;
+    router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
+  }, [pathname, query, router, searchParams]);
 
   useEffect(() => {
     let active = true;
@@ -123,16 +224,47 @@ export default function AssetsPage() {
 
   useEffect(() => {
     let active = true;
+    const loadColumnPreference = async () => {
+      const res = await fetch(`/api/v1/me/preferences?key=${encodeURIComponent(ASSETS_TABLE_COLUMNS_PREFERENCE_KEY)}`);
+      if (!active) return;
+
+      // 404 means "not set yet" -> keep defaults.
+      if (res.status === 404) return;
+      if (!res.ok) return;
+
+      const body = (await res.json().catch(() => null)) as { data?: { value?: { visibleColumns?: unknown } } } | null;
+      const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns);
+      if (next) setVisibleColumns(next);
+    };
+
+    void loadColumnPreference();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     const load = async () => {
       setLoading(true);
 
       const params = new URLSearchParams();
-      params.set('page', String(query.page));
-      params.set('pageSize', String(query.pageSize));
-      if (query.q) params.set('q', query.q);
-      if (query.assetType) params.set('asset_type', query.assetType);
-      if (query.excludeAssetType) params.set('exclude_asset_type', query.excludeAssetType);
-      if (query.sourceId) params.set('source_id', query.sourceId);
+
+      // Keep API request params consistent with URL params.
+      const urlParams = buildAssetListUrlSearchParams({
+        q: query.q,
+        assetType: query.assetType,
+        excludeAssetType: query.excludeAssetType,
+        sourceId: query.sourceId,
+        vmPowerState: query.vmPowerState,
+        ipMissing: query.ipMissing,
+        page: query.page,
+        pageSize: query.pageSize,
+      } satisfies AssetListUrlState);
+
+      urlParams.forEach((value, key) => {
+        params.set(key, value);
+      });
 
       const res = await fetch(`/api/v1/assets?${params.toString()}`);
       if (!res.ok) {
@@ -183,6 +315,12 @@ export default function AssetsPage() {
               onValueChange={(value) => {
                 setPage(1);
                 setAssetTypeInput(value as typeof assetTypeInput);
+
+                // VM-only filters don't apply to other types; reset them to avoid confusing empty results.
+                if (value !== 'vm') {
+                  setVmPowerStateInput('all');
+                  setIpMissingInput(false);
+                }
               }}
             >
               <SelectTrigger className="w-[150px]">
@@ -215,6 +353,67 @@ export default function AssetsPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Select
+              value={vmPowerStateInput}
+              onValueChange={(value) => {
+                setPage(1);
+                setVmPowerStateInput(value as typeof vmPowerStateInput);
+
+                if (value !== 'all') setAssetTypeInput('vm');
+              }}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="电源状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部电源状态</SelectItem>
+                <SelectItem value="poweredOn">运行</SelectItem>
+                <SelectItem value="poweredOff">关机</SelectItem>
+                <SelectItem value="suspended">挂起</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={ipMissingInput}
+                onCheckedChange={(checked) => {
+                  setPage(1);
+                  setIpMissingInput(checked);
+                  if (checked) setAssetTypeInput('vm');
+                }}
+              />
+              <span className="text-sm">仅 IP 缺失</span>
+            </div>
+
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                setPage(1);
+                setPageSize(Number(value));
+              }}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="每页" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / 页</SelectItem>
+                <SelectItem value="20">20 / 页</SelectItem>
+                <SelectItem value="50">50 / 页</SelectItem>
+                <SelectItem value="100">100 / 页</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setColumnDraft(visibleColumns);
+                setColumnSettingsOpen(true);
+              }}
+            >
+              列设置
+            </Button>
           </div>
         </div>
 
@@ -227,64 +426,92 @@ export default function AssetsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>机器名</TableHead>
-                  <TableHead>虚拟机名</TableHead>
-                  <TableHead>宿主机名</TableHead>
-                  <TableHead>操作系统</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead className="text-right">CPU</TableHead>
-                  <TableHead className="text-right">内存</TableHead>
-                  <TableHead className="text-right">总分配磁盘</TableHead>
-                  <TableHead>状态</TableHead>
+                  {visibleColumnSet.has('machineName') ? <TableHead>机器名</TableHead> : null}
+                  {visibleColumnSet.has('vmName') ? <TableHead>虚拟机名</TableHead> : null}
+                  {visibleColumnSet.has('hostName') ? <TableHead>宿主机名</TableHead> : null}
+                  {visibleColumnSet.has('os') ? <TableHead>操作系统</TableHead> : null}
+                  {visibleColumnSet.has('ip') ? <TableHead>IP</TableHead> : null}
+                  {visibleColumnSet.has('cpuCount') ? <TableHead className="text-right">CPU</TableHead> : null}
+                  {visibleColumnSet.has('memoryBytes') ? <TableHead className="text-right">内存</TableHead> : null}
+                  {visibleColumnSet.has('totalDiskBytes') ? (
+                    <TableHead className="text-right">总分配磁盘</TableHead>
+                  ) : null}
+                  {visibleColumnSet.has('vmPowerState') ? <TableHead>状态</TableHead> : null}
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.assetUuid}>
-                    <TableCell className="font-medium">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span>{item.machineName ?? ''}</span>
-                        {item.machineNameOverride ? (
-                          item.machineNameMismatch ? (
-                            <Badge variant="destructive">覆盖≠采集</Badge>
-                          ) : (
-                            <Badge variant="secondary">覆盖</Badge>
-                          )
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
-                    <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
-                    <TableCell className="max-w-[240px] whitespace-normal break-words text-sm">
-                      {item.os ?? '-'}
-                    </TableCell>
-                    <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
-                      {item.ip ? (
-                        item.ip
-                      ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
-                        <span
-                          className="cursor-help text-muted-foreground"
-                          title="VMware Tools 未安装或未运行，无法获取 IP 地址"
-                        >
-                          - (Tools 未运行)
-                        </span>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
-                    <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
-                    <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>
-                    <TableCell>
-                      {item.vmPowerState ? (
-                        <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
-                          {powerStateLabel(item.vmPowerState)}
-                        </Badge>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
+                    {visibleColumnSet.has('machineName') ? (
+                      <TableCell className="font-medium">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{item.machineName ?? ''}</span>
+                          {item.machineNameOverride ? (
+                            item.machineNameMismatch ? (
+                              <Badge variant="destructive">覆盖≠采集</Badge>
+                            ) : (
+                              <Badge variant="secondary">覆盖</Badge>
+                            )
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('vmName') ? (
+                      <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('hostName') ? (
+                      <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('os') ? (
+                      <TableCell className="max-w-[240px] whitespace-normal break-words text-sm">
+                        {item.os ?? '-'}
+                      </TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('ip') ? (
+                      <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
+                        {item.ip ? (
+                          item.ip
+                        ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
+                          <span
+                            className="cursor-help text-muted-foreground"
+                            title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                          >
+                            - (Tools 未运行)
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('cpuCount') ? (
+                      <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('memoryBytes') ? (
+                      <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('totalDiskBytes') ? (
+                      <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>
+                    ) : null}
+
+                    {visibleColumnSet.has('vmPowerState') ? (
+                      <TableCell>
+                        {item.vmPowerState ? (
+                          <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
+                            {powerStateLabel(item.vmPowerState)}
+                          </Badge>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -328,6 +555,106 @@ export default function AssetsPage() {
             </div>
           </>
         )}
+
+        <Dialog
+          open={columnSettingsOpen}
+          onOpenChange={(open) => {
+            setColumnSettingsOpen(open);
+            if (!open) {
+              setColumnDraft(visibleColumns);
+              setColumnSaving(false);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>列设置</DialogTitle>
+              <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              {ASSET_LIST_COLUMNS.map((col) => {
+                const checked = columnDraft.includes(col.id);
+                return (
+                  <div key={col.id} className="flex items-center justify-between gap-4 rounded-md border p-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{col.label}</div>
+                      {col.description ? (
+                        <div className="mt-0.5 text-xs text-muted-foreground">{col.description}</div>
+                      ) : null}
+                    </div>
+                    <Switch
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        setColumnDraft((prev) => {
+                          if (next) return prev.includes(col.id) ? prev : [...prev, col.id];
+                          return prev.filter((id) => id !== col.id);
+                        });
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-xs text-muted-foreground">至少选择 1 列（当前：{columnDraft.length} 列）。</div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={columnSaving}
+                onClick={() => {
+                  setColumnDraft(DEFAULT_VISIBLE_COLUMNS);
+                }}
+              >
+                恢复默认
+              </Button>
+              <Button
+                variant="outline"
+                disabled={columnSaving}
+                onClick={() => {
+                  setColumnSettingsOpen(false);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                disabled={columnSaving || columnDraft.length < 1}
+                onClick={async () => {
+                  setColumnSaving(true);
+                  try {
+                    const res = await fetch('/api/v1/me/preferences', {
+                      method: 'PUT',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({
+                        key: ASSETS_TABLE_COLUMNS_PREFERENCE_KEY,
+                        value: { visibleColumns: columnDraft },
+                      }),
+                    });
+
+                    if (!res.ok) {
+                      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                      toast.error(body?.error?.message ?? '保存失败');
+                      return;
+                    }
+
+                    const body = (await res.json().catch(() => null)) as {
+                      data?: { value?: { visibleColumns?: unknown } };
+                    } | null;
+                    const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns) ?? columnDraft;
+                    setVisibleColumns(next);
+                    toast.success('列配置已保存');
+                    setColumnSettingsOpen(false);
+                  } finally {
+                    setColumnSaving(false);
+                  }
+                }}
+              >
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={editMachineNameOpen}

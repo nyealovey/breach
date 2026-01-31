@@ -1,7 +1,7 @@
 # 资产台账 normalized / canonical JSON Schema
 
-版本：v1.2  
-日期：2026-01-29
+版本：v1.3  
+日期：2026-01-31
 
 ## 文档简介
 
@@ -136,6 +136,25 @@
       }
     },
 
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "datastores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "capacity_bytes"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "capacity_bytes": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+
     "location": {
       "type": "object",
       "additionalProperties": false,
@@ -259,6 +278,12 @@
   },
   "os": { "name": "Windows Server", "version": "2019" },
   "hardware": { "cpu_count": 32, "memory_bytes": 274877906944 },
+  "storage": {
+    "datastores": [
+      { "name": "local-vmfs-1", "capacity_bytes": 1099511627776 },
+      { "name": "shared-vmfs-2", "capacity_bytes": 2199023255552 }
+    ]
+  },
   "location": { "region": "华东", "cabinet": "A01", "position": "U12" },
   "service": { "service_level": "P0" },
   "physical": {

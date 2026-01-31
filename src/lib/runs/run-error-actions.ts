@@ -128,6 +128,16 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       },
     ],
   },
+  PVE_RATE_LIMIT: {
+    title: 'API 限流（PVE）',
+    actions: [
+      {
+        title: '降低并发并重试',
+        steps: ['降低 Source 的 max_parallel_nodes', '稍后重试该 Run（或等待下次调度）'],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
   HYPERV_NETWORK_ERROR: {
     title: '网络错误（Hyper-V）',
     actions: [{ title: '检查 WinRM 连通性', steps: ['确认 5985/5986 可达', '确认 WinRM 已启用且允许远程'] }],
@@ -214,6 +224,36 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       {
         title: '检查插件与核心版本/契约',
         steps: ['确认插件输出符合 normalized-v1/schema_version=collector-response-v1', '升级/回退插件版本后重试'],
+      },
+    ],
+  },
+  PVE_PARSE_ERROR: {
+    title: '解析失败（PVE）',
+    actions: [
+      {
+        title: '确认 PVE 版本与接口返回',
+        steps: [
+          '查看 Run 详情中的错误上下文（已脱敏）',
+          '确认 PVE 版本在支持范围内（5.x～8.x）',
+          '升级/回退插件版本后重试',
+        ],
+      },
+    ],
+  },
+  PVE_CONFIG_INVALID: {
+    title: '配置错误（PVE）',
+    actions: [
+      {
+        title: '检查 Source 与 Credential 配置',
+        steps: [
+          '确认 endpoint 正确（含 https:// 与端口）',
+          '确认 Credential 的认证方式与字段完整',
+          '修复后重试 detect/collect',
+        ],
+        links: [
+          { label: '打开 Sources', href: '/sources' },
+          { label: '打开 Credentials', href: '/credentials' },
+        ],
       },
     ],
   },

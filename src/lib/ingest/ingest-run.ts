@@ -4,7 +4,7 @@ import { buildCanonicalV1 } from '@/lib/ingest/canonical';
 import { compressRaw } from '@/lib/ingest/raw';
 
 import type { AppError } from '@/lib/errors/error';
-import type { AssetType, Prisma, PrismaClient, RelationType } from '@prisma/client';
+import type { AssetType, Prisma, PrismaClient, RelationType, RunMode } from '@prisma/client';
 
 type CollectorAsset = {
   external_kind: AssetType;
@@ -40,11 +40,18 @@ export async function ingestCollectRun(args: {
   prisma: PrismaClient;
   runId: string;
   sourceId: string;
+  runMode: RunMode;
   collectedAt: Date;
   assets: CollectorAsset[];
   relations: CollectorRelation[];
 }): Promise<{ ingestedAssets: number; ingestedRelations: number; warnings: unknown[] }> {
   const collectedAtIso = args.collectedAt.toISOString();
+  const scopeKinds: AssetType[] =
+    args.runMode === 'collect_hosts'
+      ? ['host', 'cluster']
+      : args.runMode === 'collect_vms'
+        ? ['vm']
+        : ['vm', 'host', 'cluster'];
 
   let compressedAssets: Array<{ asset: CollectorAsset; raw: Awaited<ReturnType<typeof compressRaw>> }>;
   let compressedRelations: Array<{ relation: CollectorRelation; raw: Awaited<ReturnType<typeof compressRaw>> }>;
@@ -76,6 +83,8 @@ export async function ingestCollectRun(args: {
 
   try {
     const result = await args.prisma.$transaction(async (tx) => {
+      const seenExternalKeys = new Set<string>();
+      const touchedAssetUuids = new Set<string>();
       const linksByExternal = new Map<
         string,
         { linkId: string; assetUuid: string; assetDisplayName: string | null; assetType: AssetType }
@@ -142,6 +151,8 @@ export async function ingestCollectRun(args: {
           },
           update: {
             lastSeenAt: args.collectedAt,
+            presenceStatus: 'present',
+            lastSeenRun: { connect: { id: args.runId } },
             asset: {
               update: {
                 lastSeenAt: args.collectedAt,
@@ -153,6 +164,8 @@ export async function ingestCollectRun(args: {
             externalKind: asset.external_kind,
             externalId: asset.external_id,
             lastSeenAt: args.collectedAt,
+            presenceStatus: 'present',
+            lastSeenRun: { connect: { id: args.runId } },
             source: { connect: { id: args.sourceId } },
             asset: {
               create: {
@@ -164,6 +177,9 @@ export async function ingestCollectRun(args: {
           },
           include: { asset: true },
         });
+
+        seenExternalKeys.add(key(asset.external_kind, asset.external_id));
+        touchedAssetUuids.add(link.assetUuid);
 
         linksByExternal.set(key(asset.external_kind, asset.external_id), {
           linkId: link.id,
@@ -192,6 +208,67 @@ export async function ingestCollectRun(args: {
         });
 
         sourceRecordIdsByAssetUuid.set(link.assetUuid, record.id);
+      }
+
+      // After a successful inventory-complete run, mark "not seen this run" links as missing (scope-limited).
+      const existingLinks = await tx.assetSourceLink.findMany({
+        where: { sourceId: args.sourceId, externalKind: { in: scopeKinds } },
+        select: { id: true, externalKind: true, externalId: true, presenceStatus: true, assetUuid: true },
+      });
+
+      const toMissingIds: string[] = [];
+      for (const l of existingLinks) {
+        if (l.presenceStatus !== 'present') continue;
+        if (seenExternalKeys.has(key(l.externalKind, l.externalId))) continue;
+        toMissingIds.push(l.id);
+        touchedAssetUuids.add(l.assetUuid);
+      }
+
+      const chunkSize = 500;
+      for (let i = 0; i < toMissingIds.length; i += chunkSize) {
+        const chunk = toMissingIds.slice(i, i + chunkSize);
+        await tx.assetSourceLink.updateMany({
+          where: { id: { in: chunk } },
+          data: { presenceStatus: 'missing' },
+        });
+      }
+
+      // Recompute overall asset.status based on current presence across all sourceLinks.
+      // NOTE: merged status must be preserved (never overwritten by presence).
+      const touched = Array.from(touchedAssetUuids);
+      if (touched.length > 0) {
+        const linkRows = await tx.assetSourceLink.findMany({
+          where: { assetUuid: { in: touched } },
+          select: { assetUuid: true, presenceStatus: true },
+        });
+
+        const anyPresent = new Map<string, boolean>();
+        for (const row of linkRows) {
+          if (!anyPresent.has(row.assetUuid)) anyPresent.set(row.assetUuid, false);
+          if (row.presenceStatus === 'present') anyPresent.set(row.assetUuid, true);
+        }
+
+        const toInService: string[] = [];
+        const toOffline: string[] = [];
+        for (const assetUuid of touched) {
+          if (anyPresent.get(assetUuid)) toInService.push(assetUuid);
+          else toOffline.push(assetUuid);
+        }
+
+        for (let i = 0; i < toInService.length; i += chunkSize) {
+          const chunk = toInService.slice(i, i + chunkSize);
+          await tx.asset.updateMany({
+            where: { uuid: { in: chunk }, status: { not: 'merged' } },
+            data: { status: 'in_service' },
+          });
+        }
+        for (let i = 0; i < toOffline.length; i += chunkSize) {
+          const chunk = toOffline.slice(i, i + chunkSize);
+          await tx.asset.updateMany({
+            where: { uuid: { in: chunk }, status: { not: 'merged' } },
+            data: { status: 'offline' },
+          });
+        }
       }
 
       const outgoingByAssetUuid = new Map<

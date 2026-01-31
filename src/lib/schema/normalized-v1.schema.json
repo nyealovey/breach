@@ -96,6 +96,24 @@
         }
       }
     },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "datastores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "capacity_bytes"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "capacity_bytes": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
     "location": {
       "type": "object",
       "additionalProperties": false,

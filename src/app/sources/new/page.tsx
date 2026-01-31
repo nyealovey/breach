@@ -20,6 +20,17 @@ export default function NewSourcePage() {
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
   const [preferredVcenterVersion, setPreferredVcenterVersion] = useState<'6.5-6.7' | '7.0-8.x'>('7.0-8.x');
+  const [pveTlsVerify, setPveTlsVerify] = useState(true);
+  const [pveTimeoutMs, setPveTimeoutMs] = useState(60_000);
+  const [pveScope, setPveScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
+  const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
+  const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('https');
+  const [hypervPort, setHypervPort] = useState(5986);
+  const [hypervTlsVerify, setHypervTlsVerify] = useState(true);
+  const [hypervTimeoutMs, setHypervTimeoutMs] = useState(60_000);
+  const [hypervScope, setHypervScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
+  const [hypervMaxParallelNodes, setHypervMaxParallelNodes] = useState(5);
   const [enabled, setEnabled] = useState(true);
   const [credentialId, setCredentialId] = useState('');
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
@@ -57,6 +68,26 @@ export default function NewSourcePage() {
           config: {
             endpoint,
             ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
+            ...(sourceType === 'pve'
+              ? {
+                  tls_verify: pveTlsVerify,
+                  timeout_ms: pveTimeoutMs,
+                  scope: pveScope,
+                  max_parallel_nodes: pveMaxParallelNodes,
+                  auth_type: pveAuthType,
+                }
+              : {}),
+            ...(sourceType === 'hyperv'
+              ? {
+                  connection_method: 'winrm',
+                  scheme: hypervScheme,
+                  port: hypervPort,
+                  tls_verify: hypervTlsVerify,
+                  timeout_ms: hypervTimeoutMs,
+                  scope: hypervScope,
+                  max_parallel_nodes: hypervMaxParallelNodes,
+                }
+              : {}),
           },
           credentialId: credentialId ? credentialId : null,
         }),
@@ -94,6 +125,17 @@ export default function NewSourcePage() {
                 setSourceType(e.target.value);
                 setCredentialId('');
                 setPreferredVcenterVersion('7.0-8.x');
+                setPveTlsVerify(true);
+                setPveTimeoutMs(60_000);
+                setPveScope('auto');
+                setPveMaxParallelNodes(5);
+                setPveAuthType('api_token');
+                setHypervScheme('https');
+                setHypervPort(5986);
+                setHypervTlsVerify(true);
+                setHypervTimeoutMs(60_000);
+                setHypervScope('auto');
+                setHypervMaxParallelNodes(5);
               }}
             >
               <option value="vcenter">vCenter</option>
@@ -121,6 +163,146 @@ export default function NewSourcePage() {
               </select>
               <div className="text-xs text-muted-foreground">
                 说明：该字段用于选择采集 driver；detect 会给出建议，但不会自动改写配置。
+              </div>
+            </div>
+          ) : null}
+          {sourceType === 'pve' ? (
+            <div className="space-y-3 rounded border p-3">
+              <div className="text-sm font-medium">PVE 配置</div>
+
+              <div className="flex items-center justify-between rounded border px-3 py-2">
+                <div className="text-sm">
+                  <div className="font-medium">TLS 校验</div>
+                  <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
+                </div>
+                <Switch checked={pveTlsVerify} onCheckedChange={setPveTlsVerify} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pveTimeoutMs">timeout_ms</Label>
+                <Input
+                  id="pveTimeoutMs"
+                  type="number"
+                  value={String(pveTimeoutMs)}
+                  onChange={(e) => setPveTimeoutMs(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pveScope">scope</Label>
+                <select
+                  id="pveScope"
+                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                  value={pveScope}
+                  onChange={(e) => setPveScope(e.target.value as typeof pveScope)}
+                >
+                  <option value="auto">auto（默认）</option>
+                  <option value="standalone">standalone</option>
+                  <option value="cluster">cluster</option>
+                </select>
+                <div className="text-xs text-muted-foreground">说明：auto 会在 detect 阶段探测并给出建议。</div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pveMaxParallelNodes">max_parallel_nodes</Label>
+                <Input
+                  id="pveMaxParallelNodes"
+                  type="number"
+                  value={String(pveMaxParallelNodes)}
+                  onChange={(e) => setPveMaxParallelNodes(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pveAuthType">auth_type</Label>
+                <select
+                  id="pveAuthType"
+                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                  value={pveAuthType}
+                  onChange={(e) => setPveAuthType(e.target.value as typeof pveAuthType)}
+                >
+                  <option value="api_token">api_token（推荐）</option>
+                  <option value="user_password">user_password</option>
+                </select>
+                <div className="text-xs text-muted-foreground">说明：该字段用于指导凭据结构（credential）。</div>
+              </div>
+            </div>
+          ) : null}
+          {sourceType === 'hyperv' ? (
+            <div className="space-y-3 rounded border p-3">
+              <div className="text-sm font-medium">Hyper-V 配置（WinRM）</div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hypervScheme">scheme</Label>
+                <select
+                  id="hypervScheme"
+                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                  value={hypervScheme}
+                  onChange={(e) => {
+                    const next = e.target.value as typeof hypervScheme;
+                    setHypervScheme(next);
+                    // Keep a sensible default when user hasn't changed port yet.
+                    if (hypervPort === 5986 && next === 'http') setHypervPort(5985);
+                    if (hypervPort === 5985 && next === 'https') setHypervPort(5986);
+                  }}
+                >
+                  <option value="https">https（默认）</option>
+                  <option value="http">http</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hypervPort">port</Label>
+                <Input
+                  id="hypervPort"
+                  type="number"
+                  value={String(hypervPort)}
+                  onChange={(e) => setHypervPort(Number(e.target.value))}
+                />
+                <div className="text-xs text-muted-foreground">默认：https=5986；http=5985</div>
+              </div>
+
+              <div className="flex items-center justify-between rounded border px-3 py-2">
+                <div className="text-sm">
+                  <div className="font-medium">TLS 校验</div>
+                  <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
+                </div>
+                <Switch checked={hypervTlsVerify} onCheckedChange={setHypervTlsVerify} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hypervTimeoutMs">timeout_ms</Label>
+                <Input
+                  id="hypervTimeoutMs"
+                  type="number"
+                  value={String(hypervTimeoutMs)}
+                  onChange={(e) => setHypervTimeoutMs(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hypervScope">scope</Label>
+                <select
+                  id="hypervScope"
+                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                  value={hypervScope}
+                  onChange={(e) => setHypervScope(e.target.value as typeof hypervScope)}
+                >
+                  <option value="auto">auto（默认）</option>
+                  <option value="standalone">standalone</option>
+                  <option value="cluster">cluster</option>
+                </select>
+                <div className="text-xs text-muted-foreground">说明：auto 会在 detect 阶段探测并给出建议。</div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hypervMaxParallelNodes">max_parallel_nodes</Label>
+                <Input
+                  id="hypervMaxParallelNodes"
+                  type="number"
+                  value={String(hypervMaxParallelNodes)}
+                  onChange={(e) => setHypervMaxParallelNodes(Number(e.target.value))}
+                />
               </div>
             </div>
           ) : null}

@@ -17,8 +17,8 @@
 docker run --name breach-pg \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=breach \
-  -p 5432:5432 \
-  -d postgres:16
+  -p 54329:5432 \
+  -d postgres:18
 ```
 
 常用命令：

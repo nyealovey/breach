@@ -30,4 +30,28 @@ describe('canonical builder', () => {
       sources: [{ source_id: 'src_1', run_id: 'run_1' }],
     });
   });
+
+  it('keeps array-of-objects fields as a leaf FieldValue with provenance (e.g. storage.datastores)', () => {
+    const canonical = buildCanonicalV1({
+      assetUuid: 'a_host_1',
+      assetType: 'host',
+      sourceId: 'src_1',
+      runId: 'run_1',
+      recordId: 'rec_1',
+      collectedAt: '2026-01-31T00:00:00Z',
+      normalized: {
+        version: 'normalized-v1',
+        kind: 'host',
+        identity: { hostname: 'esxi-01' },
+        storage: { datastores: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }] },
+      },
+      outgoingRelations: [],
+    });
+
+    expect(validateCanonicalV1(canonical)).toEqual({ ok: true });
+    expect((canonical.fields as any).storage.datastores).toMatchObject({
+      value: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }],
+      sources: [{ source_id: 'src_1', run_id: 'run_1', record_id: 'rec_1', collected_at: '2026-01-31T00:00:00Z' }],
+    });
+  });
 });

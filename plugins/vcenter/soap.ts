@@ -6,6 +6,8 @@ export type HostSoapDetails = {
   diskTotalBytes?: number;
   /** Host 上 datastore 的总容量（bytes），按 type 过滤（排除 NFS/NFS41/vSAN）。 */
   datastoreTotalBytes?: number;
+  /** Host 上 datastore 明细（仅 name + capacity），口径与 datastoreTotalBytes 一致（排除 NFS/NFS41/vSAN）。 */
+  datastores?: Array<{ name: string; capacityBytes: number }>;
   cpuModel?: string;
   cpuMhz?: number;
   cpuPackages?: number;
@@ -926,8 +928,10 @@ export async function collectHostSoapDetails(input: {
         let eligibleCount = 0;
         let excludedCount = 0;
         let missingSummaryCount = 0;
+        let missingNameCount = 0;
         let missingCapacityCount = 0;
         let totalBytes = 0;
+        const datastores: Array<{ name: string; capacityBytes: number }> = [];
 
         for (const dsId of datastoreIds) {
           const ds = dsSummaries.get(dsId);
@@ -941,13 +945,20 @@ export async function collectHostSoapDetails(input: {
           }
 
           eligibleCount += 1;
+          const name = ds.name?.trim();
+          if (!name) {
+            missingNameCount += 1;
+            continue;
+          }
           if (ds.capacityBytes === undefined) {
             missingCapacityCount += 1;
             continue;
           }
+          datastores.push({ name, capacityBytes: ds.capacityBytes });
           totalBytes += ds.capacityBytes;
         }
 
+        details.datastores = datastores;
         details.datastoreTotalBytes = eligibleCount === 0 ? 0 : Number.isFinite(totalBytes) ? totalBytes : undefined;
 
         debugLog(
@@ -958,7 +969,9 @@ export async function collectHostSoapDetails(input: {
             eligible_count: eligibleCount,
             excluded_count: excludedCount,
             missing_summary_count: missingSummaryCount,
+            missing_name_count: missingNameCount,
             missing_capacity_count: missingCapacityCount,
+            datastores_collected_count: datastores.length,
             datastore_total_bytes: details.datastoreTotalBytes,
           },
           meta,

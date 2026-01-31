@@ -10,11 +10,18 @@ import { SourceType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
 const VcenterPreferredVersionSchema = z.enum(['6.5-6.7', '7.0-8.x']);
+const PveAuthTypeSchema = z.enum(['api_token', 'user_password']);
+const PveScopeSchema = z.enum(['auto', 'standalone', 'cluster']);
 
 const SourceConfigSchema = z
   .object({
     endpoint: z.string().min(1),
     preferred_vcenter_version: VcenterPreferredVersionSchema.optional(),
+    tls_verify: z.boolean().optional(),
+    timeout_ms: z.number().int().positive().optional(),
+    scope: PveScopeSchema.optional(),
+    max_parallel_nodes: z.number().int().positive().optional(),
+    auth_type: PveAuthTypeSchema.optional(),
   })
   .passthrough();
 

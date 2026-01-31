@@ -352,6 +352,17 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
         });
       }
 
+      // Validate and warn on missing datastore breakdown (best-effort).
+      const datastores = soap?.datastores;
+      if (soap && datastores === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DATASTORES_MISSING',
+          category: 'parse',
+          message: 'failed to collect datastore breakdown for host',
+          redacted_context: { host_id: hostSummary.host, field: 'storage.datastores' },
+        });
+      }
+
       return {
         ...hostSummary,
         cluster: hostToClusterMap.get(hostSummary.host),
@@ -729,6 +740,17 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
           category: 'parse',
           message: 'failed to compute datastore total bytes for host',
           redacted_context: { host_id: hostSummary.host, field: 'attributes.datastore_total_bytes' },
+        });
+      }
+
+      // Validate and warn on missing datastore breakdown (best-effort).
+      const datastores = soap?.datastores;
+      if (soap && datastores === undefined) {
+        warnings.push({
+          code: 'VCENTER_HOST_DATASTORES_MISSING',
+          category: 'parse',
+          message: 'failed to collect datastore breakdown for host',
+          redacted_context: { host_id: hostSummary.host, field: 'storage.datastores' },
         });
       }
 

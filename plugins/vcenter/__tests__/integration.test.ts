@@ -529,6 +529,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       hardware: { cpu_count: 32, memory_bytes: 274877906944 },
       identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
       network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+      storage: { datastores: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }] },
       attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
     });
   });
@@ -709,6 +710,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         hardware: { cpu_count: 32, memory_bytes: 274877906944 },
         identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
         network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+        storage: { datastores: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }] },
         attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
       });
     } finally {
@@ -754,6 +756,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         hardware: { cpu_count: 32, memory_bytes: 274877906944 },
         identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
         network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
+        storage: { datastores: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }] },
         attributes: { disk_total_bytes: 512 * 7814037168, datastore_total_bytes: 1000 },
       });
     } finally {

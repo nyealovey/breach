@@ -53,6 +53,30 @@ enum AssetStatus {
   merged
 }
 
+enum AssetPresenceStatus {
+  present
+  missing
+}
+
+enum DuplicateCandidateStatus {
+  open
+  ignored
+  merged
+}
+
+enum DuplicateCandidateJobStatus {
+  Queued
+  Running
+  Succeeded
+  Failed
+}
+
+enum MergeConflictStrategy {
+  primary_wins
+  latest_wins
+  manual_pick
+}
+
 enum RelationType {
   runs_on
   member_of
@@ -148,6 +172,8 @@ model Run {
   sourceRecords   SourceRecord[]
   relationRecords RelationRecord[]
   assetSnapshots  AssetRunSnapshot[]
+  lastSeenLinks   AssetSourceLink[] @relation("AssetSourceLinkLastSeenRun")
+  duplicateCandidateJob DuplicateCandidateJob?
 
   @@index([status, createdAt])
   @@index([sourceId, status, createdAt])
@@ -162,8 +188,11 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions   Session[]
-  auditEvents AuditEvent[] @relation("AuditActor")
+  sessions                 Session[]
+  auditEvents              AuditEvent[]        @relation("AuditActor")
+  mergeAudits              MergeAudit[]        @relation("MergeAuditActor")
+  preferences              UserPreference[]
+  ignoredDuplicateCandidates DuplicateCandidate[] @relation("DuplicateCandidateIgnoredBy")
 }
 
 model Session {
@@ -191,6 +220,39 @@ model AuditEvent {
   @@index([actorUserId, createdAt])
 }
 
+model MergeAudit {
+  id                String                @id @default(cuid())
+  primaryAssetUuid  String                @db.Uuid
+  mergedAssetUuid   String                @db.Uuid
+  performedByUserId String?
+  performedAt       DateTime              @default(now())
+  conflictStrategy  MergeConflictStrategy @default(primary_wins)
+  summary           Json
+  snapshotRef       String?
+
+  primaryAsset     Asset @relation("MergeAuditPrimary", fields: [primaryAssetUuid], references: [uuid], onDelete: Cascade)
+  mergedAsset      Asset @relation("MergeAuditMerged", fields: [mergedAssetUuid], references: [uuid], onDelete: Cascade)
+  performedByUser  User? @relation("MergeAuditActor", fields: [performedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([primaryAssetUuid, performedAt(sort: Desc)])
+  @@index([mergedAssetUuid, performedAt(sort: Desc)])
+  @@index([performedByUserId, performedAt(sort: Desc)])
+}
+
+model UserPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
+}
+
 model Asset {
   uuid              String      @id @default(uuid()) @db.Uuid
   assetType          AssetType
@@ -212,6 +274,10 @@ model Asset {
 
   outgoingRelations Relation[] @relation("RelationFrom")
   incomingRelations Relation[] @relation("RelationTo")
+  duplicateCandidatesA DuplicateCandidate[] @relation("DuplicateCandidateA")
+  duplicateCandidatesB DuplicateCandidate[] @relation("DuplicateCandidateB")
+  mergeAuditsAsPrimary MergeAudit[] @relation("MergeAuditPrimary")
+  mergeAuditsAsMerged  MergeAudit[] @relation("MergeAuditMerged")
 
   @@index([assetType])
   @@index([status])
@@ -226,15 +292,19 @@ model AssetSourceLink {
   externalId   String
   firstSeenAt  DateTime  @default(now())
   lastSeenAt   DateTime  @default(now())
+  presenceStatus AssetPresenceStatus @default(present)
+  lastSeenRunId   String?
 
   asset  Asset  @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
   source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  lastSeenRun Run? @relation("AssetSourceLinkLastSeenRun", fields: [lastSeenRunId], references: [id], onDelete: SetNull)
 
   sourceRecords SourceRecord[]
 
   @@unique([sourceId, externalKind, externalId])
   @@index([assetUuid])
   @@index([sourceId])
+  @@index([presenceStatus, lastSeenAt(sort: Desc)])
 }
 
 model SourceRecord {
@@ -334,4 +404,44 @@ model AssetRunSnapshot {
 
   @@unique([assetUuid, runId])
   @@index([runId])
+}
+
+model DuplicateCandidate {
+  id         String                  @id @default(cuid())
+  assetUuidA String                  @db.Uuid
+  assetUuidB String                  @db.Uuid
+  score      Int
+  reasons    Json
+  status     DuplicateCandidateStatus @default(open)
+  lastObservedAt DateTime            @default(now())
+
+  ignoredByUserId String?
+  ignoredAt       DateTime?
+  ignoreReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assetA Asset @relation("DuplicateCandidateA", fields: [assetUuidA], references: [uuid], onDelete: Cascade)
+  assetB Asset @relation("DuplicateCandidateB", fields: [assetUuidB], references: [uuid], onDelete: Cascade)
+  ignoredByUser User? @relation("DuplicateCandidateIgnoredBy", fields: [ignoredByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([assetUuidA, assetUuidB])
+  @@index([status, lastObservedAt(sort: Desc)])
+}
+
+model DuplicateCandidateJob {
+  id           String                    @id @default(cuid())
+  runId        String                    @unique
+  status       DuplicateCandidateJobStatus @default(Queued)
+  attempts     Int                       @default(0)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  errorSummary String?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
 }

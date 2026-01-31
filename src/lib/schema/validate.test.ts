@@ -58,4 +58,20 @@ describe('schema validation', () => {
 
     expect(validateCanonicalV1(input).ok).toBe(false);
   });
+
+  it('accepts normalized-v1 host payload with storage.datastores', () => {
+    const input = {
+      version: 'normalized-v1',
+      kind: 'host',
+      identity: { hostname: 'esxi-01' },
+      storage: {
+        datastores: [
+          { name: 'datastore1', capacity_bytes: 1024 },
+          { name: 'datastore2', capacity_bytes: 2048 },
+        ],
+      },
+    };
+
+    expect(validateNormalizedV1(input)).toEqual({ ok: true });
+  });
 });

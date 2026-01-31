@@ -3,6 +3,11 @@ import { spawn } from 'node:child_process';
 import { parseCollectorResponse, validateCollectorResponse } from '@/lib/collector/collector-response';
 import { decryptJson } from '@/lib/crypto/aes-gcm';
 import { prisma } from '@/lib/db/prisma';
+import {
+  claimQueuedDuplicateCandidateJobs,
+  enqueueDuplicateCandidateJob,
+  processDuplicateCandidateJob,
+} from '@/lib/duplicate-candidates/job';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
@@ -87,6 +92,8 @@ async function claimQueuedRuns(batchSize: number): Promise<Run[]> {
 
 function getPluginPath(source: Source): string | null {
   if (source.sourceType === 'vcenter') return serverEnv.ASSET_LEDGER_VCENTER_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'pve') return serverEnv.ASSET_LEDGER_PVE_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'hyperv') return serverEnv.ASSET_LEDGER_HYPERV_PLUGIN_PATH ?? null;
   return null;
 }
 
@@ -424,12 +431,29 @@ async function processRun(run: Run): Promise<ProcessResult> {
         prisma,
         runId: run.id,
         sourceId: source.id,
+        runMode: run.mode,
         collectedAt: finishedAt,
         assets,
         relations,
       });
 
       const mergedWarnings = [...warningsValue, ...ingestResult.warnings];
+
+      try {
+        await enqueueDuplicateCandidateJob({ prisma, runId: run.id });
+      } catch (err) {
+        mergedWarnings.push({
+          type: 'duplicate_candidates.enqueue_failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
+        logEvent({
+          level: 'error',
+          service: 'worker',
+          event_type: 'duplicate_candidate_job.enqueue_failed',
+          run_id: run.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       await prisma.run.update({
         where: { id: run.id },
@@ -556,6 +580,44 @@ async function main() {
 
     const runs = await claimQueuedRuns(serverEnv.ASSET_LEDGER_WORKER_BATCH_SIZE);
     if (runs.length === 0) {
+      const jobs = await claimQueuedDuplicateCandidateJobs({ prisma, batchSize: 1 });
+      if (jobs.length > 0) {
+        for (const job of jobs) {
+          log('processing duplicate-candidate job', { jobId: job.id, runId: job.runId });
+          const now = new Date();
+          try {
+            const res = await processDuplicateCandidateJob({ prisma, job, now });
+            await prisma.duplicateCandidateJob.update({
+              where: { id: job.id },
+              data: { status: 'Succeeded', finishedAt: now, errorSummary: null },
+            });
+            logEvent({
+              level: 'info',
+              service: 'worker',
+              event_type: 'duplicate_candidate_job.succeeded',
+              job_id: job.id,
+              run_id: job.runId,
+              candidates: res.candidates,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await prisma.duplicateCandidateJob.update({
+              where: { id: job.id },
+              data: { status: 'Failed', finishedAt: now, errorSummary: message.slice(0, 2000) },
+            });
+            logEvent({
+              level: 'error',
+              service: 'worker',
+              event_type: 'duplicate_candidate_job.failed',
+              job_id: job.id,
+              run_id: job.runId,
+              error: message,
+            });
+          }
+        }
+        continue;
+      }
+
       await sleep(serverEnv.ASSET_LEDGER_WORKER_POLL_MS);
       continue;
     }

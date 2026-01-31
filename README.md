@@ -107,6 +107,7 @@ List of websites that started off with Next.js TypeScript Starter:
 运行指南：
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
+- Hyper-V（WinRM）采集验收清单：[`docs/runbooks/hyperv-collector-checklist.md`](docs/runbooks/hyperv-collector-checklist.md)
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
 - Host（ESXi）关键盘点字段（ESXi 版本/构建号、CPU/内存、本地盘总量、datastore 总容量（排除 NFS/NFS41/vSAN）、整机序列号、硬件厂商/型号、管理 IP）通过 vSphere SOAP（`/sdk` + vim25）采集，并由 `collect_hosts` 模式写入；优先使用 `RetrievePropertiesEx`，若目标不支持会自动降级到 `RetrieveProperties`；管理 IP 优先取 `vmk0`/`vswif0`（或 portgroup 含 `Management`）的 IPv4；本地盘总量口径为 `config.storageDevice.scsiLun` 中 `lunType="disk"` 且有 `capacity` 的设备容量求和 + `config.storageDevice.nvmeTopology`（`HostNvmeNamespace.blockSize * capacityInBlocks`）求和（若目标不支持 `nvmeTopology` 将自动忽略）；datastore 总容量口径为 Host 的 `datastore` 列表对应 Datastore `summary.capacity` 求和（过滤 `summary.type in {NFS,NFS41,vsan}`）；`os.fingerprint` 用于承接 build（落库但不用于列表搜索/展示）。
 - 手动触发 Source Run 支持 `mode=detect`（探测模式），用于写入 `detectResult`（driver/target_version/capabilities 等元信息）。
@@ -143,10 +144,11 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - `/login`：管理员登录
 - `/schedule-groups`：调度组配置（列表/编辑页展示 `groupId`；选择来源时展示 `sourceId`）
-- `/sources`：来源配置（绑定凭据；vCenter 需配置版本范围 `preferred_vcenter_version`；列表页展示 `sourceId` + `endpoint` + 最新运行时间；编辑页展示 `sourceId` / `scheduleGroupId` / `credentialId`）
-- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret；列表/编辑页展示 `credentialId`）
+- `/sources`：来源配置（绑定凭据；vCenter 需配置版本范围 `preferred_vcenter_version`；PVE 支持 `tls_verify/timeout_ms/scope/max_parallel_nodes/auth_type`；Hyper-V（WinRM）支持 `scheme/port/tls_verify/timeout_ms/scope/max_parallel_nodes`；列表页展示 `sourceId` + `endpoint` + 最新运行时间；编辑页展示 `sourceId` / `scheduleGroupId` / `credentialId`）
+- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret；Hyper-V 支持可选 `domain`；列表/编辑页展示 `credentialId`）
 - `/runs`：采集 Run 列表与详情（失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
-- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：机器名（支持覆盖显示）/虚拟机名/宿主机名/操作系统/IP/CPU（VM: vCPU 数量；Host(ESXi): cpu_threads 线程数）/内存/总分配磁盘/状态（VM 是否运行）（不展示 Last Seen/来源）
+- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：机器名（支持覆盖显示）/虚拟机名/宿主机名/操作系统/IP/CPU（VM: vCPU 数量；Host(ESXi): cpu_threads 线程数）/内存/总分配磁盘/状态（VM 是否运行）（不展示 Last Seen/来源）；资产状态（in_service/offline）会在成功且 `inventory_complete=true` 的 collect 后，按来源维度 presence（present/missing）汇总推进；支持 URL query 同步（q/asset_type/exclude_asset_type/source_id/page/pageSize）与筛选（vm_power_state、ip_missing）；支持“列设置”并按用户写入 DB（`assets.table.columns.v1`）；资产详情支持字段字典分组展示（中文字段名 + 值渲染 + 冲突标记）与关系链视图（VM→Host→Cluster，best-effort）；Host 详情增加 Datastores 区块（名称/容量 + 总容量一致性提示）
+- `/duplicate-candidates`：重复中心（admin-only）：候选列表/详情、命中原因（dup-rules-v1）、关键字段对比；支持 Ignore（永久）与合并确认（`primary_wins`，入口：候选详情“进入 Merge” → `/duplicate-candidates/:candidateId/merge`）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
 
 备注：Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
@@ -164,6 +166,8 @@ List of websites that started off with Next.js TypeScript Starter:
 - `BCRYPT_LOG_ROUNDS`：bcrypt 成本（默认 12；值越大越安全但越慢）。
 - `PASSWORD_ENCRYPTION_KEY`：用于数据库中“Credential 凭据密文”的加/解密（生产环境必须固定；否则重启后无法解密已存储的凭据）。
 - `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用；默认 `plugins/vcenter/index.ts`）
+- `ASSET_LEDGER_PVE_PLUGIN_PATH`：PVE 采集插件可执行文件路径（子进程调用；默认 `plugins/pve/index.ts`）
+- `ASSET_LEDGER_HYPERV_PLUGIN_PATH`：Hyper-V 采集插件可执行文件路径（子进程调用；默认 `plugins/hyperv/index.ts`）
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
 - `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）

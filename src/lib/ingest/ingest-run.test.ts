@@ -51,9 +51,42 @@ describe('ingestCollectRun (relation endpoint lookup)', () => {
           const externalId = where?.externalId as string;
           return existingLinks.get(key(sourceId, externalKind, externalId)) ?? null;
         }),
+
+        findMany: vi.fn(async (args: any) => {
+          const where = args.where ?? {};
+          const sourceId = where.sourceId as string | undefined;
+          const assetUuidIn = where.assetUuid?.in as string[] | undefined;
+          const kindIn = where.externalKind?.in as string[] | undefined;
+
+          const rows: any[] = [];
+          for (const [k, v] of existingLinks.entries()) {
+            const parts = k.split(':');
+            const sid = parts[0] ?? '';
+            const kind = parts[1] ?? '';
+            const externalId = parts[2] ?? '';
+            if (sourceId && sid !== sourceId) continue;
+            if (kindIn && !kindIn.includes(kind)) continue;
+            if (assetUuidIn && !assetUuidIn.includes(v.assetUuid)) continue;
+
+            rows.push({
+              id: v.id,
+              assetUuid: v.assetUuid,
+              externalKind: kind,
+              externalId,
+              presenceStatus: v.presenceStatus ?? 'present',
+            });
+          }
+
+          return rows;
+        }),
+
+        updateMany: vi.fn(async () => ({ count: 0 })),
       },
       sourceRecord: {
         create: vi.fn(async () => ({ id: 'sr_1' })),
+      },
+      asset: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
       },
       relation: {
         upsert: vi.fn(async (args: any) => {
@@ -80,6 +113,7 @@ describe('ingestCollectRun (relation endpoint lookup)', () => {
       prisma,
       runId: 'run_1',
       sourceId: 'src_1',
+      runMode: 'collect_vms',
       collectedAt: new Date('2026-01-30T00:00:00.000Z'),
       assets: [
         {

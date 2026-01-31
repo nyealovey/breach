@@ -47,6 +47,9 @@ export default function RootLayout({
               <Link className="block rounded px-2 py-1 hover:bg-muted" href="/assets">
                 资产
               </Link>
+              <Link className="block rounded px-2 py-1 hover:bg-muted" href="/duplicate-candidates">
+                重复中心
+              </Link>
               <Link className="block rounded px-2 py-1 hover:bg-muted" href="/api/docs">
                 API 文档
               </Link>

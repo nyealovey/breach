@@ -1,12 +1,12 @@
-import { AssetType } from '@prisma/client';
-
-import type { Prisma } from '@prisma/client';
+import { AssetType, Prisma } from '@prisma/client';
 
 export type AssetListQuery = {
   assetType: AssetType | undefined;
   excludeAssetType: AssetType | undefined;
   sourceId: string | undefined;
   q: string | undefined;
+  vmPowerState: 'poweredOn' | 'poweredOff' | 'suspended' | undefined;
+  ipMissing: boolean | undefined;
 };
 
 function parseAssetType(input: string | null): AssetType | undefined {
@@ -21,12 +21,24 @@ function parseOptionalString(input: string | null): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function parseVmPowerState(input: string | null): AssetListQuery['vmPowerState'] {
+  if (input === 'poweredOn' || input === 'poweredOff' || input === 'suspended') return input;
+  return undefined;
+}
+
+function parseIpMissing(input: string | null): boolean | undefined {
+  if (input === 'true') return true;
+  return undefined;
+}
+
 export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
   return {
     assetType: parseAssetType(params.get('asset_type')),
     excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
     q: parseOptionalString(params.get('q')),
+    vmPowerState: parseVmPowerState(params.get('vm_power_state')),
+    ipMissing: parseIpMissing(params.get('ip_missing')),
   };
 }
 
@@ -39,12 +51,38 @@ export function buildAssetListWhere(query: {
   excludeAssetType?: AssetType;
   sourceId?: string;
   q?: string;
+  vmPowerState?: AssetListQuery['vmPowerState'];
+  ipMissing?: boolean;
 }): Prisma.AssetWhereInput {
   const and: Prisma.AssetWhereInput[] = [];
+
+  // Default: hide merged assets (merge targets remain accessible via direct URL and redirect).
+  and.push({ status: { not: 'merged' } });
 
   if (query.assetType) and.push({ assetType: query.assetType });
   if (query.excludeAssetType) and.push({ assetType: { not: query.excludeAssetType } });
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
+
+  if (query.assetType === AssetType.vm && query.vmPowerState) {
+    and.push({
+      runSnapshots: {
+        some: { canonical: { path: ['fields', 'runtime', 'power_state', 'value'], equals: query.vmPowerState } },
+      },
+    });
+  }
+
+  if (query.assetType === AssetType.vm && query.ipMissing === true) {
+    and.push({
+      OR: [
+        {
+          runSnapshots: {
+            some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: Prisma.AnyNull } },
+          },
+        },
+        { runSnapshots: { some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: [] } } } },
+      ],
+    });
+  }
 
   if (query.q) {
     const q = query.q;

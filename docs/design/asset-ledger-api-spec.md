@@ -1166,3 +1166,202 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 **GET** `/api/docs`
 
 > 注意：生产环境建议仅管理员可访问。
+
+## 8. 重复中心（Duplicate Candidates）
+
+> 说明：本节为 M5 重复资产治理的后端 API（列表/详情/Ignore）。候选生成规则见：`docs/design/asset-ledger-dup-rules-v1.md`。
+
+### 8.1 候选列表
+
+**GET** `/api/v1/duplicate-candidates`
+
+**权限**：仅管理员（admin-only）。
+
+**Query 参数**：
+
+| 参数         | 类型   | 默认值 | 说明                 |
+| ------------ | ------ | ------ | -------------------- | ------------------------------------------------ | ------- |
+| `page`       | number | 1      | 页码（从 1 开始）    |
+| `pageSize`   | number | 20     | 每页条数（最大 100） |
+| `status`     | string | open   | `open                | ignored                                          | merged` |
+| `assetType`  | string | -      | `vm                  | host`                                            |
+| `confidence` | string | -      | `High                | Medium`；`High`=score>=90；`Medium`=70<=score<90 |
+
+**成功响应**（200）：
+
+```json
+{
+  "data": [
+    {
+      "candidateId": "dc_1",
+      "status": "open",
+      "score": 95,
+      "confidence": "High",
+      "lastObservedAt": "2026-01-31T00:00:00.000Z",
+      "assetA": {
+        "assetUuid": "uuid_a",
+        "assetType": "vm",
+        "status": "in_service",
+        "displayName": "vm-a",
+        "lastSeenAt": null
+      },
+      "assetB": {
+        "assetUuid": "uuid_b",
+        "assetType": "vm",
+        "status": "offline",
+        "displayName": "vm-b",
+        "lastSeenAt": null
+      }
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 1, "totalPages": 1 },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**常见错误码**：
+
+- 401：`AUTH_UNAUTHORIZED`
+- 403：`AUTH_FORBIDDEN`
+
+### 8.2 候选详情
+
+**GET** `/api/v1/duplicate-candidates/:candidateId`
+
+**权限**：仅管理员（admin-only）。
+
+**成功响应**（200，示例摘要）：
+
+```json
+{
+  "data": {
+    "candidateId": "dc_1",
+    "status": "open",
+    "score": 90,
+    "confidence": "High",
+    "reasons": {
+      "version": "dup-rules-v1",
+      "matched_rules": [
+        /* ... */
+      ]
+    },
+    "assetA": {
+      "assetUuid": "uuid_a",
+      "assetType": "vm",
+      "sourceLinks": [
+        /* ... */
+      ]
+    },
+    "assetB": {
+      "assetUuid": "uuid_b",
+      "assetType": "vm",
+      "sourceLinks": [
+        /* ... */
+      ]
+    }
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**常见错误码**：
+
+- 404：`CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND`
+
+### 8.3 Ignore（永久忽略）
+
+**POST** `/api/v1/duplicate-candidates/:candidateId/ignore`
+
+**权限**：仅管理员（admin-only）。
+
+**请求体**：
+
+```json
+{ "reason": "not duplicate" }
+```
+
+> 说明：`reason` 可选；空字符串视为未提供（按 null 处理）。
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "candidateId": "dc_1",
+    "status": "ignored",
+    "ignoredAt": "2026-01-31T12:00:00Z",
+    "ignoreReason": "not duplicate"
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**审计**：
+
+- 写入 `audit_event`：`eventType=duplicate_candidate.ignored`
+- payload（最小集）：`candidateId/assetUuidA/assetUuidB/ignoreReason/requestId`
+
+**常见错误码**：
+
+- 400：`CONFIG_INVALID_REQUEST`
+- 404：`CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND`
+
+## 9. 资产合并（Merge）
+
+> 目标：支持管理员将重复资产合并为单一主资产；合并后从资产默认隐藏，来源明细/关系并入主资产，并写审计。
+
+### 9.1 合并（primary_wins）
+
+**POST** `/api/v1/assets/:primaryAssetUuid/merge`
+
+**权限**：仅管理员（admin-only）。
+
+**请求体**：
+
+```json
+{
+  "mergedAssetUuids": ["uuid_b"],
+  "conflictStrategy": "primary_wins"
+}
+```
+
+> 说明：
+>
+> - `mergedAssetUuids`：至少 1 个；必须与主资产同 `assetType`。
+> - `conflictStrategy`：当前仅支持 `primary_wins`（冲突时以主资产为准）。
+> - VM 合并门槛（强约束）：仅允许将 `offline` 的 VM 合并到 `in_service` 的 VM（仅关机不等于下线）。
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "primaryAssetUuid": "uuid_a",
+    "mergedAssetUuids": ["uuid_b"],
+    "conflictStrategy": "primary_wins",
+    "mergeAuditIds": ["ma_1"],
+    "migrated": {
+      "assetsUpdatedCount": 1,
+      "sourceLinksMovedCount": 10,
+      "sourceRecordsMovedCount": 120,
+      "relationsRewrittenCount": 2,
+      "dedupedRelationsCount": 0,
+      "duplicateCandidatesUpdatedCount": 3
+    }
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**审计**：
+
+- 写入 `merge_audit`（每个被合并资产 1 条；summary 含 requestId + migrated 统计）
+- 写入 `audit_event`：`eventType=asset.merged`
+
+**常见错误码**：
+
+- 400：`CONFIG_INVALID_REQUEST`
+- 400：`CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH`
+- 400：`CONFIG_ASSET_MERGE_CYCLE_DETECTED`
+- 400：`CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE`
+- 404：`CONFIG_ASSET_NOT_FOUND`

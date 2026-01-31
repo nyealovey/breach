@@ -6,4 +6,8 @@ describe('ErrorCode', () => {
   it('includes CONFIG_CREDENTIAL_NOT_FOUND', () => {
     expect(ErrorCode.CONFIG_CREDENTIAL_NOT_FOUND).toBe('CONFIG_CREDENTIAL_NOT_FOUND');
   });
+
+  it('includes CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND', () => {
+    expect(ErrorCode.CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND).toBe('CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND');
+  });
 });

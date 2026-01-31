@@ -190,7 +190,8 @@ GET /api/vcenter/vm?hosts={host_id}
 | `summary.hardware.numCpuPkgs`                                                                                                                                        | `attributes.cpu_packages`          | 可选                                                              |
 | `summary.hardware.numCpuThreads`                                                                                                                                     | `attributes.cpu_threads`           | 可选                                                              |
 | `hardware.systemInfo.serialNumber`（或从 `hardware.systemInfo.otherIdentifyingInfo` 提取 ServiceTag/Serial）                                                         | `identity.serial_number`           | 建议（整机序列号；best-effort）                                   |
-| `datastore` → Datastore `summary.type/capacity`（过滤 `type in {NFS,NFS41,vsan}`）                                                                                   | `attributes.datastore_total_bytes` | 建议（Host 上 datastore 总容量；排除 NFS/NFS41/vSAN）             |
+| `datastore` → Datastore `summary.name/capacity`（过滤 `type in {NFS,NFS41,vsan}`）                                                                                   | `storage.datastores[]`             | 盘点增强：Host 上 datastore 明细（name/capacity_bytes；口径同总量） |
+| `datastore` → Datastore `summary.type/capacity`（过滤 `type in {NFS,NFS41,vsan}`）                                                                                   | `attributes.datastore_total_bytes` | 建议（Host 上 datastore 总容量；排除 NFS/NFS41/vSAN；= 明细求和） |
 | `config.storageDevice.scsiLun`（`lunType == "disk"` 且有 `capacity`） + `config.storageDevice.nvmeTopology`（HostNvmeNamespace: blockSize \* capacityInBlocks 求和） | `attributes.disk_total_bytes`      | 必采（仅本地物理盘 total，不采集 used；无法判定则缺失并 warning） |
 
 **约束建议**：

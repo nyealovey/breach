@@ -179,6 +179,9 @@ type NormalizedV1 = {
     /** VMware Tools version status (only for VMs) */
     tools_status?: string;
   };
+  storage?: {
+    datastores?: Array<{ name: string; capacity_bytes: number }>;
+  };
   attributes?: Record<string, string | number | boolean | null>;
 };
 
@@ -348,6 +351,11 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
   const ipAddresses = uniqueStrings([...(soap?.ipAddresses ?? []), soap?.managementIp, ...vnicIps]);
   const mgmtIp = getFirstString([getFirstString(vnicIps), soap?.managementIp, ipAddresses[0]]);
 
+  const datastores =
+    soap?.datastores
+      ?.map((ds) => ({ name: ds.name.trim(), capacity_bytes: ds.capacityBytes }))
+      .filter((ds) => ds.name.length > 0 && Number.isFinite(ds.capacity_bytes) && ds.capacity_bytes >= 0) ?? [];
+
   const attributes: Record<string, string | number | boolean | null> = {};
   if (soap?.diskTotalBytes !== undefined) attributes.disk_total_bytes = soap.diskTotalBytes;
   if (soap?.datastoreTotalBytes !== undefined) attributes.datastore_total_bytes = soap.datastoreTotalBytes;
@@ -386,6 +394,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
         soap?.cpuCores !== undefined || soap?.memoryBytes !== undefined
           ? { cpu_count: soap?.cpuCores, memory_bytes: soap?.memoryBytes }
           : undefined,
+      storage: datastores.length > 0 || soap?.datastores ? { datastores } : undefined,
       attributes: hasAttributes ? attributes : undefined,
     },
     raw_payload: raw,

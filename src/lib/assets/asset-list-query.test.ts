@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
+import { Prisma } from '@prisma/client';
 import { buildAssetListWhere, isUuid, parseAssetListQuery } from '@/lib/assets/asset-list-query';
 
 describe('asset list query', () => {
   it('parses supported query params and trims q', () => {
-    const params = new URLSearchParams({ asset_type: 'vm', source_id: 'src_1', q: '  host-01  ' });
+    const params = new URLSearchParams({
+      asset_type: 'vm',
+      source_id: 'src_1',
+      q: '  host-01  ',
+      vm_power_state: 'poweredOn',
+      ip_missing: 'true',
+    });
     expect(parseAssetListQuery(params)).toEqual({
       assetType: 'vm',
       excludeAssetType: undefined,
       sourceId: 'src_1',
       q: 'host-01',
+      vmPowerState: 'poweredOn',
+      ipMissing: true,
     });
   });
 
@@ -20,6 +29,8 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: undefined,
       q: undefined,
+      vmPowerState: undefined,
+      ipMissing: undefined,
     });
   });
 
@@ -30,6 +41,8 @@ describe('asset list query', () => {
       excludeAssetType: 'cluster',
       sourceId: undefined,
       q: undefined,
+      vmPowerState: undefined,
+      ipMissing: undefined,
     });
   });
 
@@ -41,7 +54,8 @@ describe('asset list query', () => {
   it('builds where with filters and non-uuid search', () => {
     const where = buildAssetListWhere({ assetType: 'host', sourceId: 'src_1', q: 'esx' });
     expect(where).toMatchObject({
-      AND: [
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
         { assetType: 'host' },
         { sourceLinks: { some: { sourceId: 'src_1' } } },
         {
@@ -63,20 +77,66 @@ describe('asset list query', () => {
             },
           ]),
         },
-      ],
+      ]),
     });
   });
 
   it('builds where with exclude_asset_type', () => {
     const where = buildAssetListWhere({ excludeAssetType: 'cluster' });
-    expect(where).toEqual({ AND: [{ assetType: { not: 'cluster' } }] });
+    expect(where).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: { not: 'cluster' } }] });
+  });
+
+  it('builds where with vm_power_state (only when assetType=vm)', () => {
+    const where = buildAssetListWhere({ assetType: 'vm', vmPowerState: 'poweredOn' });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { assetType: 'vm' },
+        {
+          runSnapshots: {
+            some: { canonical: { path: ['fields', 'runtime', 'power_state', 'value'], equals: 'poweredOn' } },
+          },
+        },
+      ]),
+    });
+
+    const ignored = buildAssetListWhere({ assetType: 'host', vmPowerState: 'poweredOn' });
+    expect(ignored).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: 'host' }] });
+  });
+
+  it('builds where with ip_missing=true (only when assetType=vm)', () => {
+    const where = buildAssetListWhere({ assetType: 'vm', ipMissing: true });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { assetType: 'vm' },
+        {
+          OR: [
+            {
+              runSnapshots: {
+                some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: Prisma.AnyNull } },
+              },
+            },
+            {
+              runSnapshots: {
+                some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: [] } },
+              },
+            },
+          ],
+        },
+      ]),
+    });
+
+    const ignored = buildAssetListWhere({ assetType: 'host', ipMissing: true });
+    expect(ignored).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: 'host' }] });
   });
 
   it('builds where with uuid equality search (not contains)', () => {
     const uuid = '550e8400-e29b-41d4-a716-446655440000';
     const where = buildAssetListWhere({ q: uuid });
     expect(where).toMatchObject({
-      AND: [
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
         {
           OR: expect.arrayContaining([
             { displayName: { contains: uuid, mode: 'insensitive' } },
@@ -85,7 +145,7 @@ describe('asset list query', () => {
             { uuid },
           ]),
         },
-      ],
+      ]),
     });
   });
 

@@ -35,6 +35,8 @@ export const serverEnv = createEnv({
     ASSET_LEDGER_RUN_RECYCLE_AFTER_MS: z.coerce.number().int().positive().default(900_000),
 
     ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).default('plugins/vcenter/index.ts'),
+    ASSET_LEDGER_PVE_PLUGIN_PATH: z.string().min(1).default('plugins/pve/index.ts'),
+    ASSET_LEDGER_HYPERV_PLUGIN_PATH: z.string().min(1).default('plugins/hyperv/index.ts'),
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

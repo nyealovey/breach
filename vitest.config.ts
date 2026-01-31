@@ -14,6 +14,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./src/test/setup.ts'],
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // Keep Playwright E2E tests out of Vitest (they use `@playwright/test` globals).
+    include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts'],
+    exclude: [...configDefaults.exclude, 'e2e/**', '**/e2e/**'],
   },
 });
