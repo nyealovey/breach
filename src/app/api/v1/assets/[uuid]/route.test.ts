@@ -44,6 +44,7 @@ describe('GET /api/v1/assets/:uuid', () => {
       displayName: 'vm-01',
       machineNameOverride: null,
       lastSeenAt: new Date('2026-01-28T00:00:00.000Z'),
+      ledgerFields: null,
     } as any);
 
     (prisma.assetRunSnapshot.findFirst as any).mockResolvedValue({
@@ -65,6 +66,21 @@ describe('GET /api/v1/assets/:uuid', () => {
       displayName: 'vm-01',
       machineNameOverride: null,
       lastSeenAt: '2026-01-28T00:00:00.000Z',
+      ledgerFields: {
+        region: null,
+        company: null,
+        department: null,
+        systemCategory: null,
+        systemLevel: null,
+        bizOwner: null,
+        maintenanceDueDate: null,
+        purchaseDate: null,
+        bmcIp: null,
+        cabinetNo: null,
+        rackPosition: null,
+        managementCode: null,
+        fixedAssetNo: null,
+      },
       latestSnapshot: {
         runId: 'run_1',
         createdAt: '2026-01-28T00:10:00.000Z',

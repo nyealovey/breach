@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
+import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
 
 const AssetUpdateBodySchema = z.object({
   machineNameOverride: z.string().nullable().optional(),
@@ -25,6 +26,23 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       displayName: true,
       machineNameOverride: true,
       lastSeenAt: true,
+      ledgerFields: {
+        select: {
+          region: true,
+          company: true,
+          department: true,
+          systemCategory: true,
+          systemLevel: true,
+          bizOwner: true,
+          maintenanceDueDate: true,
+          purchaseDate: true,
+          bmcIp: true,
+          cabinetNo: true,
+          rackPosition: true,
+          managementCode: true,
+          fixedAssetNo: true,
+        },
+      },
     },
   });
   if (!asset) {
@@ -50,6 +68,7 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       displayName: asset.displayName,
       machineNameOverride: asset.machineNameOverride,
       lastSeenAt: asset.lastSeenAt?.toISOString() ?? null,
+      ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
       latestSnapshot: snapshot
         ? { runId: snapshot.runId, createdAt: snapshot.createdAt.toISOString(), canonical: snapshot.canonical }
         : null,

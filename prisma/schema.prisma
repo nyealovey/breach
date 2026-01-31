@@ -268,6 +268,7 @@ model Asset {
   mergedIntoAsset Asset?  @relation("AssetMerge", fields: [mergedIntoAssetUuid], references: [uuid])
   mergedAssets    Asset[] @relation("AssetMerge")
 
+  ledgerFields  AssetLedgerFields?
   sourceLinks   AssetSourceLink[]
   sourceRecords SourceRecord[]
   runSnapshots  AssetRunSnapshot[]
@@ -282,6 +283,37 @@ model Asset {
   @@index([assetType])
   @@index([status])
   @@index([lastSeenAt])
+}
+
+model AssetLedgerFields {
+  assetUuid String @id @db.Uuid
+
+  // ===== common (vm + host) =====
+  region         String?
+  company        String?
+  department     String?
+  systemCategory String?
+  systemLevel    String?
+  bizOwner       String?
+
+  // ===== host-only =====
+  maintenanceDueDate DateTime? @db.Date
+  purchaseDate       DateTime? @db.Date
+  bmcIp              String?
+  cabinetNo          String?
+  rackPosition       String?
+  managementCode     String?
+  fixedAssetNo       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset Asset @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+
+  @@index([company])
+  @@index([department])
+  @@index([systemCategory])
+  @@index([systemLevel])
 }
 
 model AssetSourceLink {

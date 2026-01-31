@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { buildPagination, parsePagination } from '@/lib/http/pagination';
 import { fail, okPaginated } from '@/lib/http/response';
+import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
 
 function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
   let cursor: unknown = fields;
@@ -133,6 +134,23 @@ export async function GET(request: Request) {
       skip,
       take,
       include: {
+        ledgerFields: {
+          select: {
+            region: true,
+            company: true,
+            department: true,
+            systemCategory: true,
+            systemLevel: true,
+            bizOwner: true,
+            maintenanceDueDate: true,
+            purchaseDate: true,
+            bmcIp: true,
+            cabinetNo: true,
+            rackPosition: true,
+            managementCode: true,
+            fixedAssetNo: true,
+          },
+        },
         runSnapshots: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -177,6 +195,7 @@ export async function GET(request: Request) {
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields),
+        ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
         cpuCount:
           asset.assetType === 'host' && typeof osName === 'string' && osName.trim() === 'ESXi'
             ? typeof cpuThreads === 'number'

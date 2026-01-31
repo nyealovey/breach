@@ -17,6 +17,10 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: 'src_1',
       q: 'host-01',
+      company: undefined,
+      department: undefined,
+      systemCategory: undefined,
+      systemLevel: undefined,
       vmPowerState: 'poweredOn',
       ipMissing: true,
     });
@@ -29,6 +33,10 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: undefined,
       q: undefined,
+      company: undefined,
+      department: undefined,
+      systemCategory: undefined,
+      systemLevel: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
     });
@@ -41,6 +49,10 @@ describe('asset list query', () => {
       excludeAssetType: 'cluster',
       sourceId: undefined,
       q: undefined,
+      company: undefined,
+      department: undefined,
+      systemCategory: undefined,
+      systemLevel: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
     });
@@ -173,5 +185,35 @@ describe('asset list query', () => {
         },
       },
     });
+  });
+
+  it('supports ledger-fields-v1 filters (company/department/systemCategory/systemLevel)', () => {
+    const where = buildAssetListWhere({
+      company: 'ACME',
+      department: 'IT',
+      systemCategory: '财经',
+      systemLevel: '核心',
+    });
+
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { ledgerFields: { is: { company: { contains: 'ACME', mode: 'insensitive' } } } },
+        { ledgerFields: { is: { department: { contains: 'IT', mode: 'insensitive' } } } },
+        { ledgerFields: { is: { systemCategory: { contains: '财经', mode: 'insensitive' } } } },
+        { ledgerFields: { is: { systemLevel: { contains: '核心', mode: 'insensitive' } } } },
+      ]),
+    });
+  });
+
+  it('includes ledger-fields-v1 in q search OR clauses', () => {
+    const q = 'ACME';
+    const where = buildAssetListWhere({ q });
+
+    const and = (where as any).AND as any[];
+    const or = and?.find((c) => c && typeof c === 'object' && 'OR' in c)?.OR as any[];
+
+    expect(or).toContainEqual({ ledgerFields: { is: { company: { contains: q, mode: 'insensitive' } } } });
+    expect(or).toContainEqual({ ledgerFields: { is: { bizOwner: { contains: q, mode: 'insensitive' } } } });
   });
 });
