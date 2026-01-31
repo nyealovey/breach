@@ -676,6 +676,8 @@
 
 **GET** `/api/v1/runs`
 
+**权限**：user/admin 均可访问。
+
 **查询参数**：
 
 | 参数          | 类型   | 说明                                                    |
@@ -717,6 +719,8 @@
 ### 5.2 获取 Run 详情
 
 **GET** `/api/v1/runs/:runId`
+
+**权限**：user/admin 均可访问。
 
 **成功响应**（200）：
 
@@ -763,6 +767,8 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 ### 6.1 获取 Asset 列表
 
 **GET** `/api/v1/assets`
+
+**权限**：user/admin 均可访问。
 
 **查询参数**：
 
@@ -829,6 +835,8 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 **PUT** `/api/v1/assets/:assetUuid`
 
+**权限**：仅管理员（admin-only）。
+
 **请求体**：
 
 ```json
@@ -851,6 +859,8 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 ### 6.2 获取 Asset 详情
 
 **GET** `/api/v1/assets/:assetUuid`
+
+**权限**：user/admin 均可访问。
 
 **成功响应**（200）：
 
@@ -910,6 +920,8 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 **GET** `/api/v1/assets/:assetUuid/source-records`
 
+**权限**：user/admin 均可访问（仅 normalized；不含 raw）。
+
 **查询参数**：
 
 | 参数       | 类型   | 说明        |
@@ -944,6 +956,8 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 ### 6.4 获取 Asset 关系链
 
 **GET** `/api/v1/assets/:assetUuid/relations`
+
+**权限**：user/admin 均可访问。
 
 **成功响应**（200）：
 
@@ -982,6 +996,48 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 ```
 
 > 注意：`missing` 数组用于说明缺边原因（如 "来源不提供"/"权限不足"）。
+
+### 6.4A 获取 Asset 历史（时间线）（M12）
+
+**GET** `/api/v1/assets/:assetUuid/history`
+
+**权限**：user/admin 均可访问。
+
+**查询参数**：
+
+| 参数     | 类型   | 说明                                                                                                |
+| -------- | ------ | --------------------------------------------------------------------------------------------------- |
+| `limit`  | number | 返回条数（默认 20；最大 100）                                                                       |
+| `cursor` | string | 游标（opaque；来自上一次响应的 `nextCursor`）                                                       |
+| `types`  | string | 事件类型过滤（逗号分隔）：`collect.changed,ledger_fields.changed,asset.merged,asset.status_changed` |
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "eventId": "ev_123",
+        "assetUuid": "a_123",
+        "sourceAssetUuid": null,
+        "eventType": "collect.changed",
+        "occurredAt": "2026-01-26T02:15:00Z",
+        "title": "采集变化",
+        "summary": { "changes": [{ "key": "identity.hostname", "before": "a", "after": "b" }] },
+        "refs": { "runId": "run_456" }
+      }
+    ],
+    "nextCursor": "opaque_cursor"
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+约束：
+
+- cursor 分页按 `occurredAt desc, id desc` 排序。
+- 若资产发生合并，主资产的 history 会包含被合并资产的事件，并用 `sourceAssetUuid` 标注来源资产 UUID（用于 UI 标记“来自合并资产”）。
 
 ### 6.5 获取 SourceRecord raw payload（管理员）
 

@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth/require-admin';
+import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { buildPagination, parsePagination } from '@/lib/http/pagination';
@@ -10,7 +10,7 @@ const SUPPORTED_MODE = new Set<RunMode>(['collect', 'collect_hosts', 'collect_vm
 const SUPPORTED_TRIGGER = new Set<RunTriggerType>(['manual', 'schedule']);
 
 export async function GET(request: Request) {
-  const auth = await requireAdmin(request);
+  const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);

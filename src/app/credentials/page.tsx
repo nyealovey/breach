@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -64,60 +65,63 @@ export default function CredentialsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>凭据</CardTitle>
-        <Button asChild>
-          <Link href="/credentials/new">新建凭据</Link>
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
-        ) : items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">暂无凭据，点击「新建凭据」开始配置。</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>名称</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>引用数</TableHead>
-                <TableHead>更新时间</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.credentialId}>
-                  <TableCell>
-                    <div className="font-medium">{item.name}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{item.credentialId}</div>
-                  </TableCell>
-                  <TableCell>{item.type}</TableCell>
-                  <TableCell>{item.usageCount}</TableCell>
-                  <TableCell>{item.updatedAt}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/credentials/${item.credentialId}/edit`}>编辑</Link>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={deletingId === item.credentialId}
-                        onClick={() => void onDelete(item.credentialId)}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </TableCell>
+    <>
+      <RequireAdminClient />
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>凭据</CardTitle>
+          <Button asChild>
+            <Link href="/credentials/new">新建凭据</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-sm text-muted-foreground">加载中…</div>
+          ) : items.length === 0 ? (
+            <div className="text-sm text-muted-foreground">暂无凭据，点击「新建凭据」开始配置。</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>名称</TableHead>
+                  <TableHead>类型</TableHead>
+                  <TableHead>引用数</TableHead>
+                  <TableHead>更新时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow key={item.credentialId}>
+                    <TableCell>
+                      <div className="font-medium">{item.name}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{item.credentialId}</div>
+                    </TableCell>
+                    <TableCell>{item.type}</TableCell>
+                    <TableCell>{item.usageCount}</TableCell>
+                    <TableCell>{item.updatedAt}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/credentials/${item.credentialId}/edit`}>编辑</Link>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={deletingId === item.credentialId}
+                          onClick={() => void onDelete(item.credentialId)}
+                        >
+                          删除
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }

@@ -1,10 +1,10 @@
-import { requireAdmin } from '@/lib/auth/require-admin';
+import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin(request);
+  const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;

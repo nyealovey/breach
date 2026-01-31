@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { GET } from '@/app/api/v1/assets/route';
-import { requireAdmin } from '@/lib/auth/require-admin';
+import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 
-vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/require-user', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/db/prisma', () => {
   const asset = {
     count: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('@/lib/db/prisma', () => {
 
 describe('GET /api/v1/assets', () => {
   it('returns okPaginated with request id header', async () => {
-    (requireAdmin as any).mockResolvedValue({
+    (requireUser as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },
@@ -133,7 +133,7 @@ describe('GET /api/v1/assets', () => {
   });
 
   it('returns ESXi host cpuCount from attributes.cpu_threads and totalDiskBytes from attributes.datastore_total_bytes (preferred)', async () => {
-    (requireAdmin as any).mockResolvedValue({
+    (requireUser as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },
@@ -206,7 +206,7 @@ describe('GET /api/v1/assets', () => {
   });
 
   it('does not fall back to os.fingerprint for hosts when version is missing', async () => {
-    (requireAdmin as any).mockResolvedValue({
+    (requireUser as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },

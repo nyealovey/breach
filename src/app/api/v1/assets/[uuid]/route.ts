@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import { requireAdmin } from '@/lib/auth/require-admin';
+import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
@@ -11,7 +12,7 @@ const AssetUpdateBodySchema = z.object({
 });
 
 export async function GET(request: Request, context: { params: Promise<{ uuid: string }> }) {
-  const auth = await requireAdmin(request);
+  const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
 
   const { uuid } = await context.params;

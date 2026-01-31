@@ -289,7 +289,7 @@ export default function AssetsPage() {
   useEffect(() => {
     let active = true;
     const loadSources = async () => {
-      const res = await fetch('/api/v1/sources?pageSize=100');
+      const res = await fetch('/api/v1/sources/summary');
       if (!res.ok) return;
       const body = (await res.json()) as { data?: Array<{ sourceId: string; name: string }> };
       if (active) setSourceOptions(body.data ?? []);

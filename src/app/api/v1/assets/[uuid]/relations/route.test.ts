@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { GET } from '@/app/api/v1/assets/[uuid]/relations/route';
-import { requireAdmin } from '@/lib/auth/require-admin';
+import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 
-vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/require-user', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/db/prisma', () => {
   const asset = { findUnique: vi.fn() };
   const relation = { findMany: vi.fn() };
@@ -13,7 +13,7 @@ vi.mock('@/lib/db/prisma', () => {
 
 describe('GET /api/v1/assets/:uuid/relations', () => {
   it('returns outgoing relations for asset', async () => {
-    (requireAdmin as any).mockResolvedValue({
+    (requireUser as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
       session: { user: { id: 'u1' } },

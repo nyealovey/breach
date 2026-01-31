@@ -1,8 +1,12 @@
 import Link from 'next/link';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getServerSession } from '@/lib/auth/server-session';
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession();
+  const isAdmin = session?.user.role === 'admin';
+
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">资产台账（vCenter MVP）</h1>
@@ -11,27 +15,31 @@ export default function Home() {
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">调度组</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            <Link className="text-primary underline-offset-4 hover:underline" href="/schedule-groups">
-              前往配置
-            </Link>
-          </CardContent>
-        </Card>
+        {isAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">调度组</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm">
+              <Link className="text-primary underline-offset-4 hover:underline" href="/schedule-groups">
+                前往配置
+              </Link>
+            </CardContent>
+          </Card>
+        ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">来源</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            <Link className="text-primary underline-offset-4 hover:underline" href="/sources">
-              前往配置
-            </Link>
-          </CardContent>
-        </Card>
+        {isAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">来源</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm">
+              <Link className="text-primary underline-offset-4 hover:underline" href="/sources">
+                前往配置
+              </Link>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader>
@@ -39,6 +47,17 @@ export default function Home() {
           </CardHeader>
           <CardContent className="text-sm">
             <Link className="text-primary underline-offset-4 hover:underline" href="/runs">
+              查看列表
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">资产</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <Link className="text-primary underline-offset-4 hover:underline" href="/assets">
               查看列表
             </Link>
           </CardContent>

@@ -142,12 +142,20 @@ List of websites that started off with Next.js TypeScript Starter:
 
 ### MVP UI 页面（持续完善）
 
-- `/login`：管理员登录
-- `/schedule-groups`：调度组配置（列表/编辑页展示 `groupId`；选择来源时展示 `sourceId`）
-- `/sources`：来源配置（绑定凭据；vCenter 需配置版本范围 `preferred_vcenter_version`；PVE 支持 `tls_verify/timeout_ms/scope/max_parallel_nodes/auth_type`；Hyper-V（WinRM）支持 `scheme/port/tls_verify/timeout_ms/scope/max_parallel_nodes`；列表页展示 `sourceId` + `endpoint` + 最新运行时间；编辑页展示 `sourceId` / `scheduleGroupId` / `credentialId`）
-- `/credentials`：凭据管理（创建/编辑/删除；不回显 secret；Hyper-V 支持可选 `domain`；列表/编辑页展示 `credentialId`）
-- `/runs`：采集 Run 列表与详情（失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
-- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）+ raw 查看（admin-only，脱敏+审计）；资产列表默认展示：机器名（支持覆盖显示）/虚拟机名/宿主机名/操作系统/IP/CPU（VM: vCPU 数量；Host(ESXi): cpu_threads 线程数）/内存/总分配磁盘/状态（VM 是否运行）（不展示 Last Seen/来源）；资产状态（in_service/offline）会在成功且 `inventory_complete=true` 的 collect 后，按来源维度 presence（present/missing）汇总推进；支持 URL query 同步（q/asset_type/exclude_asset_type/source_id/page/pageSize）与筛选（vm_power_state、ip_missing）；支持“列设置”并按用户写入 DB（`assets.table.columns.v1`）；资产详情支持字段字典分组展示（中文字段名 + 值渲染 + 冲突标记）与关系链视图（VM→Host→Cluster，best-effort）；Host 详情增加 Datastores 区块（名称/容量 + 总容量一致性提示）
+角色与权限（v1）：
+
+- admin：可管理调度组/来源/凭据、触发采集、重复中心/合并、写台账字段、导出 CSV、查看 raw（脱敏+审计）。
+- user：仅可只读访问资产与 Runs（含资产历史时间线）；无入口且服务端 403 禁止访问以上敏感能力。
+
+页面入口：
+
+- `/login`：登录（admin/user）
+- `/runs`：采集 Run 列表与详情（admin/user；失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
+- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）（admin/user）；raw 查看仅 admin（脱敏+审计）；资产详情包含“历史/时间线”（M12）
+- `/exports`：资产台账导出 CSV（admin-only；异步任务；下载即失效）
+- `/schedule-groups`：调度组配置（admin-only）
+- `/sources`：来源配置（admin-only）
+- `/credentials`：凭据管理（admin-only）
 - `/duplicate-candidates`：重复中心（admin-only）：候选列表/详情、命中原因（dup-rules-v1）、关键字段对比；支持 Ignore（永久）与合并确认（`primary_wins`，入口：候选详情“进入 Merge” → `/duplicate-candidates/:candidateId/merge`）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
 

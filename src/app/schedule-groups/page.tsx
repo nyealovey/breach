@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -75,64 +76,67 @@ export default function ScheduleGroupsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>调度组</CardTitle>
-        <Button asChild>
-          <Link href="/schedule-groups/new">新建调度组</Link>
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
-        ) : groups.length === 0 ? (
-          <div className="text-sm text-muted-foreground">暂无调度组，点击「新建调度组」开始配置。</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>名称</TableHead>
-                <TableHead>启用</TableHead>
-                <TableHead>时区</TableHead>
-                <TableHead>触发时间</TableHead>
-                <TableHead>来源数量</TableHead>
-                <TableHead>上次触发</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {groups.map((group) => (
-                <TableRow key={group.groupId}>
-                  <TableCell>
-                    <div className="font-medium">{group.name}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{group.groupId}</div>
-                  </TableCell>
-                  <TableCell>{group.enabled ? '启用' : '停用'}</TableCell>
-                  <TableCell>{group.timezone}</TableCell>
-                  <TableCell>{group.runAtHhmm}</TableCell>
-                  <TableCell>{group.sourceCount}</TableCell>
-                  <TableCell>{group.lastTriggeredOn ?? '-'}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={runningId === group.groupId}
-                        onClick={() => void onRun(group.groupId)}
-                      >
-                        运行
-                      </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/schedule-groups/${group.groupId}/edit`}>编辑</Link>
-                      </Button>
-                    </div>
-                  </TableCell>
+    <>
+      <RequireAdminClient />
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>调度组</CardTitle>
+          <Button asChild>
+            <Link href="/schedule-groups/new">新建调度组</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-sm text-muted-foreground">加载中…</div>
+          ) : groups.length === 0 ? (
+            <div className="text-sm text-muted-foreground">暂无调度组，点击「新建调度组」开始配置。</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>名称</TableHead>
+                  <TableHead>启用</TableHead>
+                  <TableHead>时区</TableHead>
+                  <TableHead>触发时间</TableHead>
+                  <TableHead>来源数量</TableHead>
+                  <TableHead>上次触发</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {groups.map((group) => (
+                  <TableRow key={group.groupId}>
+                    <TableCell>
+                      <div className="font-medium">{group.name}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{group.groupId}</div>
+                    </TableCell>
+                    <TableCell>{group.enabled ? '启用' : '停用'}</TableCell>
+                    <TableCell>{group.timezone}</TableCell>
+                    <TableCell>{group.runAtHhmm}</TableCell>
+                    <TableCell>{group.sourceCount}</TableCell>
+                    <TableCell>{group.lastTriggeredOn ?? '-'}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={runningId === group.groupId}
+                          onClick={() => void onRun(group.groupId)}
+                        >
+                          运行
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/schedule-groups/${group.groupId}/edit`}>编辑</Link>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }

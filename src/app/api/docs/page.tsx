@@ -2,6 +2,8 @@
 
 import dynamic from 'next/dynamic';
 
+import { RequireAdminClient } from '@/components/auth/require-admin-client';
+
 import type { ComponentType } from 'react';
 
 const SwaggerUI = dynamic(() => import('swagger-ui-react').then((mod) => mod.default as any), {
@@ -11,6 +13,7 @@ const SwaggerUI = dynamic(() => import('swagger-ui-react').then((mod) => mod.def
 export default function ApiDocsPage() {
   return (
     <div className="space-y-3">
+      <RequireAdminClient />
       <div className="flex items-center justify-between">
         <div>
           <div className="text-lg font-semibold">API 文档</div>

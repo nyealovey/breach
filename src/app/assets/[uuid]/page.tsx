@@ -1112,16 +1112,18 @@ export default function AssetDetailPage() {
                         >
                           查看 normalized
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setRawRecordId(r.recordId);
-                            setRawOpen(true);
-                          }}
-                        >
-                          查看 raw
-                        </Button>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setRawRecordId(r.recordId);
+                              setRawOpen(true);
+                            }}
+                          >
+                            查看 raw
+                          </Button>
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1141,14 +1143,16 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      <RawDialog
-        recordId={rawRecordId}
-        open={rawOpen}
-        onOpenChange={(open) => {
-          setRawOpen(open);
-          if (!open) setRawRecordId(null);
-        }}
-      />
+      {isAdmin ? (
+        <RawDialog
+          recordId={rawRecordId}
+          open={rawOpen}
+          onOpenChange={(open) => {
+            setRawOpen(open);
+            if (!open) setRawRecordId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
