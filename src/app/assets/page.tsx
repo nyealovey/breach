@@ -22,8 +22,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
+import { listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AssetListUrlState, VmPowerStateParam } from '@/lib/assets/asset-list-url';
+import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
 
 type AssetListItem = {
   assetUuid: string;
@@ -39,6 +41,7 @@ type AssetListItem = {
   vmPowerState: string | null;
   toolsRunning: boolean | null;
   ip: string | null;
+  ledgerFields: LedgerFieldsV1;
   cpuCount: number | null;
   memoryBytes: number | null;
   totalDiskBytes: number | null;
@@ -62,11 +65,12 @@ type AssetListColumnId =
   | 'cpuCount'
   | 'memoryBytes'
   | 'totalDiskBytes'
-  | 'vmPowerState';
+  | 'vmPowerState'
+  | `ledger.${LedgerFieldKey}`;
 
 const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v1' as const;
 
-const ASSET_LIST_COLUMNS: Array<{
+const BASE_ASSET_LIST_COLUMNS: Array<{
   id: AssetListColumnId;
   label: string;
   description?: string;
@@ -82,8 +86,25 @@ const ASSET_LIST_COLUMNS: Array<{
   { id: 'vmPowerState', label: '状态', description: 'VM 电源状态（poweredOn/off/suspended）。' },
 ];
 
-const DEFAULT_VISIBLE_COLUMNS: AssetListColumnId[] = ASSET_LIST_COLUMNS.map((c) => c.id);
-const ASSET_LIST_COLUMN_ID_SET = new Set<AssetListColumnId>(DEFAULT_VISIBLE_COLUMNS);
+const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
+const LEDGER_FIELD_COLUMNS: Array<{ id: AssetListColumnId; label: string; description?: string }> =
+  LEDGER_FIELD_METAS.map((m) => ({
+    id: `ledger.${m.key}` as const,
+    label: m.labelZh,
+    description: m.scope === 'host_only' ? '台账字段（仅 Host）' : '台账字段',
+  }));
+
+const ASSET_LIST_COLUMNS: Array<{ id: AssetListColumnId; label: string; description?: string }> = [
+  ...BASE_ASSET_LIST_COLUMNS,
+  ...LEDGER_FIELD_COLUMNS,
+];
+
+// Default columns remain unchanged; ledger fields are opt-in.
+const DEFAULT_VISIBLE_COLUMNS: AssetListColumnId[] = BASE_ASSET_LIST_COLUMNS.map((c) => c.id);
+const ASSET_LIST_COLUMN_ID_SET = new Set<AssetListColumnId>(ASSET_LIST_COLUMNS.map((c) => c.id));
+const ASSET_LIST_COLUMN_LABEL_BY_ID = new Map<AssetListColumnId, string>(
+  ASSET_LIST_COLUMNS.map((c) => [c.id, c.label]),
+);
 
 function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
   if (!Array.isArray(input)) return null;
@@ -136,19 +157,33 @@ export default function AssetsPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [role, setRole] = useState<'admin' | 'user' | null>(null);
+  const isAdmin = role === 'admin';
+
   const [sourceOptions, setSourceOptions] = useState<SourceOption[]>([]);
 
   const [visibleColumns, setVisibleColumns] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
-  const visibleColumnSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [columnDraft, setColumnDraft] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
   const [columnSaving, setColumnSaving] = useState(false);
+
+  const [selectedAssetUuids, setSelectedAssetUuids] = useState<string[]>([]);
+  const selectedAssetUuidSet = useMemo(() => new Set(selectedAssetUuids), [selectedAssetUuids]);
+
+  const [bulkSetOpen, setBulkSetOpen] = useState(false);
+  const [bulkKey, setBulkKey] = useState<LedgerFieldKey | ''>('');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const [qInput, setQInput] = useState('');
   const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host' | 'cluster'>('all');
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
+  const [companyInput, setCompanyInput] = useState('');
+  const [departmentInput, setDepartmentInput] = useState('');
+  const [systemCategoryInput, setSystemCategoryInput] = useState('');
+  const [systemLevelInput, setSystemLevelInput] = useState('');
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -171,18 +206,38 @@ export default function AssetsPage() {
       assetType: impliedAssetType,
       excludeAssetType: impliedAssetType ? undefined : ('cluster' as const),
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
+      company: companyInput.trim() ? companyInput.trim() : undefined,
+      department: departmentInput.trim() ? departmentInput.trim() : undefined,
+      systemCategory: systemCategoryInput.trim() ? systemCategoryInput.trim() : undefined,
+      systemLevel: systemLevelInput.trim() ? systemLevelInput.trim() : undefined,
       vmPowerState,
       ipMissing,
       page,
       pageSize,
     };
-  }, [assetTypeInput, ipMissingInput, page, pageSize, qInput, sourceIdInput, vmPowerStateInput]);
+  }, [
+    assetTypeInput,
+    companyInput,
+    departmentInput,
+    ipMissingInput,
+    page,
+    pageSize,
+    qInput,
+    sourceIdInput,
+    systemCategoryInput,
+    systemLevelInput,
+    vmPowerStateInput,
+  ]);
 
   useEffect(() => {
     const parsed = parseAssetListUrlState(new URLSearchParams(searchParams.toString()));
     setQInput(parsed.q ?? '');
     setAssetTypeInput(parsed.assetType ?? 'all');
     setSourceIdInput(parsed.sourceId ?? 'all');
+    setCompanyInput(parsed.company ?? '');
+    setDepartmentInput(parsed.department ?? '');
+    setSystemCategoryInput(parsed.systemCategory ?? '');
+    setSystemLevelInput(parsed.systemLevel ?? '');
     setVmPowerStateInput(parsed.vmPowerState ?? 'all');
     setIpMissingInput(parsed.ipMissing === true);
     setPage(parsed.page);
@@ -197,6 +252,10 @@ export default function AssetsPage() {
       assetType: query.assetType,
       excludeAssetType: query.excludeAssetType,
       sourceId: query.sourceId,
+      company: query.company,
+      department: query.department,
+      systemCategory: query.systemCategory,
+      systemLevel: query.systemLevel,
       vmPowerState: query.vmPowerState,
       ipMissing: query.ipMissing,
       page: query.page,
@@ -207,6 +266,25 @@ export default function AssetsPage() {
     if (next === current) return;
     router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
   }, [pathname, query, router, searchParams]);
+
+  useEffect(() => {
+    let active = true;
+    const loadMe = async () => {
+      const res = await fetch('/api/v1/auth/me');
+      if (!res.ok) {
+        if (active) setRole(null);
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as { data?: { role?: unknown } } | null;
+      const rawRole = body?.data?.role;
+      const nextRole = rawRole === 'admin' || rawRole === 'user' ? rawRole : null;
+      if (active) setRole(nextRole);
+    };
+    void loadMe();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -256,6 +334,10 @@ export default function AssetsPage() {
         assetType: query.assetType,
         excludeAssetType: query.excludeAssetType,
         sourceId: query.sourceId,
+        company: query.company,
+        department: query.department,
+        systemCategory: query.systemCategory,
+        systemLevel: query.systemLevel,
         vmPowerState: query.vmPowerState,
         ipMissing: query.ipMissing,
         page: query.page,
@@ -271,6 +353,7 @@ export default function AssetsPage() {
         if (active) {
           setItems([]);
           setPagination(null);
+          setSelectedAssetUuids([]);
           setLoading(false);
         }
         return;
@@ -280,6 +363,7 @@ export default function AssetsPage() {
       if (active) {
         setItems(body.data ?? []);
         setPagination(body.pagination ?? null);
+        setSelectedAssetUuids([]);
         setLoading(false);
       }
     };
@@ -301,7 +385,7 @@ export default function AssetsPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center">
           <div className="flex flex-1 items-center gap-2">
             <Input
-              placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/externalId/uuid）"
+              placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/台账字段/externalId/uuid）"
               value={qInput}
               onChange={(e) => {
                 setPage(1);
@@ -417,6 +501,66 @@ export default function AssetsPage() {
           </div>
         </div>
 
+        <div className="grid gap-2 md:grid-cols-4">
+          <Input
+            placeholder="公司（台账）"
+            value={companyInput}
+            onChange={(e) => {
+              setPage(1);
+              setCompanyInput(e.target.value);
+            }}
+          />
+          <Input
+            placeholder="部门（台账）"
+            value={departmentInput}
+            onChange={(e) => {
+              setPage(1);
+              setDepartmentInput(e.target.value);
+            }}
+          />
+          <Input
+            placeholder="系统分类（台账）"
+            value={systemCategoryInput}
+            onChange={(e) => {
+              setPage(1);
+              setSystemCategoryInput(e.target.value);
+            }}
+          />
+          <Input
+            placeholder="系统分级（台账）"
+            value={systemLevelInput}
+            onChange={(e) => {
+              setPage(1);
+              setSystemLevelInput(e.target.value);
+            }}
+          />
+        </div>
+
+        {isAdmin ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedAssetUuids.length < 1}
+              onClick={() => {
+                setBulkKey('');
+                setBulkValue('');
+                setBulkSetOpen(true);
+              }}
+            >
+              批量设置台账字段
+            </Button>
+            {selectedAssetUuids.length > 0 ? (
+              <>
+                <span className="text-xs text-muted-foreground">已选择 {selectedAssetUuids.length} 个（当前页）</span>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedAssetUuids([])}>
+                  清空选择
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="text-sm text-muted-foreground">加载中…</div>
         ) : items.length === 0 ? (
@@ -426,105 +570,182 @@ export default function AssetsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {visibleColumnSet.has('machineName') ? <TableHead>机器名</TableHead> : null}
-                  {visibleColumnSet.has('vmName') ? <TableHead>虚拟机名</TableHead> : null}
-                  {visibleColumnSet.has('hostName') ? <TableHead>宿主机名</TableHead> : null}
-                  {visibleColumnSet.has('os') ? <TableHead>操作系统</TableHead> : null}
-                  {visibleColumnSet.has('ip') ? <TableHead>IP</TableHead> : null}
-                  {visibleColumnSet.has('cpuCount') ? <TableHead className="text-right">CPU</TableHead> : null}
-                  {visibleColumnSet.has('memoryBytes') ? <TableHead className="text-right">内存</TableHead> : null}
-                  {visibleColumnSet.has('totalDiskBytes') ? (
-                    <TableHead className="text-right">总分配磁盘</TableHead>
+                  {isAdmin ? (
+                    <TableHead className="w-[36px]">
+                      <input
+                        type="checkbox"
+                        aria-label="选择当前页"
+                        checked={items.length > 0 && items.every((it) => selectedAssetUuidSet.has(it.assetUuid))}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedAssetUuids(items.map((it) => it.assetUuid));
+                          else setSelectedAssetUuids([]);
+                        }}
+                      />
+                    </TableHead>
                   ) : null}
-                  {visibleColumnSet.has('vmPowerState') ? <TableHead>状态</TableHead> : null}
+
+                  {visibleColumns.map((colId) => {
+                    const label = ASSET_LIST_COLUMN_LABEL_BY_ID.get(colId) ?? colId;
+                    const rightAligned = colId === 'cpuCount' || colId === 'memoryBytes' || colId === 'totalDiskBytes';
+                    return (
+                      <TableHead key={colId} className={rightAligned ? 'text-right' : undefined}>
+                        {label}
+                      </TableHead>
+                    );
+                  })}
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.assetUuid}>
-                    {visibleColumnSet.has('machineName') ? (
-                      <TableCell className="font-medium">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{item.machineName ?? ''}</span>
-                          {item.machineNameOverride ? (
-                            item.machineNameMismatch ? (
-                              <Badge variant="destructive">覆盖≠采集</Badge>
-                            ) : (
-                              <Badge variant="secondary">覆盖</Badge>
-                            )
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('vmName') ? (
-                      <TableCell className="font-medium">{item.vmName ?? '-'}</TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('hostName') ? (
-                      <TableCell className="font-medium">{item.hostName ?? '-'}</TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('os') ? (
-                      <TableCell className="max-w-[240px] whitespace-normal break-words text-sm">
-                        {item.os ?? '-'}
-                      </TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('ip') ? (
-                      <TableCell className="max-w-[280px] whitespace-normal break-all font-mono text-xs">
-                        {item.ip ? (
-                          item.ip
-                        ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
-                          <span
-                            className="cursor-help text-muted-foreground"
-                            title="VMware Tools 未安装或未运行，无法获取 IP 地址"
-                          >
-                            - (Tools 未运行)
-                          </span>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('cpuCount') ? (
-                      <TableCell className="text-right">{item.cpuCount ?? '-'}</TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('memoryBytes') ? (
-                      <TableCell className="text-right">{formatBytes(item.memoryBytes)}</TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('totalDiskBytes') ? (
-                      <TableCell className="text-right">{formatBytes(item.totalDiskBytes)}</TableCell>
-                    ) : null}
-
-                    {visibleColumnSet.has('vmPowerState') ? (
+                    {isAdmin ? (
                       <TableCell>
-                        {item.vmPowerState ? (
-                          <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
-                            {powerStateLabel(item.vmPowerState)}
-                          </Badge>
-                        ) : (
-                          '-'
-                        )}
+                        <input
+                          type="checkbox"
+                          aria-label="选择资产"
+                          checked={selectedAssetUuidSet.has(item.assetUuid)}
+                          onChange={(e) => {
+                            setSelectedAssetUuids((prev) => {
+                              const set = new Set(prev);
+                              if (e.target.checked) set.add(item.assetUuid);
+                              else set.delete(item.assetUuid);
+                              return Array.from(set);
+                            });
+                          }}
+                        />
                       </TableCell>
                     ) : null}
+
+                    {visibleColumns.map((colId) => {
+                      if (colId === 'machineName') {
+                        return (
+                          <TableCell key={colId} className="font-medium">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{item.machineName ?? ''}</span>
+                              {item.machineNameOverride ? (
+                                item.machineNameMismatch ? (
+                                  <Badge variant="destructive">覆盖≠采集</Badge>
+                                ) : (
+                                  <Badge variant="secondary">覆盖</Badge>
+                                )
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'vmName') {
+                        return (
+                          <TableCell key={colId} className="font-medium">
+                            {item.vmName ?? '-'}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'hostName') {
+                        return (
+                          <TableCell key={colId} className="font-medium">
+                            {item.hostName ?? '-'}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'os') {
+                        return (
+                          <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
+                            {item.os ?? '-'}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'ip') {
+                        return (
+                          <TableCell
+                            key={colId}
+                            className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
+                          >
+                            {item.ip ? (
+                              item.ip
+                            ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
+                              <span
+                                className="cursor-help text-muted-foreground"
+                                title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                              >
+                                - (Tools 未运行)
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'cpuCount') {
+                        return (
+                          <TableCell key={colId} className="text-right">
+                            {item.cpuCount ?? '-'}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'memoryBytes') {
+                        return (
+                          <TableCell key={colId} className="text-right">
+                            {formatBytes(item.memoryBytes)}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'totalDiskBytes') {
+                        return (
+                          <TableCell key={colId} className="text-right">
+                            {formatBytes(item.totalDiskBytes)}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'vmPowerState') {
+                        return (
+                          <TableCell key={colId}>
+                            {item.vmPowerState ? (
+                              <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
+                                {powerStateLabel(item.vmPowerState)}
+                              </Badge>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId.startsWith('ledger.')) {
+                        const key = colId.slice('ledger.'.length) as LedgerFieldKey;
+                        return (
+                          <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                            {item.ledgerFields?.[key] ?? '-'}
+                          </TableCell>
+                        );
+                      }
+
+                      return <TableCell key={colId}>-</TableCell>;
+                    })}
+
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditTarget(item);
-                            setEditMachineNameValue(item.machineNameOverride ?? '');
-                            setEditMachineNameOpen(true);
-                          }}
-                        >
-                          编辑机器名
-                        </Button>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditTarget(item);
+                              setEditMachineNameValue(item.machineNameOverride ?? '');
+                              setEditMachineNameOpen(true);
+                            }}
+                          >
+                            编辑机器名
+                          </Button>
+                        ) : null}
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/assets/${item.assetUuid}`}>查看</Link>
                         </Button>
@@ -647,6 +868,120 @@ export default function AssetsPage() {
                     setColumnSettingsOpen(false);
                   } finally {
                     setColumnSaving(false);
+                  }
+                }}
+              >
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={bulkSetOpen}
+          onOpenChange={(open) => {
+            setBulkSetOpen(open);
+            if (!open) {
+              setBulkKey('');
+              setBulkValue('');
+              setBulkSaving(false);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>批量设置台账字段</DialogTitle>
+              <DialogDescription>仅支持对“当前页勾选”的资产批量设置 1 个字段（N≤100）。</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="text-xs text-muted-foreground">已选择：{selectedAssetUuids.length} 个资产</div>
+
+              <div className="space-y-2">
+                <Label>字段</Label>
+                <Select
+                  value={bulkKey || 'choose'}
+                  onValueChange={(value) => {
+                    setBulkKey(value === 'choose' ? '' : (value as LedgerFieldKey));
+                    setBulkValue('');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择字段" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="choose">请选择</SelectItem>
+                    {LEDGER_FIELD_METAS.map((m) => {
+                      const disabled =
+                        m.scope === 'host_only' &&
+                        items.some((it) => selectedAssetUuidSet.has(it.assetUuid) && it.assetType === 'vm');
+                      return (
+                        <SelectItem key={m.key} value={m.key} disabled={disabled}>
+                          {m.labelZh}
+                          {m.scope === 'host_only' ? '（仅 Host）' : ''}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>值</Label>
+                {bulkKey && LEDGER_FIELD_METAS.find((m) => m.key === bulkKey)?.kind === 'date' ? (
+                  <Input type="date" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} />
+                ) : (
+                  <Input value={bulkValue} placeholder="留空表示清空" onChange={(e) => setBulkValue(e.target.value)} />
+                )}
+                <div className="text-xs text-muted-foreground">留空表示清空（等价 value=null）。</div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={bulkSaving}
+                onClick={() => {
+                  setBulkSetOpen(false);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                disabled={!isAdmin || bulkSaving || selectedAssetUuids.length < 1 || !bulkKey}
+                onClick={async () => {
+                  if (!bulkKey) return;
+                  if (selectedAssetUuids.length < 1) return;
+
+                  setBulkSaving(true);
+                  try {
+                    const valueTrimmed = bulkValue.trim();
+                    const value = valueTrimmed.length > 0 ? valueTrimmed : null;
+
+                    const res = await fetch('/api/v1/assets/ledger-fields/bulk-set', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ assetUuids: selectedAssetUuids, key: bulkKey, value }),
+                    });
+
+                    if (!res.ok) {
+                      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                      toast.error(body?.error?.message ?? '批量设置失败');
+                      return;
+                    }
+
+                    setItems((prev) =>
+                      prev.map((it) => {
+                        if (!selectedAssetUuidSet.has(it.assetUuid)) return it;
+                        return { ...it, ledgerFields: { ...it.ledgerFields, [bulkKey]: value } as LedgerFieldsV1 };
+                      }),
+                    );
+
+                    toast.success('已批量设置');
+                    setSelectedAssetUuids([]);
+                    setBulkSetOpen(false);
+                  } finally {
+                    setBulkSaving(false);
                   }
                 }}
               >

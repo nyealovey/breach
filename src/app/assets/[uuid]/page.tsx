@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
@@ -12,9 +13,12 @@ import { RawDialog } from '@/components/raw/raw-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
+import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
 
 type AssetDetail = {
   assetUuid: string;
@@ -24,6 +28,7 @@ type AssetDetail = {
   displayName: string | null;
   machineNameOverride?: string | null;
   lastSeenAt: string | null;
+  ledgerFields: LedgerFieldsV1;
   latestSnapshot: { runId: string; createdAt: string; canonical: unknown } | null;
 };
 
@@ -46,6 +51,8 @@ type RelationItem = {
   sourceId: string;
   lastSeenAt: string;
 };
+
+const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
 
 type FlattenedField = {
   path: string;
@@ -103,6 +110,13 @@ export default function AssetDetailPage() {
   const [relations, setRelations] = useState<RelationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [role, setRole] = useState<'admin' | 'user' | null>(null);
+  const isAdmin = role === 'admin';
+
+  const [ledgerEditing, setLedgerEditing] = useState(false);
+  const [ledgerDraft, setLedgerDraft] = useState<Partial<Record<LedgerFieldKey, string>>>({});
+  const [ledgerSaving, setLedgerSaving] = useState(false);
+
   const [selectedNormalized, setSelectedNormalized] = useState<{ recordId: string; payload: unknown } | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const [rawRecordId, setRawRecordId] = useState<string | null>(null);
@@ -121,6 +135,25 @@ export default function AssetDetailPage() {
 
   useEffect(() => {
     let active = true;
+    const loadMe = async () => {
+      const res = await fetch('/api/v1/auth/me');
+      if (!res.ok) {
+        if (active) setRole(null);
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as { data?: { role?: unknown } } | null;
+      const rawRole = body?.data?.role;
+      const nextRole = rawRole === 'admin' || rawRole === 'user' ? rawRole : null;
+      if (active) setRole(nextRole);
+    };
+    void loadMe();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     const load = async () => {
       setLoading(true);
 
@@ -136,6 +169,9 @@ export default function AssetDetailPage() {
           setAsset(null);
           setSourceRecords([]);
           setRelations([]);
+          setLedgerEditing(false);
+          setLedgerDraft({});
+          setLedgerSaving(false);
           setSelectedNormalized(null);
           setRawOpen(false);
           setRawRecordId(null);
@@ -157,6 +193,9 @@ export default function AssetDetailPage() {
         setAsset(assetBody.data ?? null);
         setSourceRecords(recordsBody?.data ?? []);
         setRelations(relationsBody?.data ?? []);
+        setLedgerEditing(false);
+        setLedgerDraft({});
+        setLedgerSaving(false);
         setSelectedNormalized(null);
         setRawOpen(false);
         setRawRecordId(null);
@@ -419,6 +458,158 @@ export default function AssetDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {asset.assetType === 'vm' || asset.assetType === 'host' ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>台账字段</CardTitle>
+              {isAdmin ? (
+                ledgerEditing ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={ledgerSaving}
+                      onClick={() => {
+                        setLedgerEditing(false);
+                        setLedgerDraft({});
+                        setLedgerSaving(false);
+                      }}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={ledgerSaving}
+                      onClick={async () => {
+                        if (!asset) return;
+
+                        const updates: Record<string, string | null> = {};
+                        for (const meta of LEDGER_FIELD_METAS) {
+                          if (!isLedgerFieldAllowedForAssetType(meta, asset.assetType as any)) continue;
+
+                          const draft = (ledgerDraft[meta.key] ?? '').trim();
+                          const nextValue = draft.length > 0 ? draft : null;
+                          const prevValue = asset.ledgerFields?.[meta.key] ?? null;
+
+                          if (nextValue !== prevValue) updates[meta.key] = nextValue;
+                        }
+
+                        if (Object.keys(updates).length < 1) {
+                          toast('无变更');
+                          setLedgerEditing(false);
+                          return;
+                        }
+
+                        setLedgerSaving(true);
+                        try {
+                          const res = await fetch(
+                            `/api/v1/assets/${encodeURIComponent(asset.assetUuid)}/ledger-fields`,
+                            {
+                              method: 'PUT',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({ ledgerFields: updates }),
+                            },
+                          );
+
+                          if (!res.ok) {
+                            const body = (await res.json().catch(() => null)) as {
+                              error?: { message?: string };
+                            } | null;
+                            toast.error(body?.error?.message ?? '保存失败');
+                            return;
+                          }
+
+                          const body = (await res.json().catch(() => null)) as {
+                            data?: { ledgerFields?: LedgerFieldsV1 };
+                          } | null;
+                          const nextLedgerFields = body?.data?.ledgerFields;
+                          if (nextLedgerFields)
+                            setAsset((prev) => (prev ? { ...prev, ledgerFields: nextLedgerFields } : prev));
+
+                          toast.success('已保存');
+                          setLedgerEditing(false);
+                        } finally {
+                          setLedgerSaving(false);
+                        }
+                      }}
+                    >
+                      保存
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const nextDraft: Partial<Record<LedgerFieldKey, string>> = {};
+                      for (const meta of LEDGER_FIELD_METAS) {
+                        nextDraft[meta.key] = asset.ledgerFields?.[meta.key] ?? '';
+                      }
+                      setLedgerDraft(nextDraft);
+                      setLedgerEditing(true);
+                    }}
+                  >
+                    编辑
+                  </Button>
+                )
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>字段</TableHead>
+                  <TableHead>值</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {LEDGER_FIELD_METAS.map((meta) => {
+                  const allowed = isLedgerFieldAllowedForAssetType(meta, asset.assetType as any);
+                  const value = asset.ledgerFields?.[meta.key] ?? null;
+                  const draft = ledgerDraft[meta.key] ?? value ?? '';
+
+                  return (
+                    <TableRow key={meta.key}>
+                      <TableCell className="text-sm font-medium">
+                        {meta.labelZh}
+                        {meta.scope === 'host_only' ? (
+                          <span className="ml-1 text-xs text-muted-foreground">(仅 Host)</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {!allowed ? (
+                          <span className="text-muted-foreground">-</span>
+                        ) : ledgerEditing && isAdmin ? (
+                          meta.kind === 'date' ? (
+                            <Input
+                              type="date"
+                              value={draft}
+                              onChange={(e) => setLedgerDraft((prev) => ({ ...prev, [meta.key]: e.target.value }))}
+                            />
+                          ) : (
+                            <Input
+                              value={draft}
+                              placeholder="留空表示清空"
+                              onChange={(e) => setLedgerDraft((prev) => ({ ...prev, [meta.key]: e.target.value }))}
+                            />
+                          )
+                        ) : value ? (
+                          <span className="whitespace-normal break-words">{value}</span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {asset.assetType === 'host' ? (
         <Card>

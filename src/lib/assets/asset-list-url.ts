@@ -8,6 +8,10 @@ export type AssetListUrlState = {
   assetType?: AssetTypeParam;
   excludeAssetType?: AssetTypeParam;
   sourceId?: string;
+  company?: string;
+  department?: string;
+  systemCategory?: string;
+  systemLevel?: string;
   vmPowerState?: VmPowerStateParam;
   ipMissing?: boolean;
   page: number;
@@ -51,6 +55,10 @@ export function parseAssetListUrlState(params: URLSearchParams): AssetListUrlSta
     assetType: parseAssetType(params.get('asset_type')),
     excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
+    company: parseOptionalString(params.get('company')),
+    department: parseOptionalString(params.get('department')),
+    systemCategory: parseOptionalString(params.get('system_category')),
+    systemLevel: parseOptionalString(params.get('system_level')),
     vmPowerState: parseVmPowerState(params.get('vm_power_state')),
     ipMissing: parseIpMissing(params.get('ip_missing')),
     page,
@@ -67,6 +75,10 @@ export function buildAssetListUrlSearchParams(state: AssetListUrlState): URLSear
   if (state.assetType) params.set('asset_type', state.assetType);
   if (state.excludeAssetType) params.set('exclude_asset_type', state.excludeAssetType);
   if (state.sourceId) params.set('source_id', state.sourceId);
+  if (state.company) params.set('company', state.company);
+  if (state.department) params.set('department', state.department);
+  if (state.systemCategory) params.set('system_category', state.systemCategory);
+  if (state.systemLevel) params.set('system_level', state.systemLevel);
   if (state.vmPowerState) params.set('vm_power_state', state.vmPowerState);
   if (state.ipMissing === true) params.set('ip_missing', 'true');
 

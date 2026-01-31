@@ -1,4 +1,3 @@
-import { AssetType } from '@prisma/client';
 import { ErrorCode } from '@/lib/errors/error-codes';
 
 import type { AppError } from '@/lib/errors/error';
@@ -55,6 +54,8 @@ export type LedgerFieldsV1Value = string | null;
 
 export type LedgerFieldsV1 = Record<LedgerFieldKey, LedgerFieldsV1Value>;
 
+export type LedgerFieldsAssetType = 'vm' | 'host' | 'cluster';
+
 export function listLedgerFieldMetasV1(): LedgerFieldMeta[] {
   return LEDGER_FIELDS_V1.slice();
 }
@@ -67,9 +68,9 @@ export function getLedgerFieldMetaV1(key: string): LedgerFieldMeta | null {
   return isLedgerFieldKeyV1(key) ? LEDGER_FIELD_META_BY_KEY[key] : null;
 }
 
-export function isLedgerFieldAllowedForAssetType(meta: LedgerFieldMeta, assetType: AssetType): boolean {
-  if (assetType === AssetType.host) return true;
-  if (assetType === AssetType.vm) return meta.scope === 'vm_host';
+export function isLedgerFieldAllowedForAssetType(meta: LedgerFieldMeta, assetType: LedgerFieldsAssetType): boolean {
+  if (assetType === 'host') return true;
+  if (assetType === 'vm') return meta.scope === 'vm_host';
   return false;
 }
 
