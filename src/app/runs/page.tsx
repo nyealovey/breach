@@ -2,6 +2,9 @@ import Link from 'next/link';
 
 import { prisma } from '@/lib/db/prisma';
 import { parsePagination } from '@/lib/http/pagination';
+import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
+import { getPrimaryRunIssue } from '@/lib/runs/run-issues';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -122,6 +125,7 @@ export default async function RunsPage({ searchParams }: RunsPageProps) {
                 <TableHead>模式</TableHead>
                 <TableHead>触发方式</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>主错误</TableHead>
                 <TableHead>结束时间</TableHead>
                 <TableHead>错误/警告</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -131,6 +135,12 @@ export default async function RunsPage({ searchParams }: RunsPageProps) {
               {runs.map((run) => {
                 const warningsCount = Array.isArray(run.warnings) ? run.warnings.length : 0;
                 const errorsCount = Array.isArray(run.errors) ? run.errors.length : 0;
+                const primaryIssue = getPrimaryRunIssue({
+                  status: run.status,
+                  errors: run.errors,
+                  errorSummary: run.errorSummary,
+                });
+                const primaryMeta = primaryIssue ? getRunErrorUiMeta(primaryIssue.code) : null;
                 return (
                   <TableRow key={run.id}>
                     <TableCell className="font-medium">{run.id}</TableCell>
@@ -138,6 +148,21 @@ export default async function RunsPage({ searchParams }: RunsPageProps) {
                     <TableCell>{run.mode}</TableCell>
                     <TableCell>{run.triggerType}</TableCell>
                     <TableCell>{run.status}</TableCell>
+                    <TableCell>
+                      {run.status === 'Failed' && primaryIssue ? (
+                        <div className="space-y-1">
+                          <div className="font-mono text-xs">{primaryIssue.code}</div>
+                          <div className="text-xs text-muted-foreground">{primaryMeta?.title ?? '-'}</div>
+                          {primaryIssue.retryable ? (
+                            <Badge variant="outline" className="w-fit">
+                              可重试
+                            </Badge>
+                          ) : null}
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
                     <TableCell>{run.finishedAt?.toISOString() ?? '-'}</TableCell>
                     <TableCell>
                       {errorsCount}/{warningsCount}

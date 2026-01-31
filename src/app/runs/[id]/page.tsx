@@ -1,10 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/ui/table';
+import { RunIssuesPanel } from '@/components/runs/run-issues-panel';
+import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
+import { getPrimaryRunIssue, sanitizeRedactedContext } from '@/lib/runs/run-issues';
 
 type RunDetail = {
   runId: string;
@@ -20,6 +25,7 @@ type RunDetail = {
   stats: unknown;
   warnings: unknown[];
   errors: unknown[];
+  errorSummary: string | null;
 };
 
 export default function RunDetailPage() {
@@ -56,6 +62,13 @@ export default function RunDetailPage() {
   if (!run) {
     return <div className="text-sm text-muted-foreground">未找到 Run。</div>;
   }
+
+  const primaryIssue =
+    run.status === 'Failed'
+      ? getPrimaryRunIssue({ status: run.status, errors: run.errors, errorSummary: run.errorSummary })
+      : null;
+  const primaryMeta = primaryIssue ? getRunErrorUiMeta(primaryIssue.code) : null;
+  const primaryContext = primaryIssue ? sanitizeRedactedContext(primaryIssue.redacted_context) : null;
 
   return (
     <div className="space-y-6">
@@ -103,6 +116,63 @@ export default function RunDetailPage() {
         </CardContent>
       </Card>
 
+      {run.status === 'Failed' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>失败原因</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {primaryIssue ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-mono text-sm">{primaryIssue.code}</div>
+                  <div className="text-sm text-muted-foreground">{primaryMeta?.title ?? '-'}</div>
+                  <Badge variant={primaryIssue.retryable ? 'default' : 'secondary'}>
+                    {primaryIssue.retryable ? '可重试' : '不可重试'}
+                  </Badge>
+                  {primaryIssue.missingStructuredErrors ? <Badge variant="destructive">缺少结构化 errors</Badge> : null}
+                </div>
+
+                <div className="text-sm">{primaryIssue.message}</div>
+
+                {primaryContext ? (
+                  <pre className="max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
+                    {JSON.stringify(primaryContext, null, 2)}
+                  </pre>
+                ) : null}
+
+                <div className="space-y-3">
+                  <div className="text-sm font-medium">建议动作</div>
+                  <div className="space-y-3">
+                    {(primaryMeta?.actions ?? []).map((action, idx) => (
+                      <div key={idx} className="rounded border p-3">
+                        <div className="text-sm font-medium">{action.title}</div>
+                        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                          {action.steps.map((step, stepIdx) => (
+                            <li key={stepIdx}>{step}</li>
+                          ))}
+                        </ol>
+                        {action.links?.length ? (
+                          <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                            {action.links.map((link) => (
+                              <Link key={link.href} href={link.href} className="underline">
+                                {link.label}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">该 Run 状态为 Failed，但没有可展示的结构化错误信息。</div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>统计与检测</CardTitle>
@@ -123,25 +193,8 @@ export default function RunDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>错误与告警</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <div className="text-sm font-medium">errors</div>
-            <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-              {JSON.stringify(run.errors, null, 2)}
-            </pre>
-          </div>
-          <div>
-            <div className="text-sm font-medium">warnings</div>
-            <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-              {JSON.stringify(run.warnings, null, 2)}
-            </pre>
-          </div>
-        </CardContent>
-      </Card>
+      <RunIssuesPanel title="errors" issues={run.errors} defaultOpen />
+      <RunIssuesPanel title="warnings" issues={run.warnings} />
     </div>
   );
 }

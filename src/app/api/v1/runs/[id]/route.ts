@@ -41,6 +41,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       stats: run.stats ?? null,
       warnings: run.warnings ?? [],
       errors: run.errors ?? [],
+      errorSummary: run.errorSummary ?? null,
     },
     { requestId: auth.requestId },
   );
