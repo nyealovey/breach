@@ -7,14 +7,23 @@ import { getOrCreateRequestId } from '@/lib/http/request-id';
 import { fail, ok } from '@/lib/http/response';
 import { SourceType } from '@prisma/client';
 
+import type { Prisma } from '@prisma/client';
+
+const VcenterPreferredVersionSchema = z.enum(['6.5-6.7', '7.0-8.x']);
+
+const SourceConfigSchema = z
+  .object({
+    endpoint: z.string().min(1),
+    preferred_vcenter_version: VcenterPreferredVersionSchema.optional(),
+  })
+  .passthrough();
+
 const SourceUpdateSchema = z.object({
   name: z.string().min(1),
   sourceType: z.nativeEnum(SourceType),
   enabled: z.boolean().optional(),
   scheduleGroupId: z.string().min(1).nullable().optional(),
-  config: z.object({
-    endpoint: z.string().min(1),
-  }),
+  config: SourceConfigSchema,
   credentialId: z.string().min(1).nullable().optional(),
 });
 
@@ -141,6 +150,19 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
+  if (body.sourceType === SourceType.vcenter && !body.config.preferred_vcenter_version) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'preferred_vcenter_version is required for vcenter sources',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+
   const source = await prisma.source.update({
     where: { id },
     data: {
@@ -148,7 +170,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       sourceType: body.sourceType,
       enabled: body.enabled ?? true,
       scheduleGroupId: scheduleGroupId ?? null,
-      config: body.config,
+      // `request.json()` guarantees JSON-compatible types; Zod passthrough uses `unknown` for values.
+      config: body.config as unknown as Prisma.InputJsonValue,
       credentialId: credentialId ?? null,
     },
     include: { credential: { select: { id: true, name: true, type: true } } },

@@ -7,8 +7,15 @@ type TxResult = {
   queued: number;
   skipped_active: number;
   skipped_missing_credential: number;
+  skipped_missing_config: number;
   message: string;
 };
+
+function hasVcenterPreferredVersion(config: unknown): boolean {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return false;
+  const value = (config as Record<string, unknown>).preferred_vcenter_version;
+  return value === '6.5-6.7' || value === '7.0-8.x';
+}
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin(request);
@@ -32,8 +39,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const result = await prisma.$transaction(async (tx): Promise<TxResult> => {
     // Concurrency control: lock eligible sources in the group to avoid duplicate enqueue.
-    const sources = await tx.$queryRaw<Array<{ id: string; credentialId: string | null; sourceType: string }>>`
-      SELECT id, "credentialId", "sourceType"
+    const sources = await tx.$queryRaw<
+      Array<{ id: string; credentialId: string | null; sourceType: string; config: unknown }>
+    >`
+      SELECT id, "credentialId", "sourceType", config
       FROM "Source"
       WHERE "scheduleGroupId" = ${group.id}
         AND "deletedAt" IS NULL
@@ -42,11 +51,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     `;
 
     const skipped_missing_credential = sources.filter((s) => s.credentialId === null).length;
-    const eligibleSources = sources.filter((s) => s.credentialId !== null);
+    const skipped_missing_config = sources.filter(
+      (s) => s.sourceType === 'vcenter' && !hasVcenterPreferredVersion(s.config),
+    ).length;
+
+    const eligibleSources = sources.filter((s) => {
+      if (s.credentialId === null) return false;
+      if (s.sourceType === 'vcenter') return hasVcenterPreferredVersion(s.config);
+      return true;
+    });
     const eligibleSourceIds = eligibleSources.map((s) => s.id);
 
     if (eligibleSourceIds.length === 0) {
-      return { queued: 0, skipped_active: 0, skipped_missing_credential, message: 'no eligible sources' };
+      return {
+        queued: 0,
+        skipped_active: 0,
+        skipped_missing_credential,
+        skipped_missing_config,
+        message: 'no eligible sources',
+      };
     }
 
     const active = await tx.run.findMany({
@@ -101,7 +124,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const message =
       queued === 0 ? (skipped_active > 0 ? 'all eligible sources have active runs' : 'no eligible sources') : 'queued';
 
-    return { queued, skipped_active, skipped_missing_credential, message };
+    return { queued, skipped_active, skipped_missing_credential, skipped_missing_config, message };
   });
 
   return ok(result, { requestId: auth.requestId });

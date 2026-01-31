@@ -61,6 +61,34 @@ function makeHttpError(input: { op: string; status: number; bodyText: string }) 
   return err;
 }
 
+function unwrapValue<T>(data: unknown): T {
+  // Some vSphere Automation API deployments wrap payloads as `{ value: ... }`.
+  if (data && typeof data === 'object' && !Array.isArray(data) && 'value' in (data as Record<string, unknown>)) {
+    return (data as Record<string, unknown>).value as T;
+  }
+  return data as T;
+}
+
+function unwrapArray<T>(data: unknown, op: string): T[] {
+  const unwrapped = unwrapValue<unknown>(data);
+  if (Array.isArray(unwrapped)) return unwrapped as T[];
+  debugLog(`${op}.unexpected_response`, {
+    data_type: typeof data,
+    keys: data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data as Record<string, unknown>) : [],
+  });
+  throw new Error(`${op} returned unexpected response`);
+}
+
+function unwrapObject<T extends Record<string, unknown>>(data: unknown, op: string): T {
+  const unwrapped = unwrapValue<unknown>(data);
+  if (unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)) return unwrapped as T;
+  debugLog(`${op}.unexpected_response`, {
+    data_type: typeof data,
+    keys: data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data as Record<string, unknown>) : [],
+  });
+  throw new Error(`${op} returned unexpected response`);
+}
+
 async function fetchJson<T>(
   input: string,
   init: RequestInit,
@@ -129,7 +157,7 @@ export async function listVMs(endpoint: string, token: SessionToken): Promise<Ar
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listVMs', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapArray<{ vm: string }>(result.data, 'listVMs');
 }
 
 /**
@@ -149,7 +177,7 @@ export async function listVMsByHost(
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listVMsByHost', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapArray<{ vm: string }>(result.data, 'listVMsByHost');
 }
 
 export async function getVmDetail(
@@ -163,7 +191,7 @@ export async function getVmDetail(
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'getVmDetail', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapObject<Record<string, unknown>>(result.data, 'getVmDetail');
 }
 
 /** Host summary from list API */
@@ -181,7 +209,7 @@ export async function listHosts(endpoint: string, token: SessionToken): Promise<
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listHosts', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapArray<HostSummary>(result.data, 'listHosts');
 }
 
 /**
@@ -199,7 +227,7 @@ export async function listHostsByCluster(
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listHostsByCluster', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapArray<HostSummary>(result.data, 'listHostsByCluster');
 }
 
 export async function getHostDetail(
@@ -213,7 +241,7 @@ export async function getHostDetail(
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'getHostDetail', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapObject<Record<string, unknown>>(result.data, 'getHostDetail');
 }
 
 export async function listClusters(endpoint: string, token: SessionToken): Promise<Array<{ cluster: string }>> {
@@ -223,7 +251,32 @@ export async function listClusters(endpoint: string, token: SessionToken): Promi
     headers: { 'vmware-api-session-id': token },
   });
   if (!result.ok) throw makeHttpError({ op: 'listClusters', status: result.status, bodyText: result.bodyText });
-  return result.data;
+  return unwrapArray<{ cluster: string }>(result.data, 'listClusters');
+}
+
+/**
+ * vCenter system version info
+ * @see https://developer.broadcom.com/xapis/vsphere-automation-api/latest/vcenter/api/vcenter/system/version/get/
+ */
+export type VcenterSystemVersion = {
+  product?: string;
+  type?: string;
+  version?: string;
+  build?: string;
+  install_time?: string;
+};
+
+export async function getVcenterSystemVersion(
+  endpoint: string,
+  token: SessionToken,
+): Promise<VcenterSystemVersion | null> {
+  const url = joinUrl(endpoint, '/api/vcenter/system/version');
+  const result = await fetchJson<VcenterSystemVersion>(url, {
+    method: 'GET',
+    headers: { 'vmware-api-session-id': token },
+  });
+  if (!result.ok) return null;
+  return unwrapObject<VcenterSystemVersion>(result.data, 'getVcenterSystemVersion');
 }
 
 /**
@@ -281,7 +334,7 @@ export async function getVmGuestNetworking(
     // VMware Tools not running or other errors - return empty array instead of throwing
     return [];
   }
-  return result.data;
+  return unwrapArray<GuestNetworkInterface>(result.data, 'getVmGuestNetworking');
 }
 
 /**
@@ -302,7 +355,7 @@ export async function getVmGuestNetworkingInfo(
     // VMware Tools not running or other errors - return null
     return null;
   }
-  return result.data;
+  return unwrapObject<GuestNetworkingInfo>(result.data, 'getVmGuestNetworkingInfo');
 }
 
 /**
@@ -343,5 +396,5 @@ export async function getVmTools(endpoint: string, token: SessionToken, vmId: st
     // Tools API not available - return null
     return null;
   }
-  return result.data;
+  return unwrapObject<VmToolsInfo>(result.data, 'getVmTools');
 }

@@ -35,6 +35,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   }
 
+  const isCollectMode = body.mode === 'collect' || body.mode === 'collect_hosts' || body.mode === 'collect_vms';
+  if (isCollectMode && source.sourceType === 'vcenter') {
+    const preferred =
+      source.config && typeof source.config === 'object' && !Array.isArray(source.config)
+        ? (source.config as Record<string, unknown>).preferred_vcenter_version
+        : undefined;
+    if (preferred !== '6.5-6.7' && preferred !== '7.0-8.x') {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'preferred_vcenter_version is required for vcenter collect runs',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  }
+
   const active = await prisma.run.findFirst({
     where: { sourceId: id, status: { in: ['Queued', 'Running'] }, mode: body.mode },
     orderBy: { createdAt: 'desc' },

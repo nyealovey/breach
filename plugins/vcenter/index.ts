@@ -2,6 +2,7 @@
 
 import {
   createSession,
+  getVcenterSystemVersion,
   getVmDetail,
   getVmGuestNetworking,
   getVmGuestNetworkingInfo,
@@ -14,6 +15,8 @@ import {
 import { buildRelations, normalizeCluster, normalizeHost, normalizeVM } from './normalize';
 import { collectHostSoapDetails } from './soap';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
+
+type PreferredVcenterVersion = '6.5-6.7' | '7.0-8.x';
 
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
   return {
@@ -65,6 +68,94 @@ function toVcenterError(err: unknown, stage: string): CollectorError {
   };
 }
 
+function parseMajorMinor(version: string): { major: number; minor: number } | null {
+  const m = version.trim().match(/^(\d+)\.(\d+)/);
+  if (!m) return null;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
+  return { major, minor };
+}
+
+function recommendPreferredVersion(detectedVersion: string | null): PreferredVcenterVersion | null {
+  if (!detectedVersion) return null;
+  const parsed = parseMajorMinor(detectedVersion);
+  if (!parsed) return null;
+  if (parsed.major >= 7) return '7.0-8.x';
+  return '6.5-6.7';
+}
+
+function buildDetectPayload(params: {
+  configuredPreferredVersion?: PreferredVcenterVersion;
+  detectedVersion: string | null;
+  detectedBuild: string | null;
+}): Record<string, unknown> {
+  const targetVersion = params.detectedVersion
+    ? params.detectedBuild
+      ? `${params.detectedVersion} (build ${params.detectedBuild})`
+      : params.detectedVersion
+    : 'unknown';
+
+  const recommended =
+    recommendPreferredVersion(params.detectedVersion) ?? params.configuredPreferredVersion ?? '7.0-8.x';
+  const driver = `vcenter-${params.configuredPreferredVersion ?? 'auto'}@v1`;
+
+  return {
+    target_version: targetVersion,
+    capabilities: {
+      system_version_endpoint: params.detectedVersion !== null,
+      ...(params.detectedBuild ? { build: params.detectedBuild } : {}),
+      ...(params.configuredPreferredVersion ? { preferred_vcenter_version: params.configuredPreferredVersion } : {}),
+    },
+    driver,
+    recommended_preferred_version: recommended,
+  };
+}
+
+function shouldFailRelations(params: {
+  mode: 'collect' | 'collect_hosts' | 'collect_vms';
+  vmCount: number;
+  clusterCount: number;
+  relationsCount: number;
+}): boolean {
+  if (params.relationsCount > 0) return false;
+
+  if (params.mode === 'collect_vms') return params.vmCount > 0;
+  if (params.mode === 'collect_hosts') return params.clusterCount > 0;
+  // collect: if any VM or Cluster exists, relations must not be empty
+  return params.vmCount > 0 || params.clusterCount > 0;
+}
+
+function validateVmRequiredFields(assets: CollectorResponseV1['assets']): CollectorError | null {
+  for (const asset of assets) {
+    if (asset.external_kind !== 'vm') continue;
+
+    const cpu = asset.normalized.hardware?.cpu_count;
+    const mem = asset.normalized.hardware?.memory_bytes;
+    const power = asset.normalized.runtime?.power_state;
+
+    const missing: string[] = [];
+    if (cpu === undefined) missing.push('hardware.cpu_count');
+    if (mem === undefined) missing.push('hardware.memory_bytes');
+    if (power === undefined) missing.push('runtime.power_state');
+
+    if (missing.length > 0) {
+      return {
+        code: 'INVENTORY_INCOMPLETE',
+        category: 'schema',
+        message: 'vm missing required fields',
+        retryable: false,
+        redacted_context: {
+          vm_id: asset.external_id,
+          missing_fields: missing,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
 async function healthcheck(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const token = await createSession(
@@ -82,16 +173,48 @@ async function healthcheck(request: CollectorRequestV1): Promise<{ response: Col
 
 async function detect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
-    const token = await createSession(
-      request.source.config.endpoint,
-      request.source.credential.username,
-      request.source.credential.password,
-    );
+    const endpoint = request.source.config.endpoint;
+    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
     if (!token) throw new Error('session token empty');
+
+    const configuredPreferred = request.source.config.preferred_vcenter_version;
+    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+
+    const detectedVersion = systemVersion?.version ?? null;
+    const detectedBuild = systemVersion?.build ?? null;
+
+    const detectPayload = buildDetectPayload({
+      configuredPreferredVersion: configuredPreferred,
+      detectedVersion,
+      detectedBuild,
+    });
+
+    const recommended = detectPayload.recommended_preferred_version as PreferredVcenterVersion;
+    if (configuredPreferred && detectedVersion && configuredPreferred !== recommended) {
+      return {
+        response: makeResponse({
+          detect: detectPayload,
+          errors: [
+            {
+              code: 'VCENTER_API_VERSION_UNSUPPORTED',
+              category: 'parse',
+              message: 'vcenter api version unsupported',
+              retryable: false,
+              redacted_context: {
+                detected_version: detectedVersion,
+                preferred_vcenter_version: configuredPreferred,
+                recommended_preferred_version: recommended,
+              },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
 
     return {
       response: makeResponse({
-        detect: { target_version: 'unknown', capabilities: {}, driver: 'vcenter@v1' },
+        detect: detectPayload,
         errors: [],
       }),
       exitCode: 0,
@@ -104,9 +227,58 @@ async function detect(request: CollectorRequestV1): Promise<{ response: Collecto
 async function collectHosts(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const endpoint = request.source.config.endpoint;
+    const preferred = request.source.config.preferred_vcenter_version;
+    if (!preferred) {
+      return {
+        response: makeResponse({
+          errors: [
+            {
+              code: 'VCENTER_CONFIG_INVALID',
+              category: 'config',
+              message: 'missing preferred_vcenter_version',
+              retryable: false,
+              redacted_context: { mode: 'collect_hosts' },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
 
     const warnings: unknown[] = [];
+
+    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const detectedVersion = systemVersion?.version ?? null;
+    const recommended = recommendPreferredVersion(detectedVersion);
+    if (recommended && detectedVersion && recommended !== preferred) {
+      const detectPayload = buildDetectPayload({
+        configuredPreferredVersion: preferred,
+        detectedVersion,
+        detectedBuild: systemVersion?.build ?? null,
+      });
+      return {
+        response: makeResponse({
+          detect: detectPayload,
+          errors: [
+            {
+              code: 'VCENTER_API_VERSION_UNSUPPORTED',
+              category: 'parse',
+              message: 'vcenter api version unsupported',
+              retryable: false,
+              redacted_context: {
+                detected_version: detectedVersion,
+                preferred_vcenter_version: preferred,
+                recommended_preferred_version: recommended,
+              },
+            },
+          ],
+          stats: { assets: 0, relations: 0, inventory_complete: false, warnings },
+        }),
+        exitCode: 1,
+      };
+    }
 
     // Hosts + clusters (REST)
     const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
@@ -193,6 +365,33 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
     const assets = [...hostAssets, ...clusterAssets];
     const relations = buildRelations([], hostDetails as any, clusters as any);
 
+    if (
+      shouldFailRelations({
+        mode: 'collect_hosts',
+        vmCount: 0,
+        clusterCount: clusters.length,
+        relationsCount: relations.length,
+      })
+    ) {
+      return {
+        response: makeResponse({
+          assets,
+          relations,
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings },
+          errors: [
+            {
+              code: 'INVENTORY_RELATIONS_EMPTY',
+              category: 'parse',
+              message: 'relations is empty',
+              retryable: false,
+              redacted_context: { mode: 'collect_hosts', assets: assets.length, clusters: clusters.length },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     return {
       response: makeResponse({
         assets,
@@ -216,7 +415,56 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
 async function collectVMs(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const endpoint = request.source.config.endpoint;
+    const preferred = request.source.config.preferred_vcenter_version;
+    if (!preferred) {
+      return {
+        response: makeResponse({
+          errors: [
+            {
+              code: 'VCENTER_CONFIG_INVALID',
+              category: 'config',
+              message: 'missing preferred_vcenter_version',
+              retryable: false,
+              redacted_context: { mode: 'collect_vms' },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+
+    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const detectedVersion = systemVersion?.version ?? null;
+    const recommended = recommendPreferredVersion(detectedVersion);
+    if (recommended && detectedVersion && recommended !== preferred) {
+      const detectPayload = buildDetectPayload({
+        configuredPreferredVersion: preferred,
+        detectedVersion,
+        detectedBuild: systemVersion?.build ?? null,
+      });
+      return {
+        response: makeResponse({
+          detect: detectPayload,
+          errors: [
+            {
+              code: 'VCENTER_API_VERSION_UNSUPPORTED',
+              category: 'parse',
+              message: 'vcenter api version unsupported',
+              retryable: false,
+              redacted_context: {
+                detected_version: detectedVersion,
+                preferred_vcenter_version: preferred,
+                recommended_preferred_version: recommended,
+              },
+            },
+          ],
+          stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
+        }),
+        exitCode: 1,
+      };
+    }
 
     // VMs only (REST). No SOAP in this mode.
     const hostSummaries = await listHosts(endpoint, token);
@@ -256,6 +504,46 @@ async function collectVMs(request: CollectorRequestV1): Promise<{ response: Coll
     const assets = vmDetails.map((vm) => normalizeVM(vm as any));
     const relations = buildRelations(vmDetails as any, hostSummaries as any, []);
 
+    const requiredError = validateVmRequiredFields(assets);
+    if (requiredError) {
+      return {
+        response: makeResponse({
+          assets,
+          relations,
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
+          errors: [requiredError],
+        }),
+        exitCode: 1,
+      };
+    }
+
+    if (
+      shouldFailRelations({
+        mode: 'collect_vms',
+        vmCount: vmDetails.length,
+        clusterCount: 0,
+        relationsCount: relations.length,
+      })
+    ) {
+      return {
+        response: makeResponse({
+          assets,
+          relations,
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
+          errors: [
+            {
+              code: 'INVENTORY_RELATIONS_EMPTY',
+              category: 'parse',
+              message: 'relations is empty',
+              retryable: false,
+              redacted_context: { mode: 'collect_vms', assets: assets.length, vms: vmDetails.length },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     return {
       response: makeResponse({
         assets,
@@ -279,9 +567,58 @@ async function collectVMs(request: CollectorRequestV1): Promise<{ response: Coll
 async function collect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const endpoint = request.source.config.endpoint;
+    const preferred = request.source.config.preferred_vcenter_version;
+    if (!preferred) {
+      return {
+        response: makeResponse({
+          errors: [
+            {
+              code: 'VCENTER_CONFIG_INVALID',
+              category: 'config',
+              message: 'missing preferred_vcenter_version',
+              retryable: false,
+              redacted_context: { mode: 'collect' },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
 
     const warnings: unknown[] = [];
+
+    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const detectedVersion = systemVersion?.version ?? null;
+    const recommended = recommendPreferredVersion(detectedVersion);
+    if (recommended && detectedVersion && recommended !== preferred) {
+      const detectPayload = buildDetectPayload({
+        configuredPreferredVersion: preferred,
+        detectedVersion,
+        detectedBuild: systemVersion?.build ?? null,
+      });
+      return {
+        response: makeResponse({
+          detect: detectPayload,
+          errors: [
+            {
+              code: 'VCENTER_API_VERSION_UNSUPPORTED',
+              category: 'parse',
+              message: 'vcenter api version unsupported',
+              retryable: false,
+              redacted_context: {
+                detected_version: detectedVersion,
+                preferred_vcenter_version: preferred,
+                recommended_preferred_version: recommended,
+              },
+            },
+          ],
+          stats: { assets: 0, relations: 0, inventory_complete: false, warnings },
+        }),
+        exitCode: 1,
+      };
+    }
 
     // First, get hosts and clusters
     const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
@@ -408,6 +745,51 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     const assets = [...vmAssets, ...hostAssets, ...clusterAssets];
     const relations = buildRelations(vmDetails as any, hostDetails as any, clusters as any);
+
+    const requiredError = validateVmRequiredFields(assets);
+    if (requiredError) {
+      return {
+        response: makeResponse({
+          assets,
+          relations,
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings },
+          errors: [requiredError],
+        }),
+        exitCode: 1,
+      };
+    }
+
+    if (
+      shouldFailRelations({
+        mode: 'collect',
+        vmCount: vmDetails.length,
+        clusterCount: clusters.length,
+        relationsCount: relations.length,
+      })
+    ) {
+      return {
+        response: makeResponse({
+          assets,
+          relations,
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings },
+          errors: [
+            {
+              code: 'INVENTORY_RELATIONS_EMPTY',
+              category: 'parse',
+              message: 'relations is empty',
+              retryable: false,
+              redacted_context: {
+                mode: 'collect',
+                assets: assets.length,
+                vms: vmDetails.length,
+                clusters: clusters.length,
+              },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
 
     return {
       response: makeResponse({

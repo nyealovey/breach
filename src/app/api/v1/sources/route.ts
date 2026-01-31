@@ -7,14 +7,23 @@ import { buildPagination, parseBoolean, parsePagination } from '@/lib/http/pagin
 import { created, fail, okPaginated } from '@/lib/http/response';
 import { SourceType } from '@prisma/client';
 
+import type { Prisma } from '@prisma/client';
+
+const VcenterPreferredVersionSchema = z.enum(['6.5-6.7', '7.0-8.x']);
+
+const SourceConfigSchema = z
+  .object({
+    endpoint: z.string().min(1),
+    preferred_vcenter_version: VcenterPreferredVersionSchema.optional(),
+  })
+  .passthrough();
+
 const SourceCreateSchema = z.object({
   name: z.string().min(1),
   sourceType: z.nativeEnum(SourceType),
   enabled: z.boolean().optional(),
   scheduleGroupId: z.string().min(1).nullable().optional(),
-  config: z.object({
-    endpoint: z.string().min(1),
-  }),
+  config: SourceConfigSchema,
   credentialId: z.string().min(1).nullable().optional(),
 });
 
@@ -163,6 +172,19 @@ export async function POST(request: Request) {
     );
   }
 
+  if (body.sourceType === SourceType.vcenter && !body.config.preferred_vcenter_version) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'preferred_vcenter_version is required for vcenter sources',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+
   try {
     const source = await prisma.source.create({
       data: {
@@ -170,7 +192,8 @@ export async function POST(request: Request) {
         sourceType: body.sourceType,
         enabled: body.enabled ?? true,
         scheduleGroupId,
-        config: body.config,
+        // `request.json()` guarantees JSON-compatible types; Zod passthrough uses `unknown` for values.
+        config: body.config as unknown as Prisma.InputJsonValue,
         credentialId,
       },
       include: { credential: { select: { id: true, name: true, type: true } } },

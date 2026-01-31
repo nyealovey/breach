@@ -4,6 +4,7 @@ export type CollectorMode = 'healthcheck' | 'detect' | 'collect' | 'collect_host
 
 export type VCenterConfig = {
   endpoint: string;
+  preferred_vcenter_version?: '6.5-6.7' | '7.0-8.x';
   inventory_scope?: unknown;
 };
 
@@ -29,7 +30,7 @@ export type CollectorRequestV1 = {
 
 export type CollectorError = {
   code: string;
-  category: 'auth' | 'permission' | 'network' | 'rate_limit' | 'parse' | 'config' | 'unknown';
+  category: 'auth' | 'permission' | 'network' | 'rate_limit' | 'parse' | 'schema' | 'config' | 'unknown';
   message: string;
   retryable: boolean;
   redacted_context?: Record<string, unknown>;

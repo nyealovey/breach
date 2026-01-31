@@ -9,6 +9,12 @@ function log(message: string, extra?: Record<string, unknown>) {
   console.log(`[scheduler] ${message}${payload}`);
 }
 
+function hasVcenterPreferredVersion(config: unknown): boolean {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return false;
+  const value = (config as Record<string, unknown>).preferred_vcenter_version;
+  return value === '6.5-6.7' || value === '7.0-8.x';
+}
+
 async function enqueueDueGroups(now: Date) {
   const groups = await prisma.scheduleGroup.findMany({
     where: { enabled: true },
@@ -48,9 +54,13 @@ async function enqueueDueGroups(now: Date) {
 
     const sources = await prisma.source.findMany({
       where: { enabled: true, scheduleGroupId: group.id, deletedAt: null, credentialId: { not: null } },
-      select: { id: true, sourceType: true },
+      select: { id: true, sourceType: true, config: true },
     });
-    const sourceIds = sources.map((s) => s.id);
+    const eligibleSources = sources.filter((s) => {
+      if (s.sourceType !== 'vcenter') return true;
+      return hasVcenterPreferredVersion(s.config);
+    });
+    const sourceIds = eligibleSources.map((s) => s.id);
 
     if (sourceIds.length === 0) {
       log('triggered group but has no enabled sources', {
@@ -69,8 +79,8 @@ async function enqueueDueGroups(now: Date) {
     });
     const activeSet = new Set(active.map((r) => `${r.sourceId}:${r.mode}`));
 
-    const vcenterSources = sources.filter((s) => s.sourceType === 'vcenter');
-    const otherSources = sources.filter((s) => s.sourceType !== 'vcenter');
+    const vcenterSources = eligibleSources.filter((s) => s.sourceType === 'vcenter');
+    const otherSources = eligibleSources.filter((s) => s.sourceType !== 'vcenter');
 
     const hostRuns = vcenterSources
       .filter((s) => !activeSet.has(`${s.id}:collect_hosts`))

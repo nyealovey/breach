@@ -38,6 +38,10 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   let soapRetrievePropertiesExUnsupported = false;
   let soapNvmeTopologyUnsupported = false;
   let soapLoginCookie = 'vmware_soap_session="soap-123"';
+  let restWrapValue = false;
+  let restVmDetailFlat = false;
+  let restSystemVersion = '7.0.3';
+  let restSystemBuild = '20036589';
   const server = createServer((req, res) => {
     const url = req.url ?? '';
     const parsedUrl = new URL(url, 'http://localhost');
@@ -340,74 +344,96 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
+    if (method === 'GET' && pathname === '/api/vcenter/system/version') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      const payload = { product: 'VMware vCenter Server', version: restSystemVersion, build: restSystemBuild };
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
+      return;
+    }
+
     if (method === 'GET' && pathname === '/api/vcenter/vm' && searchParams.get('hosts') === 'host-1') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify([{ vm: 'vm-1' }]));
+      const payload = [{ vm: 'vm-1' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/vm' && !searchParams.has('hosts')) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify([{ vm: 'vm-1' }]));
+      const payload = [{ vm: 'vm-1' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
     if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(
-        JSON.stringify({
-          vm: 'vm-1',
-          instance_uuid: 'uuid-1',
-          name: 'vm-1-name',
-          power_state: 'poweredOn',
-        }),
-      );
+      const payload = restVmDetailFlat
+        ? {
+            vm: 'vm-1',
+            name: 'vm-1-name',
+            power_state: 'POWERED_ON',
+            identity: { instance_uuid: 'uuid-1', name: 'vm-1-name' },
+            cpu_count: 4,
+            memory_size_MiB: 8192,
+          }
+        : {
+            vm: 'vm-1',
+            name: 'vm-1-name',
+            power_state: 'POWERED_ON',
+            identity: { instance_uuid: 'uuid-1', name: 'vm-1-name' },
+            cpu: { count: 4 },
+            memory: { size_MiB: 8192 },
+          };
+
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking/interfaces') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(
-        JSON.stringify([
-          {
-            mac_address: 'aa:bb:cc:dd:ee:ff',
-            ip: { ip_addresses: [{ ip_address: '10.10.100.106' }, { ip_address: 'fe80::1' }] },
-          },
-        ]),
-      );
+      const payload = [
+        {
+          mac_address: 'aa:bb:cc:dd:ee:ff',
+          ip: { ip_addresses: [{ ip_address: '10.10.100.106' }, { ip_address: 'fe80::1' }] },
+        },
+      ];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ dns_values: { host_name: 'vm1.local' } }));
+      const payload = { dns_values: { host_name: 'vm1.local' } };
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/host' && searchParams.get('clusters') === 'domain-c7') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify([{ host: 'host-1' }]));
+      const payload = [{ host: 'host-1' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/host' && !searchParams.has('clusters')) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(
-        JSON.stringify([{ host: 'host-1', name: 'esxi-01', connection_state: 'CONNECTED', power_state: 'POWERED_ON' }]),
-      );
+      const payload = [{ host: 'host-1', name: 'esxi-01', connection_state: 'CONNECTED', power_state: 'POWERED_ON' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
     if (method === 'GET' && pathname === '/api/vcenter/cluster') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify([{ cluster: 'domain-c7', name: 'Cluster A' }]));
+      const payload = [{ cluster: 'domain-c7', name: 'Cluster A' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
 
@@ -433,7 +459,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'pass' },
       },
       request: { run_id: 'run_1', mode: 'healthcheck', now: new Date().toISOString() },
@@ -453,7 +479,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'pass' },
       },
       request: { run_id: 'run_detect', mode: 'detect', now: new Date().toISOString() },
@@ -464,7 +490,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
 
     const parsed = JSON.parse(result.stdout) as { schema_version: string; detect?: { driver?: string } };
     expect(parsed.schema_version).toBe('collector-response-v1');
-    expect(parsed.detect?.driver).toBe('vcenter@v1');
+    expect(parsed.detect?.driver).toBe('vcenter-7.0-8.x@v1');
   });
 
   it('collect_hosts returns host + cluster assets + relations', async () => {
@@ -473,7 +499,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'pass' },
       },
       request: { run_id: 'run_hosts', mode: 'collect_hosts', now: new Date().toISOString() },
@@ -513,7 +539,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'pass' },
       },
       request: { run_id: 'run_vms', mode: 'collect_vms', now: new Date().toISOString() },
@@ -557,13 +583,60 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     );
   });
 
+  it('collect_vms tolerates { value: ... } wrappers and 6.5-style flat fields', async () => {
+    restWrapValue = true;
+    restVmDetailFlat = true;
+    restSystemVersion = '6.5.0';
+    restSystemBuild = '123456';
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '6.5-6.7' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_vms_wrapped', mode: 'collect_vms', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        assets: Array<{ external_kind: string; external_id: string; normalized: Record<string, unknown> }>;
+        relations: unknown[];
+        stats: { assets: number; relations: number; inventory_complete: boolean; warnings: unknown[] };
+        errors?: unknown[];
+      };
+
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.stats.inventory_complete).toBe(true);
+      expect(parsed.relations).toHaveLength(2);
+
+      const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'vm-1');
+      expect(vm).toBeTruthy();
+      expect(vm?.normalized).toMatchObject({
+        hardware: { cpu_count: 4, memory_bytes: 8192 * 1024 * 1024 },
+        runtime: { power_state: 'poweredOn' },
+      });
+    } finally {
+      restWrapValue = false;
+      restVmDetailFlat = false;
+      restSystemVersion = '7.0.3';
+      restSystemBuild = '20036589';
+    }
+  });
+
   it('collect returns assets + relations', async () => {
     const request = {
       schema_version: 'collector-request-v1',
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'pass' },
       },
       request: { run_id: 'run_2', mode: 'collect', now: new Date().toISOString() },
@@ -606,7 +679,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'vcenter',
-          config: { endpoint },
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
           credential: { username: 'user', password: 'pass' },
         },
         request: { run_id: 'run_2_fallback', mode: 'collect', now: new Date().toISOString() },
@@ -651,7 +724,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'vcenter',
-          config: { endpoint },
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
           credential: { username: 'user', password: 'pass' },
         },
         request: { run_id: 'run_2_nvme_fallback', mode: 'collect', now: new Date().toISOString() },
@@ -696,7 +769,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'vcenter',
-          config: { endpoint },
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
           credential: { username: 'user', password: 'pass' },
         },
         request: { run_id: 'run_2b', mode: 'collect', now: new Date().toISOString() },
@@ -730,7 +803,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'vcenter',
-        config: { endpoint },
+        config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
         credential: { username: 'user', password: 'wrong' },
       },
       request: { run_id: 'run_3', mode: 'healthcheck', now: new Date().toISOString() },

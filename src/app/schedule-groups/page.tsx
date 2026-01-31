@@ -22,6 +22,7 @@ type ManualRunResult = {
   queued: number;
   skipped_active: number;
   skipped_missing_credential: number;
+  skipped_missing_config?: number;
   message: string;
 };
 
@@ -64,7 +65,8 @@ export default function ScheduleGroupsPage() {
       }
       const body = (await res.json()) as { data: ManualRunResult };
       const r = body.data;
-      const summary = `queued=${r.queued} · skipped_active=${r.skipped_active} · skipped_missing_credential=${r.skipped_missing_credential}`;
+      const skippedMissingConfig = r.skipped_missing_config ?? 0;
+      const summary = `queued=${r.queued} · skipped_active=${r.skipped_active} · skipped_missing_credential=${r.skipped_missing_credential} · skipped_missing_config=${skippedMissingConfig}`;
       if (r.queued === 0) toast.message(r.message || '无可入队来源', { description: summary });
       else toast.success('已触发运行', { description: summary });
     } finally {

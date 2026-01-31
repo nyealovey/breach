@@ -20,7 +20,7 @@ type SourceDetail = {
   scheduleGroupId: string | null;
   scheduleGroupName: string | null;
   credential: { credentialId: string; name: string; type: string } | null;
-  config?: { endpoint?: string };
+  config?: { endpoint?: string; preferred_vcenter_version?: string };
 };
 type CredentialItem = { credentialId: string; name: string; type: string };
 
@@ -32,6 +32,7 @@ export default function EditSourcePage() {
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
+  const [preferredVcenterVersion, setPreferredVcenterVersion] = useState<'6.5-6.7' | '7.0-8.x'>('7.0-8.x');
   const [enabled, setEnabled] = useState(true);
   const [scheduleGroupId, setScheduleGroupId] = useState<string | null>(null);
   const [scheduleGroupName, setScheduleGroupName] = useState<string | null>(null);
@@ -49,6 +50,9 @@ export default function EditSourcePage() {
           setName(source.name);
           setSourceType(source.sourceType);
           setEndpoint(source.config?.endpoint ?? '');
+          if (source.sourceType === 'vcenter') {
+            setPreferredVcenterVersion(source.config?.preferred_vcenter_version === '6.5-6.7' ? '6.5-6.7' : '7.0-8.x');
+          }
           setEnabled(source.enabled);
           setScheduleGroupId(source.scheduleGroupId ?? null);
           setScheduleGroupName(source.scheduleGroupName ?? null);
@@ -94,7 +98,10 @@ export default function EditSourcePage() {
           name,
           sourceType,
           enabled,
-          config: { endpoint },
+          config: {
+            endpoint,
+            ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
+          },
           credentialId: credentialId ? credentialId : null,
         }),
       });
@@ -166,6 +173,7 @@ export default function EditSourcePage() {
                 onChange={(e) => {
                   setSourceType(e.target.value);
                   setCredentialId('');
+                  setPreferredVcenterVersion('7.0-8.x');
                 }}
               >
                 <option value="vcenter">vCenter</option>
@@ -179,6 +187,23 @@ export default function EditSourcePage() {
               <Label htmlFor="endpoint">Endpoint</Label>
               <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
             </div>
+            {sourceType === 'vcenter' ? (
+              <div className="space-y-2">
+                <Label htmlFor="preferredVcenterVersion">vCenter 版本范围</Label>
+                <select
+                  id="preferredVcenterVersion"
+                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                  value={preferredVcenterVersion}
+                  onChange={(e) => setPreferredVcenterVersion(e.target.value as typeof preferredVcenterVersion)}
+                >
+                  <option value="7.0-8.x">7.0-8.x（默认）</option>
+                  <option value="6.5-6.7">6.5-6.7</option>
+                </select>
+                <div className="text-xs text-muted-foreground">
+                  说明：该字段用于选择采集 driver；detect 会给出建议，但不会自动改写配置。
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="credentialId">选择凭据</Label>
               <select

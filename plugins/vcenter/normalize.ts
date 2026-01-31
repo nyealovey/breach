@@ -215,6 +215,10 @@ function getFirstString(values: Array<string | undefined>): string | undefined {
   return undefined;
 }
 
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 // Check if an IP address is IPv4
 function isIPv4(ip: string): boolean {
   // IPv4 pattern: x.x.x.x where x is 0-255
@@ -225,12 +229,26 @@ function isIPv4(ip: string): boolean {
 // Map vCenter power state to normalized format
 function mapPowerState(vcenterState?: string): 'poweredOn' | 'poweredOff' | 'suspended' | undefined {
   if (!vcenterState) return undefined;
+  const normalized = vcenterState.trim();
+
+  // Already normalized.
+  if (normalized === 'poweredOn' || normalized === 'poweredOff' || normalized === 'suspended') return normalized;
+
   const map: Record<string, 'poweredOn' | 'poweredOff' | 'suspended'> = {
     POWERED_ON: 'poweredOn',
     POWERED_OFF: 'poweredOff',
     SUSPENDED: 'suspended',
   };
-  return map[vcenterState];
+
+  // Support case/format differences.
+  const upper = normalized.toUpperCase();
+  if (upper in map) return map[upper];
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'poweredon') return 'poweredOn';
+  if (lower === 'poweredoff') return 'poweredOff';
+
+  return undefined;
 }
 
 export function normalizeVM(raw: VmRaw): NormalizedAsset {
@@ -275,6 +293,22 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
   const toolsRunning = raw.tools?.run_state === 'RUNNING' || raw.tools?.run_state === 'EXECUTING_SCRIPTS';
   const toolsStatus = raw.tools?.version_status;
 
+  // vCenter 6.5 compatibility: tolerate older/alternate field shapes.
+  const cpuCount =
+    toFiniteNumber(raw.cpu?.count) ??
+    toFiniteNumber((raw as unknown as Record<string, unknown>).cpu_count) ??
+    toFiniteNumber((raw as unknown as Record<string, unknown>).cpuCount) ??
+    toFiniteNumber((raw.cpu as unknown as Record<string, unknown> | undefined)?.cpu_count);
+
+  const memoryMiB =
+    toFiniteNumber(raw.memory?.size_MiB) ??
+    toFiniteNumber((raw as unknown as Record<string, unknown>).memory_size_MiB) ??
+    toFiniteNumber((raw as unknown as Record<string, unknown>).memory_size_mib) ??
+    toFiniteNumber((raw as unknown as Record<string, unknown>).memoryMiB) ??
+    toFiniteNumber((raw.memory as unknown as Record<string, unknown> | undefined)?.size_mib);
+
+  const memoryBytes = memoryMiB !== undefined ? memoryMiB * 1024 * 1024 : undefined;
+
   return {
     external_kind: 'vm',
     external_id: raw.vm,
@@ -293,8 +327,8 @@ export function normalizeVM(raw: VmRaw): NormalizedAsset {
         ip_addresses: ipAddresses.length > 0 ? ipAddresses : undefined,
       },
       hardware: {
-        cpu_count: raw.cpu?.count,
-        memory_bytes: raw.memory?.size_MiB ? raw.memory.size_MiB * 1024 * 1024 : undefined,
+        cpu_count: cpuCount,
+        memory_bytes: memoryBytes,
         disks: disks.length > 0 ? disks : undefined,
       },
       os: raw.guest_OS ? { fingerprint: raw.guest_OS } : undefined,
