@@ -234,7 +234,7 @@
   - 每个字段给出：中文名、分块（通用/VM/Host/Cluster/扩展/台账）、一级分组（identity/network/...）、渲染 hint（bytes/datetime/enum）
 - 渲染优先级：
   - **盘点摘要**：固定字段集合（Top 10），优先可读性
-  - **分组表格**：展示全部结构化字段 + attributes.*
+  - **分组表格**：展示全部结构化字段 + attributes.\*
   - **调试入口**：canonical 原始 JSON
 
 ### 4) 边界条件与错误处理
@@ -299,79 +299,79 @@
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T3A-01 | URL 同步筛选条件 | 已有资产数据 | 设置筛选条件后刷新页面 | 筛选条件保留；URL query 与页面状态一致 |
-| T3A-02 | 列配置持久化 | 用户已登录 | 修改列配置 → 退出 → 重新登录 | 列配置自动恢复 |
-| T3A-03 | VM 电源状态筛选 | 存在不同电源状态的 VM | 筛选 `poweredOn` | 仅展示 poweredOn 的 VM |
-| T3A-04 | 详情页盘点摘要 | 资产已采集 | 访问 `/assets/[uuid]` | 首屏展示关键字段（IP/CPU/内存/OS/电源状态） |
-| T3A-05 | 关系链视图 | VM 有 Host 关系 | 访问 VM 详情页 | 展示 `VM -> Host -> Cluster` 关系链；可点击导航 |
-| T3A-06 | 字段中文名展示 | 资产已采集 | 访问详情页 canonical 字段表格 | 同时展示字段 ID（英文）+ 字段名（中文） |
+| 场景 ID | 场景描述         | 前置条件              | 操作步骤                      | 期望结果                                        |
+| ------- | ---------------- | --------------------- | ----------------------------- | ----------------------------------------------- |
+| T3A-01  | URL 同步筛选条件 | 已有资产数据          | 设置筛选条件后刷新页面        | 筛选条件保留；URL query 与页面状态一致          |
+| T3A-02  | 列配置持久化     | 用户已登录            | 修改列配置 → 退出 → 重新登录  | 列配置自动恢复                                  |
+| T3A-03  | VM 电源状态筛选  | 存在不同电源状态的 VM | 筛选 `poweredOn`              | 仅展示 poweredOn 的 VM                          |
+| T3A-04  | 详情页盘点摘要   | 资产已采集            | 访问 `/assets/[uuid]`         | 首屏展示关键字段（IP/CPU/内存/OS/电源状态）     |
+| T3A-05  | 关系链视图       | VM 有 Host 关系       | 访问 VM 详情页                | 展示 `VM -> Host -> Cluster` 关系链；可点击导航 |
+| T3A-06  | 字段中文名展示   | 资产已采集            | 访问详情页 canonical 字段表格 | 同时展示字段 ID（英文）+ 字段名（中文）         |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
+| 场景 ID | 场景描述   | 前置条件             | 操作步骤             | 期望行为                                     |
+| ------- | ---------- | -------------------- | -------------------- | -------------------------------------------- |
 | T3A-E01 | 列配置为空 | 用户尝试保存空列配置 | 取消所有列勾选并保存 | 返回 `CONFIG_INVALID_REQUEST`；至少保留 1 列 |
-| T3A-E02 | 未知列兼容 | 列配置包含已删除的列 | 读取列配置 | 忽略未知列；页面正常渲染 |
+| T3A-E02 | 未知列兼容 | 列配置包含已删除的列 | 读取列配置           | 忽略未知列；页面正常渲染                     |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T3A-B01 | 字段不在字典中 | canonical 包含未注册字段 | 访问详情页 | 中文名显示 `-`；字段仍展示（不隐藏） |
-| T3A-B02 | 大对象数组渲染 | `hardware.disks[]` 有 50+ 项 | 访问详情页 | 以列表卡片展示；支持折叠/延迟渲染；不卡顿 |
-| T3A-B03 | 关系链缺边 | VM 无 Host 关系 | 访问 VM 详情页 | 关系链展示 `VM -> ?`；提示关系缺失 |
+| 场景 ID | 场景描述       | 前置条件                     | 操作步骤       | 期望行为                                  |
+| ------- | -------------- | ---------------------------- | -------------- | ----------------------------------------- |
+| T3A-B01 | 字段不在字典中 | canonical 包含未注册字段     | 访问详情页     | 中文名显示 `-`；字段仍展示（不隐藏）      |
+| T3A-B02 | 大对象数组渲染 | `hardware.disks[]` 有 50+ 项 | 访问详情页     | 以列表卡片展示；支持折叠/延迟渲染；不卡顿 |
+| T3A-B03 | 关系链缺边     | VM 无 Host 关系              | 访问 VM 详情页 | 关系链展示 `VM -> ?`；提示关系缺失        |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| UserPreference 数据模型 | 硬依赖 | 需新增 Prisma model |
-| Canonical Schema | 硬依赖 | 字段字典需与 `docs/design/asset-ledger-json-schema.md` 对齐 |
-| M2 Datastore 明细 | 软依赖 | 详情页展示 Datastores 依赖 M2 |
+| 依赖项                  | 依赖类型 | 说明                                                        |
+| ----------------------- | -------- | ----------------------------------------------------------- |
+| UserPreference 数据模型 | 硬依赖   | 需新增 Prisma model                                         |
+| Canonical Schema        | 硬依赖   | 字段字典需与 `docs/design/asset-ledger-json-schema.md` 对齐 |
+| M2 Datastore 明细       | 软依赖   | 详情页展示 Datastores 依赖 M2                               |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `assets_list_ttfb_p95` | Histogram | 列表页 TTFB p95 | > 1s 触发告警 |
-| `assets_detail_render_time_p95` | Histogram | 详情页渲染耗时 p95 | > 2s 触发告警 |
-| `user_preference_save_error_rate` | Gauge | 列配置保存失败率 | > 1% 触发告警 |
+| 指标名                            | 类型      | 说明               | 告警阈值      |
+| --------------------------------- | --------- | ------------------ | ------------- |
+| `assets_list_ttfb_p95`            | Histogram | 列表页 TTFB p95    | > 1s 触发告警 |
+| `assets_detail_render_time_p95`   | Histogram | 详情页渲染耗时 p95 | > 2s 触发告警 |
+| `user_preference_save_error_rate` | Gauge     | 列配置保存失败率   | > 1% 触发告警 |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `assets_ui.unknown_field` | 遇到未注册字段 | WARN | `field_path`, `asset_uuid` |
-| `assets_ui.preference_migrated` | 列配置版本迁移 | INFO | `user_id`, `old_version`, `new_version` |
+| 事件类型                        | 触发条件       | 日志级别 | 包含字段                                |
+| ------------------------------- | -------------- | -------- | --------------------------------------- |
+| `assets_ui.unknown_field`       | 遇到未注册字段 | WARN     | `field_path`, `asset_uuid`              |
+| `assets_ui.preference_migrated` | 列配置版本迁移 | INFO     | `user_id`, `old_version`, `new_version` |
 
 ## Performance Baseline
 
-| 场景 | 数据规模 | 期望性能 | 验证方法 |
-|------|----------|----------|----------|
-| 列表翻页 | 10,000 资产 | TTFB ≤ 1s | 后端压测 |
+| 场景       | 数据规模        | 期望性能  | 验证方法     |
+| ---------- | --------------- | --------- | ------------ |
+| 列表翻页   | 10,000 资产     | TTFB ≤ 1s | 后端压测     |
 | 详情页加载 | 单资产 100 字段 | 渲染 < 2s | 前端性能测试 |
-| 列配置读写 | 单用户 | < 200ms | API 压测 |
+| 列配置读写 | 单用户          | < 200ms   | API 压测     |
 
 ## Field Registry (Minimum Viable)
 
 > 以下为一期必须覆盖的字段字典，后续扩展需同步更新。
 
-| 字段 Path | 中文名 | 分块 | 一级分组 | 渲染 Hint |
-|-----------|--------|------|----------|-----------|
-| `identity.hostname` | 主机名 | 通用 | identity | - |
-| `identity.machine_uuid` | 机器 UUID | 通用 | identity | - |
-| `network.ip_addresses` | IP 地址 | 通用 | network | array |
-| `network.mac_addresses` | MAC 地址 | 通用 | network | array |
-| `hardware.cpu_count` | CPU 核数 | 通用 | hardware | - |
-| `hardware.memory_bytes` | 内存 | 通用 | hardware | bytes |
-| `runtime.power_state` | 电源状态 | VM | runtime | enum |
-| `os.name` | 操作系统 | 通用 | os | - |
-| `os.version` | 系统版本 | 通用 | os | - |
-| `storage.datastores` | Datastores | Host | storage | array |
+| 字段 Path               | 中文名     | 分块 | 一级分组 | 渲染 Hint |
+| ----------------------- | ---------- | ---- | -------- | --------- |
+| `identity.hostname`     | 主机名     | 通用 | identity | -         |
+| `identity.machine_uuid` | 机器 UUID  | 通用 | identity | -         |
+| `network.ip_addresses`  | IP 地址    | 通用 | network  | array     |
+| `network.mac_addresses` | MAC 地址   | 通用 | network  | array     |
+| `hardware.cpu_count`    | CPU 核数   | 通用 | hardware | -         |
+| `hardware.memory_bytes` | 内存       | 通用 | hardware | bytes     |
+| `runtime.power_state`   | 电源状态   | VM   | runtime  | enum      |
+| `os.name`               | 操作系统   | 通用 | os       | -         |
+| `os.version`            | 系统版本   | 通用 | os       | -         |
+| `storage.datastores`    | Datastores | Host | storage  | array     |
 
 ## Execution Phases
 

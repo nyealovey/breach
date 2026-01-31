@@ -43,23 +43,23 @@
 
 > 说明：此处“现有分”来自各 PRD 文末的 `Quality Score` 字段（不是本报告重新打分的结果）。
 
-| PRD | 状态 | 现有分 | 备注 |
-|---|---|---:|---|
-| `docs/prds/M1-asset-ledger-vcenter-6.5-compat-v1.0-prd.md` | active | 100 | 已补齐 Design Decisions/Risk、错误码同步项与可执行回归清单 |
-| `docs/prds/M2-asset-ledger-collector-optimizations-v1.0-prd.md` | active | 100 | 已补齐一致性口径（list vs sum）、性能/风险与回归 |
-| `docs/prds/M3-asset-ledger-ui-optimizations-v1.0-prd.md` | active | 100 | 已落地到 API/DB/边界条件级别，并补齐风险与验收 |
-| `docs/prds/M3-asset-ledger-runs-ui-optimizations-v1.0-prd.md` | active | 100 | 已固化 Top error.code 映射、兜底、脱敏白名单与组件复用策略 |
-| `docs/prds/M4-asset-ledger-hyperv-collector-v1.0-prd.md` | active | 100 | 已明确远程协议接入、最小权限、字段/关系落点与失败口径 |
-| `docs/prds/M5-asset-ledger-duplicate-center-v1.0-prd.md` | active | 100 | 无 |
-| `docs/prds/M5-asset-ledger-asset-merge-v1.0-prd.md` | active | 100 | 无 |
-| `docs/prds/M6-asset-ledger-pve-5-8-compat-v1.0-prd.md` | active | 100 | 已补齐 config/权限/兼容矩阵/错误码与回归 |
-| `docs/prds/M7-asset-ledger-user-readonly-access-v1.0-prd.md` | active | 100 | 已补齐 API/UI 权限矩阵、敏感面红线与越权验收 |
-| `docs/prds/M8-asset-ledger-ledger-fields-closed-loop-v1.0-prd.md` | active | 100 | 已补齐 DB schema/索引/校验/API 与风险 |
-| `docs/prds/M8-asset-ledger-export-csv-v1.0-prd.md` | active | 100 | 无 |
-| `docs/prds/M10-asset-ledger-windows-physical-collector-v1.0-prd.md` | active | 100 | 已按“远程协议优先 + 未来可扩展第二方式”补齐 WinRM 口径与权限/错误码/回归 |
-| `docs/prds/M10-asset-ledger-linux-physical-collector-v1.0-prd.md` | active | 100 | 已按 SSH 口径补齐权限/错误码/回归与缺失策略 |
-| `docs/prds/M11-asset-ledger-aliyun-collector-v1.0-prd.md` | active | 100 | 已补齐 regions/分页/限流/最小 RAM 权限/错误码与回归 |
-| `docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md` | active | 100 | 已按“按资产事件时间线（仅变化事件）”口径对齐 |
+| PRD                                                                 | 状态   | 现有分 | 备注                                                                     |
+| ------------------------------------------------------------------- | ------ | -----: | ------------------------------------------------------------------------ |
+| `docs/prds/M1-asset-ledger-vcenter-6.5-compat-v1.0-prd.md`          | active |    100 | 已补齐 Design Decisions/Risk、错误码同步项与可执行回归清单               |
+| `docs/prds/M2-asset-ledger-collector-optimizations-v1.0-prd.md`     | active |    100 | 已补齐一致性口径（list vs sum）、性能/风险与回归                         |
+| `docs/prds/M3-asset-ledger-ui-optimizations-v1.0-prd.md`            | active |    100 | 已落地到 API/DB/边界条件级别，并补齐风险与验收                           |
+| `docs/prds/M3-asset-ledger-runs-ui-optimizations-v1.0-prd.md`       | active |    100 | 已固化 Top error.code 映射、兜底、脱敏白名单与组件复用策略               |
+| `docs/prds/M4-asset-ledger-hyperv-collector-v1.0-prd.md`            | active |    100 | 已明确远程协议接入、最小权限、字段/关系落点与失败口径                    |
+| `docs/prds/M5-asset-ledger-duplicate-center-v1.0-prd.md`            | active |    100 | 无                                                                       |
+| `docs/prds/M5-asset-ledger-asset-merge-v1.0-prd.md`                 | active |    100 | 无                                                                       |
+| `docs/prds/M6-asset-ledger-pve-5-8-compat-v1.0-prd.md`              | active |    100 | 已补齐 config/权限/兼容矩阵/错误码与回归                                 |
+| `docs/prds/M7-asset-ledger-user-readonly-access-v1.0-prd.md`        | active |    100 | 已补齐 API/UI 权限矩阵、敏感面红线与越权验收                             |
+| `docs/prds/M8-asset-ledger-ledger-fields-closed-loop-v1.0-prd.md`   | active |    100 | 已补齐 DB schema/索引/校验/API 与风险                                    |
+| `docs/prds/M8-asset-ledger-export-csv-v1.0-prd.md`                  | active |    100 | 无                                                                       |
+| `docs/prds/M10-asset-ledger-windows-physical-collector-v1.0-prd.md` | active |    100 | 已按“远程协议优先 + 未来可扩展第二方式”补齐 WinRM 口径与权限/错误码/回归 |
+| `docs/prds/M10-asset-ledger-linux-physical-collector-v1.0-prd.md`   | active |    100 | 已按 SSH 口径补齐权限/错误码/回归与缺失策略                              |
+| `docs/prds/M11-asset-ledger-aliyun-collector-v1.0-prd.md`           | active |    100 | 已补齐 regions/分页/限流/最小 RAM 权限/错误码与回归                      |
+| `docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`              | active |    100 | 已按“按资产事件时间线（仅变化事件）”口径对齐                             |
 
 ## 本轮共性改进（已完成）
 

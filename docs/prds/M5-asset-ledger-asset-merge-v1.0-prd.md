@@ -254,68 +254,68 @@
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T5M-01 | 单资产合并成功 | 主资产 in_service、从资产 offline | 执行合并 | 从资产 status=merged；merged_into_asset_uuid 指向主资产 |
-| T5M-02 | 多资产合并成功 | 主资产 in_service、3 个从资产均 offline | 执行合并（N=3） | 3 个从资产均 merged；主资产可追溯所有来源 |
-| T5M-03 | source_link 迁移 | 从资产有 source_link | 执行合并 | source_link 迁移到主资产；唯一约束满足 |
-| T5M-04 | 关系边重定向 | 从资产有 runs_on 关系 | 执行合并 | 关系边指向主资产；去重；无自环 |
-| T5M-05 | 审计记录 | 执行合并 | 查询 merge_audit + audit_event | 可追溯操作者/时间/策略/影响摘要/requestId |
-| T5M-06 | 候选状态更新 | 合并涉及的候选存在 | 执行合并 | 相关 DuplicateCandidate status=merged |
+| 场景 ID | 场景描述         | 前置条件                                | 操作步骤                       | 期望结果                                                |
+| ------- | ---------------- | --------------------------------------- | ------------------------------ | ------------------------------------------------------- |
+| T5M-01  | 单资产合并成功   | 主资产 in_service、从资产 offline       | 执行合并                       | 从资产 status=merged；merged_into_asset_uuid 指向主资产 |
+| T5M-02  | 多资产合并成功   | 主资产 in_service、3 个从资产均 offline | 执行合并（N=3）                | 3 个从资产均 merged；主资产可追溯所有来源               |
+| T5M-03  | source_link 迁移 | 从资产有 source_link                    | 执行合并                       | source_link 迁移到主资产；唯一约束满足                  |
+| T5M-04  | 关系边重定向     | 从资产有 runs_on 关系                   | 执行合并                       | 关系边指向主资产；去重；无自环                          |
+| T5M-05  | 审计记录         | 执行合并                                | 查询 merge_audit + audit_event | 可追溯操作者/时间/策略/影响摘要/requestId               |
+| T5M-06  | 候选状态更新     | 合并涉及的候选存在                      | 执行合并                       | 相关 DuplicateCandidate status=merged                   |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T5M-E01 | 非 admin 合并 | user 角色 | 执行合并 | `AUTH_FORBIDDEN` | 返回 403 |
-| T5M-E02 | 类型不一致 | 主资产 vm、从资产 host | 执行合并 | `CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH` | 返回 400 |
-| T5M-E03 | 主资产已 merged | 主资产 status=merged | 执行合并 | `CONFIG_ASSET_MERGE_INVALID_PRIMARY` | 返回 400 |
-| T5M-E04 | 从资产已 merged | 从资产 status=merged | 执行合并 | `CONFIG_ASSET_MERGE_INVALID_SECONDARY` | 返回 400 |
-| T5M-E05 | VM 合并门槛不满足 | 两个 VM 均 in_service | 执行合并 | `CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE` | 返回 400；提示"仅关机不等于下线" |
-| T5M-E06 | 合并环检测 | A→B 已合并，尝试 B→A | 执行合并 | `CONFIG_ASSET_MERGE_CYCLE_DETECTED` | 返回 400 |
+| 场景 ID | 场景描述          | 前置条件               | 操作步骤 | 期望错误码                               | 期望行为                         |
+| ------- | ----------------- | ---------------------- | -------- | ---------------------------------------- | -------------------------------- |
+| T5M-E01 | 非 admin 合并     | user 角色              | 执行合并 | `AUTH_FORBIDDEN`                         | 返回 403                         |
+| T5M-E02 | 类型不一致        | 主资产 vm、从资产 host | 执行合并 | `CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH` | 返回 400                         |
+| T5M-E03 | 主资产已 merged   | 主资产 status=merged   | 执行合并 | `CONFIG_ASSET_MERGE_INVALID_PRIMARY`     | 返回 400                         |
+| T5M-E04 | 从资产已 merged   | 从资产 status=merged   | 执行合并 | `CONFIG_ASSET_MERGE_INVALID_SECONDARY`   | 返回 400                         |
+| T5M-E05 | VM 合并门槛不满足 | 两个 VM 均 in_service  | 执行合并 | `CONFIG_ASSET_MERGE_VM_REQUIRES_OFFLINE` | 返回 400；提示"仅关机不等于下线" |
+| T5M-E06 | 合并环检测        | A→B 已合并，尝试 B→A   | 执行合并 | `CONFIG_ASSET_MERGE_CYCLE_DETECTED`      | 返回 400                         |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T5M-B01 | source_link 冲突去重 | 主从资产有相同 source_link | 执行合并 | 去重合并；保留主资产 link |
-| T5M-B02 | 关系边自环处理 | 合并后形成自环关系 | 执行合并 | 自环关系被删除 |
-| T5M-B03 | 访问 merged 资产 | 直接访问 merged 资产 URL | 访问详情页 | UI 展示"已合并提示"并跳转到主资产 |
+| 场景 ID | 场景描述             | 前置条件                   | 操作步骤   | 期望行为                          |
+| ------- | -------------------- | -------------------------- | ---------- | --------------------------------- |
+| T5M-B01 | source_link 冲突去重 | 主从资产有相同 source_link | 执行合并   | 去重合并；保留主资产 link         |
+| T5M-B02 | 关系边自环处理       | 合并后形成自环关系         | 执行合并   | 自环关系被删除                    |
+| T5M-B03 | 访问 merged 资产     | 直接访问 merged 资产 URL   | 访问详情页 | UI 展示"已合并提示"并跳转到主资产 |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| M5 重复中心 | 硬依赖 | 合并入口来自重复中心；候选状态联动 |
-| merge_audit 数据模型 | 硬依赖 | 需支持合并审计记录 |
-| asset.status 字段 | 硬依赖 | 需支持 merged 状态 |
+| 依赖项               | 依赖类型 | 说明                               |
+| -------------------- | -------- | ---------------------------------- |
+| M5 重复中心          | 硬依赖   | 合并入口来自重复中心；候选状态联动 |
+| merge_audit 数据模型 | 硬依赖   | 需支持合并审计记录                 |
+| asset.status 字段    | 硬依赖   | 需支持 merged 状态                 |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `asset_merge_success_count` | Counter | 合并成功次数 | - |
-| `asset_merge_failure_count` | Counter | 合并失败次数 | > 10/天 触发告警 |
-| `asset_merged_total` | Gauge | merged 状态资产总数 | - |
+| 指标名                      | 类型    | 说明                | 告警阈值         |
+| --------------------------- | ------- | ------------------- | ---------------- |
+| `asset_merge_success_count` | Counter | 合并成功次数        | -                |
+| `asset_merge_failure_count` | Counter | 合并失败次数        | > 10/天 触发告警 |
+| `asset_merged_total`        | Gauge   | merged 状态资产总数 | -                |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `asset.merge_started` | 合并开始 | INFO | `primary_uuid`, `merged_uuids`, `user_id`, `request_id` |
-| `asset.merge_completed` | 合并完成 | INFO | `merge_id`, `migrated_links`, `migrated_records`, `rewritten_relations` |
-| `asset.merge_failed` | 合并失败 | ERROR | `primary_uuid`, `merged_uuids`, `error_code`, `error_detail` |
+| 事件类型                | 触发条件 | 日志级别 | 包含字段                                                                |
+| ----------------------- | -------- | -------- | ----------------------------------------------------------------------- |
+| `asset.merge_started`   | 合并开始 | INFO     | `primary_uuid`, `merged_uuids`, `user_id`, `request_id`                 |
+| `asset.merge_completed` | 合并完成 | INFO     | `merge_id`, `migrated_links`, `migrated_records`, `rewritten_relations` |
+| `asset.merge_failed`    | 合并失败 | ERROR    | `primary_uuid`, `merged_uuids`, `error_code`, `error_detail`            |
 
 ## Remediation Strategy
 
 > 由于不提供 unmerge/rollback，以下为误操作后的补救措施。
 
-| 误操作场景 | 补救措施 |
-|------------|----------|
+| 误操作场景                       | 补救措施                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 错误合并（应该分开的资产被合并） | 1. 通过 merge_audit 定位影响范围；2. 手动创建新资产并迁移 source_link；3. 将错误合并的从资产标记为 merged（保持数据一致性） |
-| 合并方向错误（主从颠倒） | 1. 通过 merge_audit 定位；2. 手动调整 merged_into_asset_uuid 指向；3. 重新迁移 source_link 和关系边 |
+| 合并方向错误（主从颠倒）         | 1. 通过 merge_audit 定位；2. 手动调整 merged_into_asset_uuid 指向；3. 重新迁移 source_link 和关系边                         |
 
 > 注意：补救操作需 DBA 介入，建议在合并前充分确认。
 

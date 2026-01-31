@@ -286,8 +286,8 @@
 
 **查询参数**：
 
-| 参数 | 类型   | 说明 |
-|---|---|---|
+| 参数  | 类型   | 说明                                             |
+| ----- | ------ | ------------------------------------------------ |
 | `key` | string | 偏好 key（版本化，如 `assets.table.columns.v1`） |
 
 **成功响应**（200）：
@@ -492,9 +492,7 @@
 
 ```json
 {
-  "data": [
-    { "sourceId": "src_123", "name": "vcenter-prod", "sourceType": "vcenter", "enabled": true }
-  ],
+  "data": [{ "sourceId": "src_123", "name": "vcenter-prod", "sourceType": "vcenter", "enabled": true }],
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```

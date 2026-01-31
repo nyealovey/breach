@@ -102,15 +102,15 @@
 
 #### 3.1 基础列（SRS 强约束）
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `asset_uuid` | string | 资产 UUID |
-| `asset_type` | string | `vm|host` |
-| `status` | string | `in_service|offline`（不导出 merged） |
-| `display_name` | string | 展示名（可为空） |
-| `last_seen_at` | string | 资产最后一次出现时间（ISO 8601 UTC；可为空） |
-| `source_id` | string | 来源摘要（多来源时用 `;` 拼接，顺序按 source_id 升序） |
-| `source_type` | string | 来源摘要（与 source_id 对齐，用 `;` 拼接） |
+| 列名           | 类型   | 说明                                                   |
+| -------------- | ------ | ------------------------------------------------------ | ------------------------- |
+| `asset_uuid`   | string | 资产 UUID                                              |
+| `asset_type`   | string | `vm                                                    | host`                     |
+| `status`       | string | `in_service                                            | offline`（不导出 merged） |
+| `display_name` | string | 展示名（可为空）                                       |
+| `last_seen_at` | string | 资产最后一次出现时间（ISO 8601 UTC；可为空）           |
+| `source_id`    | string | 来源摘要（多来源时用 `;` 拼接，顺序按 source_id 升序） |
+| `source_type`  | string | 来源摘要（与 source_id 对齐，用 `;` 拼接）             |
 
 > 说明：由于一个资产可绑定多个 Source，本 PRD 将 `source_id/source_type` 定义为“摘要列”，允许多值 `;` 拼接，避免一资产多行导致对账困难。
 
@@ -266,67 +266,67 @@ payload（建议最小字段）：
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T8E-01 | 创建导出任务 | admin 角色 | 调用 `POST /api/v1/exports/asset-ledger` | 返回 exportId；status=Queued |
-| T8E-02 | 查询导出状态 | 导出任务已创建 | 调用 `GET /api/v1/exports/asset-ledger/:id` | 返回 status/rowCount/fileName |
-| T8E-03 | 下载 CSV | 导出任务 Succeeded | 调用 `GET /api/v1/exports/asset-ledger/:id/download` | 返回 CSV 文件；Content-Type 正确 |
-| T8E-04 | CSV 包含基础列 | 导出成功 | 检查 CSV 内容 | 包含 asset_uuid/asset_type/status/display_name/last_seen_at/source_id/source_type |
-| T8E-05 | CSV 包含台账字段 | 导出成功 | 检查 CSV 内容 | 包含 ledger-fields-v1 全部列；vm 的 host 专用字段留空 |
-| T8E-06 | 审计记录 | 导出成功 | 查询 audit_event | 存在 `asset.ledger_exported` 事件 |
+| 场景 ID | 场景描述         | 前置条件           | 操作步骤                                             | 期望结果                                                                          |
+| ------- | ---------------- | ------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| T8E-01  | 创建导出任务     | admin 角色         | 调用 `POST /api/v1/exports/asset-ledger`             | 返回 exportId；status=Queued                                                      |
+| T8E-02  | 查询导出状态     | 导出任务已创建     | 调用 `GET /api/v1/exports/asset-ledger/:id`          | 返回 status/rowCount/fileName                                                     |
+| T8E-03  | 下载 CSV         | 导出任务 Succeeded | 调用 `GET /api/v1/exports/asset-ledger/:id/download` | 返回 CSV 文件；Content-Type 正确                                                  |
+| T8E-04  | CSV 包含基础列   | 导出成功           | 检查 CSV 内容                                        | 包含 asset_uuid/asset_type/status/display_name/last_seen_at/source_id/source_type |
+| T8E-05  | CSV 包含台账字段 | 导出成功           | 检查 CSV 内容                                        | 包含 ledger-fields-v1 全部列；vm 的 host 专用字段留空                             |
+| T8E-06  | 审计记录         | 导出成功           | 查询 audit_event                                     | 存在 `asset.ledger_exported` 事件                                                 |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T8E-E01 | user 导出 | user 角色 | 调用导出 API | `AUTH_FORBIDDEN` | 返回 403 |
-| T8E-E02 | 未登录导出 | 未登录 | 调用导出 API | `AUTH_UNAUTHORIZED` | 返回 401 |
-| T8E-E03 | 导出任务不存在 | 无效 exportId | 调用查询 API | `CONFIG_EXPORT_NOT_FOUND` | 返回 404 |
-| T8E-E04 | 重复下载 | 已下载过一次 | 再次调用下载 API | `CONFIG_EXPORT_EXPIRED` | 返回 410 |
+| 场景 ID | 场景描述       | 前置条件      | 操作步骤         | 期望错误码                | 期望行为 |
+| ------- | -------------- | ------------- | ---------------- | ------------------------- | -------- |
+| T8E-E01 | user 导出      | user 角色     | 调用导出 API     | `AUTH_FORBIDDEN`          | 返回 403 |
+| T8E-E02 | 未登录导出     | 未登录        | 调用导出 API     | `AUTH_UNAUTHORIZED`       | 返回 401 |
+| T8E-E03 | 导出任务不存在 | 无效 exportId | 调用查询 API     | `CONFIG_EXPORT_NOT_FOUND` | 返回 404 |
+| T8E-E04 | 重复下载       | 已下载过一次  | 再次调用下载 API | `CONFIG_EXPORT_EXPIRED`   | 返回 410 |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T8E-B01 | 字段含逗号 | 资产 display_name 含逗号 | 导出并检查 CSV | 字段被双引号包裹；CSV 结构正确 |
-| T8E-B02 | 字段含换行 | 资产字段含换行符 | 导出并检查 CSV | 字段被双引号包裹；CSV 结构正确 |
-| T8E-B03 | 字段含双引号 | 资产字段含双引号 | 导出并检查 CSV | 双引号转义为 `""`；CSV 结构正确 |
-| T8E-B04 | 多来源资产 | 资产绑定 3 个 Source | 导出并检查 CSV | source_id/source_type 用 `;` 拼接 |
-| T8E-B05 | 大数据量导出 | 10,000 资产 | 创建导出任务 | 异步完成；不超时 |
+| 场景 ID | 场景描述     | 前置条件                 | 操作步骤       | 期望行为                          |
+| ------- | ------------ | ------------------------ | -------------- | --------------------------------- |
+| T8E-B01 | 字段含逗号   | 资产 display_name 含逗号 | 导出并检查 CSV | 字段被双引号包裹；CSV 结构正确    |
+| T8E-B02 | 字段含换行   | 资产字段含换行符         | 导出并检查 CSV | 字段被双引号包裹；CSV 结构正确    |
+| T8E-B03 | 字段含双引号 | 资产字段含双引号         | 导出并检查 CSV | 双引号转义为 `""`；CSV 结构正确   |
+| T8E-B04 | 多来源资产   | 资产绑定 3 个 Source     | 导出并检查 CSV | source_id/source_type 用 `;` 拼接 |
+| T8E-B05 | 大数据量导出 | 10,000 资产              | 创建导出任务   | 异步完成；不超时                  |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| M8 台账字段 | 硬依赖 | CSV 需包含 ledger-fields-v1 列 |
-| 异步任务框架 | 硬依赖 | 需支持异步导出任务 |
-| 文件存储 | 硬依赖 | 需存储导出文件（本地/对象存储） |
+| 依赖项       | 依赖类型 | 说明                            |
+| ------------ | -------- | ------------------------------- |
+| M8 台账字段  | 硬依赖   | CSV 需包含 ledger-fields-v1 列  |
+| 异步任务框架 | 硬依赖   | 需支持异步导出任务              |
+| 文件存储     | 硬依赖   | 需存储导出文件（本地/对象存储） |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `export_task_success_rate` | Gauge | 导出任务成功率 | < 95% 触发告警 |
+| 指标名                     | 类型      | 说明             | 告警阈值        |
+| -------------------------- | --------- | ---------------- | --------------- |
+| `export_task_success_rate` | Gauge     | 导出任务成功率   | < 95% 触发告警  |
 | `export_task_duration_p95` | Histogram | 导出任务耗时 p95 | > 5min 触发告警 |
-| `export_download_count` | Counter | 导出下载次数 | - |
+| `export_download_count`    | Counter   | 导出下载次数     | -               |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `export.task_created` | 创建导出任务 | INFO | `export_id`, `user_id`, `params` |
-| `export.task_completed` | 导出任务完成 | INFO | `export_id`, `row_count`, `file_size`, `duration_ms` |
-| `export.downloaded` | 文件被下载 | INFO | `export_id`, `user_id` |
+| 事件类型                | 触发条件     | 日志级别 | 包含字段                                             |
+| ----------------------- | ------------ | -------- | ---------------------------------------------------- |
+| `export.task_created`   | 创建导出任务 | INFO     | `export_id`, `user_id`, `params`                     |
+| `export.task_completed` | 导出任务完成 | INFO     | `export_id`, `row_count`, `file_size`, `duration_ms` |
+| `export.downloaded`     | 文件被下载   | INFO     | `export_id`, `user_id`                               |
 
 ## Performance Baseline
 
-| 场景 | 数据规模 | 期望性能 | 验证方法 |
-|------|----------|----------|----------|
-| 小规模导出 | 1,000 资产 | < 30s | 压测 |
-| 中规模导出 | 10,000 资产 | < 3min | 压测 |
-| 大规模导出 | 50,000 资产 | < 10min | 压测（分批读取） |
+| 场景       | 数据规模    | 期望性能 | 验证方法         |
+| ---------- | ----------- | -------- | ---------------- |
+| 小规模导出 | 1,000 资产  | < 30s    | 压测             |
+| 中规模导出 | 10,000 资产 | < 3min   | 压测             |
+| 大规模导出 | 50,000 资产 | < 10min  | 压测（分批读取） |
 
 ## Execution Phases
 

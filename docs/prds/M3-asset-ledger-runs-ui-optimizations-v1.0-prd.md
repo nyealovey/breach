@@ -186,81 +186,81 @@
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T3R-01 | 列表展示失败摘要 | 存在 Failed 状态的 Run | 访问 `/runs` | Failed Run 行展示 `error.code`、简短原因、`retryable` 标识 |
-| T3R-02 | 详情展示建议动作 | Failed Run 的 error.code 在映射表中 | 访问 `/runs/[id]` | 展示主错误 + 建议动作清单（title + steps） |
-| T3R-03 | 行内展开建议动作 | 同上 | 在列表页点击 Failed 行展开 | 可在行内看到建议动作摘要（1 行） |
-| T3R-04 | errors/warnings 分组展示 | Run 有多个 errors/warnings | 访问 `/runs/[id]` | errors 按 code 分组折叠；warnings 默认折叠 |
+| 场景 ID | 场景描述                 | 前置条件                            | 操作步骤                   | 期望结果                                                   |
+| ------- | ------------------------ | ----------------------------------- | -------------------------- | ---------------------------------------------------------- |
+| T3R-01  | 列表展示失败摘要         | 存在 Failed 状态的 Run              | 访问 `/runs`               | Failed Run 行展示 `error.code`、简短原因、`retryable` 标识 |
+| T3R-02  | 详情展示建议动作         | Failed Run 的 error.code 在映射表中 | 访问 `/runs/[id]`          | 展示主错误 + 建议动作清单（title + steps）                 |
+| T3R-03  | 行内展开建议动作         | 同上                                | 在列表页点击 Failed 行展开 | 可在行内看到建议动作摘要（1 行）                           |
+| T3R-04  | errors/warnings 分组展示 | Run 有多个 errors/warnings          | 访问 `/runs/[id]`          | errors 按 code 分组折叠；warnings 默认折叠                 |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T3R-E01 | 未知 error.code 兜底 | error.code 不在映射表中 | 访问 `/runs/[id]` | 标题显示"未知错误（{code}）"；展示通用建议动作；页面不崩溃 |
-| T3R-E02 | errors 为空但 Failed | Run status=Failed 但 errors=[] | 访问 `/runs/[id]` | 展示 `errorSummary`（若有）；提示"缺少结构化 errors" |
+| 场景 ID | 场景描述             | 前置条件                       | 操作步骤          | 期望行为                                                   |
+| ------- | -------------------- | ------------------------------ | ----------------- | ---------------------------------------------------------- |
+| T3R-E01 | 未知 error.code 兜底 | error.code 不在映射表中        | 访问 `/runs/[id]` | 标题显示"未知错误（{code}）"；展示通用建议动作；页面不崩溃 |
+| T3R-E02 | errors 为空但 Failed | Run status=Failed 但 errors=[] | 访问 `/runs/[id]` | 展示 `errorSummary`（若有）；提示"缺少结构化 errors"       |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
+| 场景 ID | 场景描述              | 前置条件                      | 操作步骤          | 期望行为                                             |
+| ------- | --------------------- | ----------------------------- | ----------------- | ---------------------------------------------------- |
 | T3R-B01 | redacted_context 脱敏 | error 包含 `redacted_context` | 访问 `/runs/[id]` | 仅展示白名单字段；不展示 endpoint host/URL/账号/密钥 |
-| T3R-B02 | 大量 errors（>20） | Run 有 20+ errors | 访问 `/runs/[id]` | 支持折叠/分页展示；不卡顿 |
+| T3R-B02 | 大量 errors（>20）    | Run 有 20+ errors             | 访问 `/runs/[id]` | 支持折叠/分页展示；不卡顿                            |
 
 ### 安全场景（Security）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
+| 场景 ID | 场景描述       | 前置条件                              | 操作步骤          | 期望行为                             |
+| ------- | -------------- | ------------------------------------- | ----------------- | ------------------------------------ |
 | T3R-S01 | 敏感信息不泄露 | error.message 或 context 误含敏感信息 | 访问 `/runs/[id]` | 前端仅展示白名单字段；敏感信息被过滤 |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| 错误码注册表 | 硬依赖 | 映射表需与 `docs/design/asset-ledger-error-codes.md` 对齐 |
-| UI 组件库 | 软依赖 | `RunErrorPanel`/`ErrorBadge` 组件需统一设计 |
-| 后端 errors 输出规范 | 硬依赖 | 后端/插件需保证 `errors[0]` 为最重要错误 |
+| 依赖项               | 依赖类型 | 说明                                                      |
+| -------------------- | -------- | --------------------------------------------------------- |
+| 错误码注册表         | 硬依赖   | 映射表需与 `docs/design/asset-ledger-error-codes.md` 对齐 |
+| UI 组件库            | 软依赖   | `RunErrorPanel`/`ErrorBadge` 组件需统一设计               |
+| 后端 errors 输出规范 | 硬依赖   | 后端/插件需保证 `errors[0]` 为最重要错误                  |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `runs_ui_unknown_error_code_count` | Counter | 未知 error.code 出现次数 | > 10/天 触发告警（需补齐映射） |
-| `runs_ui_error_display_latency_p95` | Histogram | 错误详情页加载耗时 p95 | > 2s 触发告警 |
+| 指标名                              | 类型      | 说明                     | 告警阈值                       |
+| ----------------------------------- | --------- | ------------------------ | ------------------------------ |
+| `runs_ui_unknown_error_code_count`  | Counter   | 未知 error.code 出现次数 | > 10/天 触发告警（需补齐映射） |
+| `runs_ui_error_display_latency_p95` | Histogram | 错误详情页加载耗时 p95   | > 2s 触发告警                  |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `runs_ui.unknown_error_code` | 遇到未映射的 error.code | WARN | `error_code`, `run_id` |
-| `runs_ui.sensitive_field_filtered` | 过滤了敏感字段 | INFO | `run_id`, `filtered_keys` |
+| 事件类型                           | 触发条件                | 日志级别 | 包含字段                  |
+| ---------------------------------- | ----------------------- | -------- | ------------------------- |
+| `runs_ui.unknown_error_code`       | 遇到未映射的 error.code | WARN     | `error_code`, `run_id`    |
+| `runs_ui.sensitive_field_filtered` | 过滤了敏感字段          | INFO     | `run_id`, `filtered_keys` |
 
 ## Error Code Mapping Table (Minimum Viable)
 
 > 以下为一期必须覆盖的错误码映射，后续新增错误码需同步补齐。
 
-| error.code | 标题 | 建议动作 |
-|------------|------|----------|
-| `AUTH_UNAUTHORIZED` | 认证失败 | 1. 检查凭证是否正确；2. 检查凭证是否过期；3. 重新配置凭证后重试 |
-| `AUTH_FORBIDDEN` | 权限不足 | 1. 检查账号是否具备所需权限；2. 联系管理员授权 |
-| `CONFIG_CREDENTIAL_NOT_FOUND` | 凭证未配置 | 1. 前往 Sources 页面配置凭证；2. 配置完成后重新触发采集 |
-| `VCENTER_AUTH_FAILED` | vCenter 认证失败 | 1. 检查 vCenter 账号密码；2. 检查账号是否被锁定；3. 检查 vCenter 服务状态 |
+| error.code                        | 标题               | 建议动作                                                                                |
+| --------------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
+| `AUTH_UNAUTHORIZED`               | 认证失败           | 1. 检查凭证是否正确；2. 检查凭证是否过期；3. 重新配置凭证后重试                         |
+| `AUTH_FORBIDDEN`                  | 权限不足           | 1. 检查账号是否具备所需权限；2. 联系管理员授权                                          |
+| `CONFIG_CREDENTIAL_NOT_FOUND`     | 凭证未配置         | 1. 前往 Sources 页面配置凭证；2. 配置完成后重新触发采集                                 |
+| `VCENTER_AUTH_FAILED`             | vCenter 认证失败   | 1. 检查 vCenter 账号密码；2. 检查账号是否被锁定；3. 检查 vCenter 服务状态               |
 | `VCENTER_API_VERSION_UNSUPPORTED` | vCenter 版本不兼容 | 1. 检查 Source 配置的版本范围；2. 调整为匹配的版本范围；3. 若版本过旧，考虑升级 vCenter |
-| `PLUGIN_EXECUTION_FAILED` | 插件执行失败 | 1. 查看 Run 详情中的错误信息；2. 检查插件日志；3. 联系管理员排查 |
-| `SCHEMA_VALIDATION_FAILED` | 数据格式校验失败 | 1. 检查插件输出是否符合 schema；2. 联系插件开发者修复 |
-| `INVENTORY_INCOMPLETE` | 资产清单不完整 | 1. 检查网络连通性；2. 检查权限是否足够枚举所有资产；3. 重试采集 |
-| `INVENTORY_RELATIONS_EMPTY` | 关系链为空 | 1. 检查权限是否足够获取关系字段；2. 检查目标环境是否有关系数据 |
-| `*_NETWORK_ERROR` | 网络错误 | 1. 检查网络连通性；2. 检查防火墙规则；3. 稍后重试 |
-| `*_TIMEOUT` | 请求超时 | 1. 检查目标服务状态；2. 检查网络延迟；3. 稍后重试 |
+| `PLUGIN_EXECUTION_FAILED`         | 插件执行失败       | 1. 查看 Run 详情中的错误信息；2. 检查插件日志；3. 联系管理员排查                        |
+| `SCHEMA_VALIDATION_FAILED`        | 数据格式校验失败   | 1. 检查插件输出是否符合 schema；2. 联系插件开发者修复                                   |
+| `INVENTORY_INCOMPLETE`            | 资产清单不完整     | 1. 检查网络连通性；2. 检查权限是否足够枚举所有资产；3. 重试采集                         |
+| `INVENTORY_RELATIONS_EMPTY`       | 关系链为空         | 1. 检查权限是否足够获取关系字段；2. 检查目标环境是否有关系数据                          |
+| `*_NETWORK_ERROR`                 | 网络错误           | 1. 检查网络连通性；2. 检查防火墙规则；3. 稍后重试                                       |
+| `*_TIMEOUT`                       | 请求超时           | 1. 检查目标服务状态；2. 检查网络延迟；3. 稍后重试                                       |
 
 ## Execution Phases
 
 ### Phase 1: 口径与映射表
 
 - [ ] 明确 primary_error 的选择规则
-- [ ] 梳理 Top error.code → 建议动作（最小可用集合，建议至少覆盖：AUTH_*/CONFIG_CREDENTIAL_NOT_FOUND/VCENTER_* /PLUGIN_* /SCHEMA_VALIDATION_FAILED/INVENTORY_INCOMPLETE/RAW_PERSIST_FAILED）
+- [ ] 梳理 Top error.code → 建议动作（最小可用集合，建议至少覆盖：AUTH*\*/CONFIG_CREDENTIAL_NOT_FOUND/VCENTER*\_ /PLUGIN\_\_ /SCHEMA_VALIDATION_FAILED/INVENTORY_INCOMPLETE/RAW_PERSIST_FAILED）
 
 ### Phase 2: UI 落地
 

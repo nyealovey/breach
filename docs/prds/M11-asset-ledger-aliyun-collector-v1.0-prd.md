@@ -207,64 +207,64 @@ VM（normalized-v1）：
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T11-01 | healthcheck 成功 | 阿里云账号、AK/SK 正确 | 执行 `healthcheck` | Run 成功 |
-| T11-02 | detect 成功 | 同上 | 执行 `detect` | 输出 `capabilities.regions`、`driver` |
-| T11-03 | 单 region collect 成功 | 配置 1 个 region | 执行 `collect` | 输出 ECS 实例；`inventory_complete=true` |
-| T11-04 | 多 region collect 成功 | 配置 3 个 region | 执行 `collect` | 覆盖所有 region；`inventory_complete=true` |
-| T11-05 | 包含已停止实例 | `include_stopped=true` | 执行 `collect` | 包含 stopped 状态实例 |
+| 场景 ID | 场景描述               | 前置条件               | 操作步骤           | 期望结果                                   |
+| ------- | ---------------------- | ---------------------- | ------------------ | ------------------------------------------ |
+| T11-01  | healthcheck 成功       | 阿里云账号、AK/SK 正确 | 执行 `healthcheck` | Run 成功                                   |
+| T11-02  | detect 成功            | 同上                   | 执行 `detect`      | 输出 `capabilities.regions`、`driver`      |
+| T11-03  | 单 region collect 成功 | 配置 1 个 region       | 执行 `collect`     | 输出 ECS 实例；`inventory_complete=true`   |
+| T11-04  | 多 region collect 成功 | 配置 3 个 region       | 执行 `collect`     | 覆盖所有 region；`inventory_complete=true` |
+| T11-05  | 包含已停止实例         | `include_stopped=true` | 执行 `collect`     | 包含 stopped 状态实例                      |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T11-E01 | AK/SK 无效 | 凭证错误 | 执行 `healthcheck` | `ALIYUN_AUTH_FAILED` | Run 失败；retryable=false |
-| T11-E02 | RAM 权限不足 | 无 ecs:DescribeInstances 权限 | 执行 `collect` | `ALIYUN_PERMISSION_DENIED` | Run 失败 |
-| T11-E03 | 限流 | 触发 API 限流 | 执行 `collect` | `ALIYUN_RATE_LIMIT` | Run 失败；retryable=true |
-| T11-E04 | 无效 region | 配置不存在的 region | 执行 `detect` | `ALIYUN_CONFIG_INVALID` | Run 失败 |
-| T11-E05 | 部分 region 失败 | 3 region 中 1 个失败 | 执行 `collect` | `INVENTORY_INCOMPLETE` | Run 失败（不允许部分成功） |
+| 场景 ID | 场景描述         | 前置条件                      | 操作步骤           | 期望错误码                 | 期望行为                   |
+| ------- | ---------------- | ----------------------------- | ------------------ | -------------------------- | -------------------------- |
+| T11-E01 | AK/SK 无效       | 凭证错误                      | 执行 `healthcheck` | `ALIYUN_AUTH_FAILED`       | Run 失败；retryable=false  |
+| T11-E02 | RAM 权限不足     | 无 ecs:DescribeInstances 权限 | 执行 `collect`     | `ALIYUN_PERMISSION_DENIED` | Run 失败                   |
+| T11-E03 | 限流             | 触发 API 限流                 | 执行 `collect`     | `ALIYUN_RATE_LIMIT`        | Run 失败；retryable=true   |
+| T11-E04 | 无效 region      | 配置不存在的 region           | 执行 `detect`      | `ALIYUN_CONFIG_INVALID`    | Run 失败                   |
+| T11-E05 | 部分 region 失败 | 3 region 中 1 个失败          | 执行 `collect`     | `INVENTORY_INCOMPLETE`     | Run 失败（不允许部分成功） |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T11-B01 | 空 region | region 无 ECS 实例 | 执行 `collect` | 该 region 返回空列表；Run 成功 |
-| T11-B02 | 大量实例（分页） | region 有 500+ 实例 | 执行 `collect` | 全量分页拉取；`inventory_complete=true` |
-| T11-B03 | 幂等性验证 | 同配置重复运行 | 执行 2 次 `collect` | 输出集合语义一致 |
+| 场景 ID | 场景描述         | 前置条件            | 操作步骤            | 期望行为                                |
+| ------- | ---------------- | ------------------- | ------------------- | --------------------------------------- |
+| T11-B01 | 空 region        | region 无 ECS 实例  | 执行 `collect`      | 该 region 返回空列表；Run 成功          |
+| T11-B02 | 大量实例（分页） | region 有 500+ 实例 | 执行 `collect`      | 全量分页拉取；`inventory_complete=true` |
+| T11-B03 | 幂等性验证       | 同配置重复运行      | 执行 2 次 `collect` | 输出集合语义一致                        |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| 阿里云 SDK | 硬依赖 | 需使用官方 SDK（优先 v2） |
-| 错误码注册表 | 硬依赖 | `ALIYUN_*` 错误码需先注册 |
+| 依赖项       | 依赖类型 | 说明                      |
+| ------------ | -------- | ------------------------- |
+| 阿里云 SDK   | 硬依赖   | 需使用官方 SDK（优先 v2） |
+| 错误码注册表 | 硬依赖   | `ALIYUN_*` 错误码需先注册 |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `aliyun_collect_success_rate` | Gauge | 阿里云 collect 成功率 | < 95% 触发告警 |
-| `aliyun_rate_limit_count` | Counter | 限流触发次数 | > 5/小时 触发告警 |
-| `aliyun_region_failure_count` | Counter | region 失败次数 | > 0 触发告警 |
+| 指标名                        | 类型    | 说明                  | 告警阈值          |
+| ----------------------------- | ------- | --------------------- | ----------------- |
+| `aliyun_collect_success_rate` | Gauge   | 阿里云 collect 成功率 | < 95% 触发告警    |
+| `aliyun_rate_limit_count`     | Counter | 限流触发次数          | > 5/小时 触发告警 |
+| `aliyun_region_failure_count` | Counter | region 失败次数       | > 0 触发告警      |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `aliyun.rate_limited` | 触发限流 | WARN | `source_id`, `region`, `retry_count` |
-| `aliyun.region_failed` | region 枚举失败 | ERROR | `source_id`, `region`, `error_detail` |
+| 事件类型               | 触发条件        | 日志级别 | 包含字段                              |
+| ---------------------- | --------------- | -------- | ------------------------------------- |
+| `aliyun.rate_limited`  | 触发限流        | WARN     | `source_id`, `region`, `retry_count`  |
+| `aliyun.region_failed` | region 枚举失败 | ERROR    | `source_id`, `region`, `error_detail` |
 
 ## Retry Strategy
 
 > 限流/网络错误的重试策略。
 
-| 错误类型 | 重试策略 | 最大重试次数 | 退避算法 |
-|----------|----------|--------------|----------|
-| `ALIYUN_RATE_LIMIT` | 指数退避 | 5 | 1s, 2s, 4s, 8s, 16s |
-| `ALIYUN_NETWORK_ERROR` | 指数退避 | 3 | 1s, 2s, 4s |
+| 错误类型               | 重试策略 | 最大重试次数 | 退避算法            |
+| ---------------------- | -------- | ------------ | ------------------- |
+| `ALIYUN_RATE_LIMIT`    | 指数退避 | 5            | 1s, 2s, 4s, 8s, 16s |
+| `ALIYUN_NETWORK_ERROR` | 指数退避 | 3            | 1s, 2s, 4s          |
 
 ## Execution Phases
 

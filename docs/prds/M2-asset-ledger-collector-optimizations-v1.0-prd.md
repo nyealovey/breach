@@ -148,59 +148,59 @@ canonical 聚合后字段落点：
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T2-01 | Datastore 明细采集成功 | vCenter 环境、Host 有 ≥1 个 Datastore | 执行 `collect_hosts` | `storage.datastores[]` 非空；每项包含 `name/capacity_bytes` |
-| T2-02 | 总容量与明细一致 | 同上 | 执行 `collect_hosts` 并校验 | `sum(datastores[].capacity_bytes) == datastore_total_bytes` |
-| T2-03 | UI 展示 Datastores 表格 | Host 资产已采集 | 访问 `/assets/[uuid]` | 展示 Datastores 区块；表格列：名称、容量（GiB/TiB）；底部展示总容量 |
-| T2-04 | Canonical 保留来源证据 | 同上 | 查询 canonical 快照 | `fields.storage.datastores.sources[]` 包含 source_id/run_id/record_id |
+| 场景 ID | 场景描述                | 前置条件                              | 操作步骤                    | 期望结果                                                              |
+| ------- | ----------------------- | ------------------------------------- | --------------------------- | --------------------------------------------------------------------- |
+| T2-01   | Datastore 明细采集成功  | vCenter 环境、Host 有 ≥1 个 Datastore | 执行 `collect_hosts`        | `storage.datastores[]` 非空；每项包含 `name/capacity_bytes`           |
+| T2-02   | 总容量与明细一致        | 同上                                  | 执行 `collect_hosts` 并校验 | `sum(datastores[].capacity_bytes) == datastore_total_bytes`           |
+| T2-03   | UI 展示 Datastores 表格 | Host 资产已采集                       | 访问 `/assets/[uuid]`       | 展示 Datastores 区块；表格列：名称、容量（GiB/TiB）；底部展示总容量   |
+| T2-04   | Canonical 保留来源证据  | 同上                                  | 查询 canonical 快照         | `fields.storage.datastores.sources[]` 包含 source_id/run_id/record_id |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T2-E01 | 无权限读取 Datastore | vCenter 环境、凭证无 Datastore 读取权限 | 执行 `collect_hosts` | 无（warning） | Run 成功；`storage.datastores` 为空；记录 warning |
-| T2-E02 | 单个 Datastore 解析失败 | Datastore 数据格式异常 | 执行 `collect_hosts` | 无（warning） | Run 成功；跳过异常项；保留已解析部分 |
+| 场景 ID | 场景描述                | 前置条件                                | 操作步骤             | 期望错误码    | 期望行为                                          |
+| ------- | ----------------------- | --------------------------------------- | -------------------- | ------------- | ------------------------------------------------- |
+| T2-E01  | 无权限读取 Datastore    | vCenter 环境、凭证无 Datastore 读取权限 | 执行 `collect_hosts` | 无（warning） | Run 成功；`storage.datastores` 为空；记录 warning |
+| T2-E02  | 单个 Datastore 解析失败 | Datastore 数据格式异常                  | 执行 `collect_hosts` | 无（warning） | Run 成功；跳过异常项；保留已解析部分              |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T2-B01 | Host 无 Datastore | Host 未挂载任何 Datastore | 执行 `collect_hosts` | `storage.datastores = []`；UI 展示空状态 |
-| T2-B02 | 大量 Datastores（>50） | Host 挂载 50+ Datastores | 执行 `collect_hosts` + 访问详情页 | 采集成功；UI 支持滚动/分页展示；不卡顿 |
-| T2-B03 | 同名 Datastore | 多个 Datastore 同名 | 执行 `collect_hosts` | 允许同名展示多行；provenance 可追溯来源 |
+| 场景 ID | 场景描述               | 前置条件                  | 操作步骤                          | 期望行为                                 |
+| ------- | ---------------------- | ------------------------- | --------------------------------- | ---------------------------------------- |
+| T2-B01  | Host 无 Datastore      | Host 未挂载任何 Datastore | 执行 `collect_hosts`              | `storage.datastores = []`；UI 展示空状态 |
+| T2-B02  | 大量 Datastores（>50） | Host 挂载 50+ Datastores  | 执行 `collect_hosts` + 访问详情页 | 采集成功；UI 支持滚动/分页展示；不卡顿   |
+| T2-B03  | 同名 Datastore         | 多个 Datastore 同名       | 执行 `collect_hosts`              | 允许同名展示多行；provenance 可追溯来源  |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| vCenter 插件 SOAP 能力 | 硬依赖 | 需使用 PropertyCollector 批量获取 Host→Datastore 关联 |
-| Schema 文件 | 硬依赖 | 需先扩展 normalized-v1/canonical-v1 schema |
-| M3 /assets UI 优化 | 软依赖 | 详情页展示依赖 M3 的信息组织能力；可并行开发 |
+| 依赖项                 | 依赖类型 | 说明                                                  |
+| ---------------------- | -------- | ----------------------------------------------------- |
+| vCenter 插件 SOAP 能力 | 硬依赖   | 需使用 PropertyCollector 批量获取 Host→Datastore 关联 |
+| Schema 文件            | 硬依赖   | 需先扩展 normalized-v1/canonical-v1 schema            |
+| M3 /assets UI 优化     | 软依赖   | 详情页展示依赖 M3 的信息组织能力；可并行开发          |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `host_datastores_coverage_rate` | Gauge | Host 的 `storage.datastores` 非空率 | < 90% 触发告警 |
-| `host_datastores_sum_mismatch_count` | Counter | 明细求和与总容量不一致的次数 | > 0 触发告警（需排查口径） |
+| 指标名                               | 类型    | 说明                                | 告警阈值                   |
+| ------------------------------------ | ------- | ----------------------------------- | -------------------------- |
+| `host_datastores_coverage_rate`      | Gauge   | Host 的 `storage.datastores` 非空率 | < 90% 触发告警             |
+| `host_datastores_sum_mismatch_count` | Counter | 明细求和与总容量不一致的次数        | > 0 触发告警（需排查口径） |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `host.datastores.permission_denied` | 无权限读取 Datastore 列表 | WARN | `source_id`, `run_id`, `host_external_id` |
-| `host.datastores.parse_error` | 单个 Datastore 解析失败 | WARN | `source_id`, `run_id`, `datastore_name`, `error_detail` |
+| 事件类型                            | 触发条件                  | 日志级别 | 包含字段                                                |
+| ----------------------------------- | ------------------------- | -------- | ------------------------------------------------------- |
+| `host.datastores.permission_denied` | 无权限读取 Datastore 列表 | WARN     | `source_id`, `run_id`, `host_external_id`               |
+| `host.datastores.parse_error`       | 单个 Datastore 解析失败   | WARN     | `source_id`, `run_id`, `datastore_name`, `error_detail` |
 
 ## Performance Baseline
 
-| 场景 | 数据规模 | 期望性能 | 验证方法 |
-|------|----------|----------|----------|
-| 典型环境 | 10 Host × 5 Datastores/Host | 采集耗时增量 < 5s | 对比修改前后 Run 耗时 |
-| 大规模环境 | 100 Host × 20 Datastores/Host | 采集耗时增量 < 30s | 压测或 raw 回放 |
-| UI 渲染 | 单 Host 50 Datastores | 详情页加载 < 2s | 前端性能测试 |
+| 场景       | 数据规模                      | 期望性能           | 验证方法              |
+| ---------- | ----------------------------- | ------------------ | --------------------- |
+| 典型环境   | 10 Host × 5 Datastores/Host   | 采集耗时增量 < 5s  | 对比修改前后 Run 耗时 |
+| 大规模环境 | 100 Host × 20 Datastores/Host | 采集耗时增量 < 30s | 压测或 raw 回放       |
+| UI 渲染    | 单 Host 50 Datastores         | 详情页加载 < 2s    | 前端性能测试          |
 
 ## Execution Phases
 

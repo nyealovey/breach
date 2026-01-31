@@ -237,51 +237,51 @@ best-effort 字段（缺失则 warning，不阻断成功）：
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T10W-01 | healthcheck 成功 | Windows 主机、WinRM 已开启、凭证正确 | 执行 `healthcheck` | Run 成功 |
-| T10W-02 | detect 成功 | 同上 | 执行 `detect` | 输出 `target_version`、`capabilities`、`driver` |
-| T10W-03 | collect 成功 | 同上 | 执行 `collect` | 输出 1 Host；`inventory_complete=true`；`identity.hostname` 非空 |
-| T10W-04 | best-effort 字段采集 | 有管理员权限 | 执行 `collect` | 包含 machine_uuid/serial_number/vendor/model |
+| 场景 ID | 场景描述             | 前置条件                             | 操作步骤           | 期望结果                                                         |
+| ------- | -------------------- | ------------------------------------ | ------------------ | ---------------------------------------------------------------- |
+| T10W-01 | healthcheck 成功     | Windows 主机、WinRM 已开启、凭证正确 | 执行 `healthcheck` | Run 成功                                                         |
+| T10W-02 | detect 成功          | 同上                                 | 执行 `detect`      | 输出 `target_version`、`capabilities`、`driver`                  |
+| T10W-03 | collect 成功         | 同上                                 | 执行 `collect`     | 输出 1 Host；`inventory_complete=true`；`identity.hostname` 非空 |
+| T10W-04 | best-effort 字段采集 | 有管理员权限                         | 执行 `collect`     | 包含 machine_uuid/serial_number/vendor/model                     |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T10W-E01 | WinRM 认证失败 | 凭证错误 | 执行 `healthcheck` | `PHYSICAL_AUTH_FAILED` | Run 失败；retryable=false |
-| T10W-E02 | 权限不足 | 无法读取 WMI | 执行 `collect` | `PHYSICAL_PERMISSION_DENIED` | Run 失败 |
-| T10W-E03 | TLS 证书错误 | 自签名证书 + `tls_verify=true` | 执行 `healthcheck` | `PHYSICAL_TLS_ERROR` | Run 失败；retryable=false |
-| T10W-E04 | 网络超时 | WinRM 端口不可达 | 执行 `healthcheck` | `PHYSICAL_NETWORK_ERROR` | Run 失败；retryable=true |
+| 场景 ID  | 场景描述       | 前置条件                       | 操作步骤           | 期望错误码                   | 期望行为                  |
+| -------- | -------------- | ------------------------------ | ------------------ | ---------------------------- | ------------------------- |
+| T10W-E01 | WinRM 认证失败 | 凭证错误                       | 执行 `healthcheck` | `PHYSICAL_AUTH_FAILED`       | Run 失败；retryable=false |
+| T10W-E02 | 权限不足       | 无法读取 WMI                   | 执行 `collect`     | `PHYSICAL_PERMISSION_DENIED` | Run 失败                  |
+| T10W-E03 | TLS 证书错误   | 自签名证书 + `tls_verify=true` | 执行 `healthcheck` | `PHYSICAL_TLS_ERROR`         | Run 失败；retryable=false |
+| T10W-E04 | 网络超时       | WinRM 端口不可达               | 执行 `healthcheck` | `PHYSICAL_NETWORK_ERROR`     | Run 失败；retryable=true  |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T10W-B01 | BIOS 不可读 | 权限不足 | 执行 `collect` | serial_number/vendor/model 为空；记录 warning；Run 成功 |
-| T10W-B02 | 不同 Windows 版本 | Server 2016/2019/2022 | 执行 `collect` | 均可成功采集 |
+| 场景 ID  | 场景描述          | 前置条件              | 操作步骤       | 期望行为                                                |
+| -------- | ----------------- | --------------------- | -------------- | ------------------------------------------------------- |
+| T10W-B01 | BIOS 不可读       | 权限不足              | 执行 `collect` | serial_number/vendor/model 为空；记录 warning；Run 成功 |
+| T10W-B02 | 不同 Windows 版本 | Server 2016/2019/2022 | 执行 `collect` | 均可成功采集                                            |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| WinRM 客户端库 | 硬依赖 | 需选择合适的 WinRM 库 |
-| 错误码注册表 | 硬依赖 | `PHYSICAL_*` 错误码需先注册 |
+| 依赖项         | 依赖类型 | 说明                        |
+| -------------- | -------- | --------------------------- |
+| WinRM 客户端库 | 硬依赖   | 需选择合适的 WinRM 库       |
+| 错误码注册表   | 硬依赖   | `PHYSICAL_*` 错误码需先注册 |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `windows_physical_collect_success_rate` | Gauge | Windows 物理机 collect 成功率 | < 95% 触发告警 |
-| `windows_physical_bios_unavailable_rate` | Gauge | BIOS 不可读率 | > 50% 触发告警 |
+| 指标名                                   | 类型  | 说明                          | 告警阈值       |
+| ---------------------------------------- | ----- | ----------------------------- | -------------- |
+| `windows_physical_collect_success_rate`  | Gauge | Windows 物理机 collect 成功率 | < 95% 触发告警 |
+| `windows_physical_bios_unavailable_rate` | Gauge | BIOS 不可读率                 | > 50% 触发告警 |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `windows_physical.bios_unavailable` | BIOS 不可读 | WARN | `source_id`, `hostname` |
-| `windows_physical.field_fallback` | 字段降级 | WARN | `source_id`, `field`, `reason` |
+| 事件类型                            | 触发条件    | 日志级别 | 包含字段                       |
+| ----------------------------------- | ----------- | -------- | ------------------------------ |
+| `windows_physical.bios_unavailable` | BIOS 不可读 | WARN     | `source_id`, `hostname`        |
+| `windows_physical.field_fallback`   | 字段降级    | WARN     | `source_id`, `field`, `reason` |
 
 ## Prerequisites Checklist
 

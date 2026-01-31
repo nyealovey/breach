@@ -248,64 +248,64 @@ host 专用字段：
 
 ### 正向场景（Happy Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望结果 |
-|---------|----------|----------|----------|----------|
-| T8L-01 | 单资产保存台账字段 | admin 角色、资产存在 | 调用 `PUT /api/v1/assets/:uuid/ledger-fields` | 字段保存成功；写入 audit_event |
-| T8L-02 | 批量设置台账字段 | admin 角色、勾选 10 个资产 | 调用 `POST /api/v1/assets/ledger-fields/bulk-set` | 10 个资产字段更新；写入 audit_event |
-| T8L-03 | 列表展示台账字段列 | 台账字段已配置 | 访问 `/assets` 并开启台账列 | 列表展示台账字段值 |
-| T8L-04 | 台账字段筛选 | 资产有 company 字段 | 按 company 筛选 | 仅展示匹配资产 |
-| T8L-05 | 搜索命中台账字段 | 资产 department="IT" | 搜索 `q=IT` | 命中该资产 |
-| T8L-06 | 清空字段值 | 字段有值 | 设置 value=null | 字段被清空；审计记录变更 |
+| 场景 ID | 场景描述           | 前置条件                   | 操作步骤                                          | 期望结果                            |
+| ------- | ------------------ | -------------------------- | ------------------------------------------------- | ----------------------------------- |
+| T8L-01  | 单资产保存台账字段 | admin 角色、资产存在       | 调用 `PUT /api/v1/assets/:uuid/ledger-fields`     | 字段保存成功；写入 audit_event      |
+| T8L-02  | 批量设置台账字段   | admin 角色、勾选 10 个资产 | 调用 `POST /api/v1/assets/ledger-fields/bulk-set` | 10 个资产字段更新；写入 audit_event |
+| T8L-03  | 列表展示台账字段列 | 台账字段已配置             | 访问 `/assets` 并开启台账列                       | 列表展示台账字段值                  |
+| T8L-04  | 台账字段筛选       | 资产有 company 字段        | 按 company 筛选                                   | 仅展示匹配资产                      |
+| T8L-05  | 搜索命中台账字段   | 资产 department="IT"       | 搜索 `q=IT`                                       | 命中该资产                          |
+| T8L-06  | 清空字段值         | 字段有值                   | 设置 value=null                                   | 字段被清空；审计记录变更            |
 
 ### 异常场景（Error Path）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望错误码 | 期望行为 |
-|---------|----------|----------|----------|------------|----------|
-| T8L-E01 | user 写入 | user 角色 | 调用写入 API | `AUTH_FORBIDDEN` | 返回 403 |
-| T8L-E02 | 无效字段 key | 使用不存在的 key | 调用写入 API | `CONFIG_LEDGER_FIELD_KEY_INVALID` | 返回 400 |
-| T8L-E03 | 类型不匹配 | 把 host 字段写入 vm | 调用写入 API | `CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH` | 返回 400 |
-| T8L-E04 | 值格式非法 | date 字段传入非法格式 | 调用写入 API | `CONFIG_LEDGER_FIELD_VALUE_INVALID` | 返回 400 |
-| T8L-E05 | 批量超限 | 批量设置 101 个资产 | 调用批量 API | `CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED` | 返回 400 |
+| 场景 ID | 场景描述     | 前置条件              | 操作步骤     | 期望错误码                                | 期望行为 |
+| ------- | ------------ | --------------------- | ------------ | ----------------------------------------- | -------- |
+| T8L-E01 | user 写入    | user 角色             | 调用写入 API | `AUTH_FORBIDDEN`                          | 返回 403 |
+| T8L-E02 | 无效字段 key | 使用不存在的 key      | 调用写入 API | `CONFIG_LEDGER_FIELD_KEY_INVALID`         | 返回 400 |
+| T8L-E03 | 类型不匹配   | 把 host 字段写入 vm   | 调用写入 API | `CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH` | 返回 400 |
+| T8L-E04 | 值格式非法   | date 字段传入非法格式 | 调用写入 API | `CONFIG_LEDGER_FIELD_VALUE_INVALID`       | 返回 400 |
+| T8L-E05 | 批量超限     | 批量设置 101 个资产   | 调用批量 API | `CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED`      | 返回 400 |
 
 ### 边界场景（Edge Case）
 
-| 场景 ID | 场景描述 | 前置条件 | 操作步骤 | 期望行为 |
-|---------|----------|----------|----------|----------|
-| T8L-B01 | 空串视为 null | 传入空字符串 | 调用写入 API | 字段被清空（等价 null） |
-| T8L-B02 | 字符串超长 | 传入 300 字符 | 调用写入 API | 返回 `CONFIG_LEDGER_FIELD_VALUE_INVALID` |
-| T8L-B03 | bmcIp 格式校验 | 传入非法 IP | 调用写入 API | 返回 `CONFIG_LEDGER_FIELD_VALUE_INVALID` |
+| 场景 ID | 场景描述       | 前置条件      | 操作步骤     | 期望行为                                 |
+| ------- | -------------- | ------------- | ------------ | ---------------------------------------- |
+| T8L-B01 | 空串视为 null  | 传入空字符串  | 调用写入 API | 字段被清空（等价 null）                  |
+| T8L-B02 | 字符串超长     | 传入 300 字符 | 调用写入 API | 返回 `CONFIG_LEDGER_FIELD_VALUE_INVALID` |
+| T8L-B03 | bmcIp 格式校验 | 传入非法 IP   | 调用写入 API | 返回 `CONFIG_LEDGER_FIELD_VALUE_INVALID` |
 
 ## Dependencies
 
-| 依赖项 | 依赖类型 | 说明 |
-|--------|----------|------|
-| AssetLedgerFields 数据模型 | 硬依赖 | 需新增 Prisma model |
-| M3 /assets UI | 软依赖 | 列配置需支持台账字段列 |
-| M8 导出 CSV | 软依赖 | 导出需包含台账字段 |
+| 依赖项                     | 依赖类型 | 说明                   |
+| -------------------------- | -------- | ---------------------- |
+| AssetLedgerFields 数据模型 | 硬依赖   | 需新增 Prisma model    |
+| M3 /assets UI              | 软依赖   | 列配置需支持台账字段列 |
+| M8 导出 CSV                | 软依赖   | 导出需包含台账字段     |
 
 ## Observability
 
 ### 关键指标
 
-| 指标名 | 类型 | 说明 | 告警阈值 |
-|--------|------|------|----------|
-| `ledger_fields_save_success_rate` | Gauge | 台账字段保存成功率 | < 99% 触发告警 |
-| `ledger_fields_bulk_set_count` | Counter | 批量设置次数 | - |
-| `ledger_fields_search_latency_p95` | Histogram | 台账字段搜索延迟 p95 | > 2s 触发告警 |
+| 指标名                             | 类型      | 说明                 | 告警阈值       |
+| ---------------------------------- | --------- | -------------------- | -------------- |
+| `ledger_fields_save_success_rate`  | Gauge     | 台账字段保存成功率   | < 99% 触发告警 |
+| `ledger_fields_bulk_set_count`     | Counter   | 批量设置次数         | -              |
+| `ledger_fields_search_latency_p95` | Histogram | 台账字段搜索延迟 p95 | > 2s 触发告警  |
 
 ### 日志事件
 
-| 事件类型 | 触发条件 | 日志级别 | 包含字段 |
-|----------|----------|----------|----------|
-| `ledger_fields.saved` | 单资产保存 | INFO | `asset_uuid`, `user_id`, `updated_keys` |
-| `ledger_fields.bulk_set` | 批量设置 | INFO | `asset_count`, `user_id`, `key`, `value_summary` |
+| 事件类型                 | 触发条件   | 日志级别 | 包含字段                                         |
+| ------------------------ | ---------- | -------- | ------------------------------------------------ |
+| `ledger_fields.saved`    | 单资产保存 | INFO     | `asset_uuid`, `user_id`, `updated_keys`          |
+| `ledger_fields.bulk_set` | 批量设置   | INFO     | `asset_count`, `user_id`, `key`, `value_summary` |
 
 ## Performance Baseline
 
-| 场景 | 数据规模 | 期望性能 | 验证方法 |
-|------|----------|----------|----------|
-| 单资产保存 | 1 资产 | < 200ms | API 压测 |
-| 批量设置 | 100 资产 | < 2s | API 压测 |
+| 场景                   | 数据规模    | 期望性能  | 验证方法 |
+| ---------------------- | ----------- | --------- | -------- |
+| 单资产保存             | 1 资产      | < 200ms   | API 压测 |
+| 批量设置               | 100 资产    | < 2s      | API 压测 |
 | 搜索（q 命中台账字段） | 10,000 资产 | TTFB < 1s | 后端压测 |
 
 ## Execution Phases

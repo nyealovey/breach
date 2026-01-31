@@ -13,12 +13,14 @@
 ### Task 1: 盘点与基线审计（输出 Scorecard）
 
 **Files:**
+
 - Create: `docs/prds/QUALITY-AUDIT-2026-01-31.md`
 - Modify: `docs/prds/README.md`
 
 **Step 1: 扫描现有 PRD 列表与现有分数**
 
 Run:
+
 ```bash
 rg -n "Quality Score" docs/prds/*.md
 ```
@@ -26,6 +28,7 @@ rg -n "Quality Score" docs/prds/*.md
 **Step 2: 生成 scorecard（按 active/deprecated 分组）**
 
 Run:
+
 ```bash
 python3 - <<'PY'
 import re, glob, os
@@ -51,6 +54,7 @@ PY
 ### Task 2: 定义 100/100 的口径（统一模板 + 最小必备信息）
 
 **Files:**
+
 - Modify: `docs/prds/QUALITY-AUDIT-2026-01-31.md`
 
 **Step 1: 明确评分标准（落地到文档）**
@@ -77,6 +81,7 @@ PY
 ### Task 3: 先把“低分 PRD（<=70）”补齐到 90+
 
 **Files:**
+
 - Modify: `docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`
 - Modify: `docs/prds/M5-asset-ledger-asset-merge-v1.0-prd.md`
 - Modify: `docs/prds/M5-asset-ledger-duplicate-center-v1.0-prd.md`
@@ -107,6 +112,7 @@ PY
 ### Task 4: 主题化澄清（每轮 2~3 个问题）并冲 100/100
 
 **Files:**
+
 - Modify: `docs/prds/*.md`（按轮次命中）
 
 **Step 1: Round 1（全局口径）**
@@ -139,12 +145,14 @@ PY
 ### Task 5: 最终校验与收口
 
 **Files:**
+
 - Modify: `docs/prds/README.md`
 - Modify: `docs/prds/QUALITY-AUDIT-2026-01-31.md`
 
 **Step 1: 校验所有 active PRD 是否已 100/100**
 
 Run:
+
 ```bash
 python3 - <<'PY'
 import re, glob, os
@@ -165,4 +173,3 @@ PY
 **Step 2: 更新 PRDs 目录 README**
 
 - 为每个 active PRD 补充当前分数（100/100）与最后更新时间。
-
