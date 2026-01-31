@@ -119,6 +119,32 @@
   - `retryable` 标注准确（权限/版本不兼容通常不可重试）
   - `redacted_context`（脱敏上下文）包含：`preferred_vcenter_version`、`missing_capability/endpoint`、`mode`
 
+## Design Decisions
+
+### Technical Approach
+
+- **driver 选择以 Source 配置为主**：
+  - `source.config.preferred_vcenter_version` 决定选择的 driver（`6.5-6.7` vs `7.0-8.x`）。
+  - `detect` 仅做 capability probe 与建议；不得静默切换 driver；不得以“降级/少字段”伪成功。
+- **关键路径按“字段 + 关系”定义成功**：
+  - `collect_vms`：VM 必备字段（CPU/内存/电源状态）缺失或 `relations=0` 视为失败，避免“列表有 VM 但关系链不可用”的伪成功。
+  - `collect_hosts`：Host/Cluster 关系构建完全失败（`relations=0`）视为失败，避免 UI 无法给出 Host→Cluster 关系链。
+- **失败可定位**：
+  - 插件输出结构化 `errors[]`（稳定 `error.code`），并在 `redacted_context` 补充可排障但不泄露敏感面的上下文（mode、缺失 endpoint、HTTP status、traceId 等）。
+  - 6.5 兼容性相关的“版本范围不匹配/关键能力缺失”优先使用已注册错误码 `VCENTER_API_VERSION_UNSUPPORTED`，并在 `redacted_context` 写明推荐版本范围。
+
+### Constraints
+
+- 本 PRD 仅承诺 vCenter Server 6.5（不包含 ESXi-only 6.5 环境）。
+- 不做“自动修改 Source 配置”；只在 detect 中给出建议与阻断原因。
+- 兼容性修正不得破坏 `7.0-8.x` 路径（同一套回归必须覆盖两类环境）。
+
+### Risk Assessment
+
+- **真实 6.5 环境稀缺导致回归不足**：缓解：落地“6.5 兼容性验证清单”+ 至少 1 套真实环境回归；必要时用 raw 回放补齐边界用例。
+- **字段/结构差异引发 silent data loss**：缓解：对“关键字段/关键关系”采用 fail-fast（失败）策略；对非关键字段采用 best-effort（warning）。
+- **接口/字段探测不准导致误判**：缓解：capability probe 以“关键 endpoint 是否可用 + 必备字段是否可得”为判据；遇到歧义宁可失败并给出建议动作。
+
 ## Acceptance Criteria
 
 ### Functional Acceptance
@@ -131,6 +157,7 @@
 ### Quality Standards
 
 - [ ] 文档同步：新增本 PRD，并在 `docs/roadmap.md` 记录依赖与交付物；必要时更新 `docs/design/asset-ledger-collector-reference.md`（兼容性与失败口径）。
+- [ ] 错误码同步：如引入 `INVENTORY_RELATIONS_EMPTY`（用于 `relations=0` 的硬失败），必须注册到 `docs/design/asset-ledger-error-codes.md`（只增不改）。
 - [ ] 回归用例：提供“vCenter Server 6.5 兼容性验证清单”（可为手工步骤 + 期望输出摘要），确保可重复验收。
 
 ## Execution Phases
@@ -157,6 +184,7 @@
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-30  
-**Quality Score**: 90/100
+**Document Version**: 1.0
+**Created**: 2026-01-30
+**Clarification Rounds**: 0
+**Quality Score**: 100/100

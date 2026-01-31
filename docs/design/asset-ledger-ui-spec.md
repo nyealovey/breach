@@ -243,7 +243,7 @@ VM: vm-app-01
   - Host/物理机专用字段
   - Cluster 专用字段
   - 扩展字段（attributes.\*）
-  - 自定义字段（台账字段；若未启用则隐藏或显示空状态）
+  - 台账字段（预设字段集；未设置则显示空状态）
 - 内层分组（schema 视角，B）：
   - 每个分块内部按 canonical 一级 key 分组（identity/network/os/hardware/runtime/storage/location/ownership/service/physical/attributes 等）
 
@@ -256,7 +256,7 @@ VM: vm-app-01
 - key：canonical path（例如 `network.ip_addresses`）
 - value：
   - `labelZh`：中文名（用于 UI 展示）
-  - `groupA`：外层分块归属（通用/VM/Host/Cluster/扩展/自定义）
+  - `groupA`：外层分块归属（通用/VM/Host/Cluster/扩展/台账）
   - `groupB`：内层一级分组（identity/network/...）
   - `formatHint`：可选（bytes/datetime/enum 等）
 

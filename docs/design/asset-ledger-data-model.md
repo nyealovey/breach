@@ -248,9 +248,9 @@
 
 - `event_id`：主键
 - `occurred_at`：事件发生时间
-- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`run.trigger_suppressed`、`duplicate_candidate.ignored`、`asset.merged`、`custom_field.value_updated`）
+- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`run.trigger_suppressed`、`duplicate_candidate.ignored`、`asset.merged`、`asset.ledger_fields_saved`、`asset.ledger_fields_bulk_set`）
 - `actor_user_id`：操作者（系统自动事件可为空）
-- `subject_type`：被影响对象类型（如 `source/run/asset/duplicate_candidate/custom_field_definition/custom_field_value`）
+- `subject_type`：被影响对象类型（如 `source/run/asset/duplicate_candidate/asset_ledger_fields`）
 - `subject_id`：被影响对象标识（字符串；例如 `asset_uuid`、`source_id`）
 - `before`：变更前快照（JSON，可为空）
 - `after`：变更后快照（JSON，可为空）
@@ -271,32 +271,34 @@
 
 - 为常见对象增加可选 typed FK 列（`asset_uuid/source_id/run_id/candidate_id/...`），同时保留 `subject_type + subject_id`，以获得参照完整性与查询性能。
 
-### 2.12 custom_field_definition / custom_field_value（自定义字段）
+### 2.12 asset_ledger_fields（台账字段：预设字段集）
 
-`custom_field_definition`：
+> 目标：提供业务补录字段用于盘点治理，但避免“字段定义可配置”带来的治理与兼容复杂度。
+>
+> 决策：采用**预设字段集（ledger-fields-v1）**，字段集合与类型固定；后续版本不提供新增/删除/停用/改类型能力（仅维护值）。
 
-- `field_id`：主键
-- `key`：字段 key（机器可读，唯一）
-- `name`：字段名（展示）
-- `value_type`：`string/int/float/bool/date/datetime/enum/json`
-- `scope`：`vm/host/cluster/global`
-- `required`：是否必填
-- `enum_options`：枚举值（JSON，可选）
-- `enabled`：启用/停用
-- `created_at` / `updated_at`
+推荐数据模型（示例，一对一）：
 
-`custom_field_value`：
+`asset_ledger_fields`：
 
-- `value_id`：主键
-- `field_id`：外键 → custom_field_definition
-- `asset_uuid`：外键 → asset
-- `value`：值（JSON）
-- `updated_by_user_id`
-- `updated_at`
+- `asset_uuid`：主键 + 外键 → asset
+- 通用（vm + host）：
+  - `region`、`company`、`department`、`system_category`、`system_level`、`biz_owner`（string，可为空）
+- host 专用：
+  - `maintenance_due_date`（date，可为空）
+  - `purchase_date`（date，可为空）
+  - `bmc_ip`（string，可为空；语义为 BMC/ILO 管理 IP，值需做 IPv4 校验）
+  - `cabinet_no`、`rack_position`、`management_code`、`fixed_asset_no`（string，可为空）
+- `updated_at`：更新时间
 
-**关键约束（建议）**
+**关键约束 / 索引建议**
 
-- 唯一：`(field_id, asset_uuid)` 唯一（一资产一字段一个值；历史追溯由审计完成）。
+- 一对一：`asset_uuid` 唯一
+- 索引（筛选/查询）：`company`、`department`、`system_category`、`system_level`
+
+**历史追溯**
+
+- 字段值历史不使用版本表；统一由 `audit_event` 承载（建议 eventType：`asset.ledger_fields_saved`、`asset.ledger_fields_bulk_set`）。
 
 ### 2.13 asset_run_snapshot（按 Run 的资产快照/摘要，物化）
 

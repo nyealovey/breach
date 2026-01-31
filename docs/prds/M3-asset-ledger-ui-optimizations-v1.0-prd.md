@@ -114,7 +114,7 @@
   - Host/物理机专用字段
   - Cluster 专用字段
   - 扩展字段（attributes.\*）
-  - 自定义字段（台账字段；本 PRD 仅定义页面布局与展示占位，编辑能力由 M8/M9 提供）
+  - 台账字段（预设字段集；本 PRD 仅定义页面布局与展示占位，编辑能力由 M8 提供）
 - 内层分组（schema 视角，B）：
   - 每个分块内部，将 canonical.fields 按一级分组（identity/network/os/hardware/runtime/storage/location/ownership/service/physical/attributes 等）展示
 - 每组内字段展示规则：
@@ -163,6 +163,118 @@
 
 - 仍保留当前 outgoing 列表作为“详细信息/调试入口”（折叠或下移）
 
+## Detailed Requirements
+
+### 1) /assets 查询参数与 URL 同步（确定口径）
+
+#### 1.1 URL query 规范化规则
+
+- `q`：trim 后若为空串则从 URL 移除
+- `asset_type` / `exclude_asset_type` / `source_id`：空值移除
+- `page`：默认 1；当筛选/搜索条件变化时必须重置为 1
+- `pageSize`：默认 20；允许 10/20/50/100（与 UI spec 对齐）
+
+#### 1.2 新增筛选的 API 参数（若后端未支持则需扩展）
+
+在 `GET /api/v1/assets` 现有参数基础上，新增（或等价实现）：
+
+- `vm_power_state`：`poweredOn|poweredOff|suspended`（仅对 `asset_type=vm` 生效；其它类型忽略）
+- `ip_missing`：`true|false`（当为 true 时，仅返回 `ip` 为空/缺失的资产；false/缺失视为不启用该筛选）
+
+> 说明：若 API 扩展涉及查询性能，应在实现阶段补齐索引或物化字段方案（见 4.1 风险）。
+
+### 2) 列配置持久化（DB）契约
+
+#### 2.1 Preference key（版本化）
+
+- Key：`assets.table.columns.v1`
+- Value（JSON）：
+  - `visibleColumns: string[]`
+
+约束：
+
+- `visibleColumns` 为空数组代表“显示 0 列”是不合理配置：保存前需校验至少包含 1 列（否则返回 `CONFIG_INVALID_REQUEST`）。
+- 对未知列：读取时忽略（实现“向后兼容”），不阻断页面渲染。
+
+#### 2.2 API（建议）
+
+- `GET /api/v1/me/preferences?key=assets.table.columns.v1`
+  - 404（key 不存在）视为“未设置”，前端使用默认列
+- `PUT /api/v1/me/preferences`
+  - body：`{ key: string, value: Json }`
+  - 幂等：同 key 覆盖写入（last-write-wins）
+
+> 备注：若不新增 preferences API，也可在 `GET /api/v1/auth/me` 中扩展 `preferences`，但需注意响应体膨胀与缓存策略；本 PRD 推荐独立接口。
+
+#### 2.3 数据模型（建议）
+
+新增 `UserPreference`：
+
+- `id`（cuid）
+- `userId`（FK）
+- `key`（string）
+- `value`（json）
+- `createdAt` / `updatedAt`
+- 唯一约束：`(userId, key)`
+
+### 3) 详情页信息组织（可实现、可回归）
+
+#### 3.1 “盘点摘要”字段来源
+
+- 数据来源以现有 API 为准：
+  - `GET /api/v1/assets/:assetUuid`（详情 + canonical 摘要）
+  - `GET /api/v1/assets/:assetUuid/relations`（关系边）
+- Last Seen / Latest Snapshot：
+  - `lastSeenAt` 与 “latest runId/时间”若后端已有聚合字段则直接使用；否则以“最新 source_record / relation_record”推导（实现侧择一并写入设计文档，避免 UI 侧 N+1）。
+
+#### 3.2 canonical 字段“分块/分组”的落地方式
+
+- 维护 `field registry`（结构化字段字典）：
+  - 覆盖 schema 中全部结构化字段 path
+  - 每个字段给出：中文名、分块（通用/VM/Host/Cluster/扩展/台账）、一级分组（identity/network/...）、渲染 hint（bytes/datetime/enum）
+- 渲染优先级：
+  - **盘点摘要**：固定字段集合（Top 10），优先可读性
+  - **分组表格**：展示全部结构化字段 + attributes.*
+  - **调试入口**：canonical 原始 JSON
+
+### 4) 边界条件与错误处理
+
+#### 4.1 性能边界（必须明确）
+
+- `/assets` 列表交互目标：
+  - 翻页/筛选：TTFB ≤ 1s（同机房/同 region），超过则需要后端索引优化或降级策略
+- 详情页：
+  - 关系边与字段渲染需支持“延迟渲染/折叠”，避免一次渲染大对象数组导致卡顿
+
+#### 4.2 权限与降级
+
+- 未登录：统一走 401 → 登录页（或 auth guard）
+- user 角色：
+  - 无写入口（列配置持久化为“个人偏好”，user 允许；但 admin-only 操作必须无入口）
+  - 若后端限制 user 不可写 preferences，则前端可降级为 local state（但本 PRD 目标是 DB 持久化，推荐放开 user 写入 preferences）
+
+## Design Decisions
+
+### Technical Approach
+
+- URL 同步采用“单一事实来源”：
+  - URL query 为事实来源，页面 state 从 URL 派生；变更操作通过更新 URL 触发数据请求，保证可回退/可分享。
+- 列配置采用“DB 持久化 + URL 不承载”：
+  - URL 只表达“当前查询”，不表达“列配置”（避免 URL 过长且难以兼容升级）。
+- 详情页采用“盘点视角默认 + 调试视角可选”：
+  - 默认隐藏 flatten 大表，降低认知负担；需要排障时可打开 canonical JSON。
+
+### Constraints
+
+- 本期不做列顺序拖拽与多套配置（每用户全局一份）。
+- 不做复杂数值区间筛选（CPU/内存范围）以控制范围。
+
+### Risk Assessment
+
+- **查询性能风险**：新增筛选（power_state/ip_missing）可能需要新的索引/聚合字段，否则会拖慢列表。缓解：实现阶段优先在后端做可索引字段（或物化列），并加入压测基线。
+- **字段字典维护成本**：schema 扩展后需同步字典，否则中文名缺失。缓解：将“未覆盖字段”作为 CI 检查项（对比 schema 与 registry）。
+- **偏好配置兼容风险**：列配置 key 升级时可能导致旧配置不可用。缓解：key 版本化（v1/v2）；读取旧 key 时可迁移或直接回退默认列。
+
 ## Acceptance Criteria
 
 ### Functional Acceptance
@@ -208,6 +320,7 @@
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-30  
-**Quality Score**: 92/100
+**Document Version**: 1.0
+**Created**: 2026-01-30
+**Clarification Rounds**: 0
+**Quality Score**: 100/100

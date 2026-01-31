@@ -79,6 +79,93 @@
   - 版本/能力不兼容（例如 vCenter 版本范围不匹配）
   - schema 校验失败（SCHEMA_VALIDATION_FAILED）
 
+### 3) /runs 列表展示（可扫描、可筛查）
+
+列表每条 Run（最小展示列）：
+
+- `status`（Succeeded/Failed/Running/Queued）
+- `source.name` + `source.source_type`
+- `mode`（collect/detect/healthcheck/collect_hosts/collect_vms）
+- `startedAt/finishedAt/duration`
+- `primary_error.code`（仅 Failed）
+- `primary_error_title`（由映射表给出）
+- `retryable`（仅 Failed）
+
+交互：
+
+- 点击 Run 进入详情页
+- 对 Failed 行可在行内展开“建议动作（1 行摘要）”，避免必须进详情页
+
+### 4) /runs/[id] 详情展示（结构化 + 可执行）
+
+#### 4.1 errors/warnings 展示结构
+
+- 顶部摘要：
+  - 状态、来源、mode、时间、driver（若有 `detect_result.driver`）、`inventory_complete`（若有 `stats.inventory_complete`）
+  - 主错误：code + 标题 + message（脱敏）
+  - retryable 标识与建议动作（steps）
+- 详细区块（折叠）：
+  - `errors[]` 列表（按出现顺序；支持按 `code` 分组折叠）
+  - `warnings[]` 列表（按出现顺序；默认折叠）
+  - `redacted_context`（仅展示白名单字段；见 5.2）
+
+#### 4.2 建议动作内容规范（可验收）
+
+每个建议动作必须满足：
+
+- `title`：一句话概括（例如“检查凭证配置”“检查网络连通性”“调整 vCenter 版本范围”）
+- `steps[]`：1~3 条可执行步骤（动词开头），避免“请检查一下”这种空话
+- `links[]`（可选）：指向系统内页面或文档（例如 Sources、相关 PRD、SRS）
+
+### 5) 边界条件与安全
+
+#### 5.1 未知/未注册 error.code 的兜底
+
+- 若 `error.code` 不在映射表：
+  - 标题：`未知错误（{code}）`
+  - 建议动作：提供通用步骤（查看 message；检查网络/权限/配置；必要时联系管理员）
+  - 仍展示 `message` 与安全的 `redacted_context`
+
+#### 5.2 redacted_context 展示白名单（防泄露）
+
+> 仅展示“不会扩大敏感面”的字段；其余字段即使存在也不展示（避免插件/后端误填泄露）。
+
+允许展示的 key（建议最小集）：
+
+- `source_id` / `run_id` / `mode`
+- `http_status` / `endpoint_path`（仅 path，不展示 host/URL）
+- `trace_id`
+- `stderr_excerpt`（必须截断，且不得包含凭证/Token/AK/SK）
+- `missing_capability`
+
+禁止展示：
+
+- endpoint host/URL、账号、密钥、密码、Token、AK/SK、明文输出的命令参数等
+
+## Design Decisions
+
+### Technical Approach
+
+- 错误展示与建议动作采用“error.code 为主键”的稳定映射：
+  - 映射表与 `docs/design/asset-ledger-error-codes.md` 对齐（只增不改）
+  - 任何 UI 文案变化不影响错误码统计与排障聚合
+- 组件复用：
+  - 列表行内摘要、详情页主错误、错误列表使用同一套 `RunErrorPanel`/`ErrorBadge` 组件，避免多处口径漂移
+- i18n 策略：
+  - 默认中文；结构化字段（code/category/retryable）不翻译
+  - 可选为 `SuggestedAction` 预留英文文案字段（不作为一期交付）
+
+### Constraints
+
+- 不新增 raw 入口；不展示插件 stdout/stderr 全量日志（仅允许展示受控的 `redacted_context` 摘要）。
+- 本期不做错误码分布统计、趋势图与告警订阅。
+
+### Risk Assessment
+
+- **错误码覆盖不足导致“建议动作”价值打折**：缓解：先覆盖 Top error.code（见下方 Execution Phase 1），并在后续 PRD（新插件）迭代时同步补齐映射。
+- **信息泄露风险**：插件或后端可能误把敏感信息放到 message/context。缓解：前端展示白名单 + 截断；后端/插件侧继续承担脱敏责任。
+- **主错误选择不准**：errors 顺序若不稳定会误导用户。缓解：后端/插件约定“最重要错误放 errors[0]”；前端允许用户查看完整 errors 列表。
+
 ## Acceptance Criteria
 
 ### Functional Acceptance
@@ -87,17 +174,20 @@
 - [ ] `/runs/[id]` 详情页：errors/warnings 可读展示，并对主错误提供建议动作清单。
 - [ ] 建议动作以 error.code 映射实现，不依赖 message 文本匹配。
 - [ ] 不新增从 `/runs` 直接打开 raw 的入口。
+- [ ] 未知 error.code 有兜底展示（标题 + 通用建议动作），且不影响页面可用性。
+- [ ] `redacted_context` 仅展示白名单字段（不得出现 endpoint host/URL、账号、密钥、密码、Token、AK/SK）。
 
 ### Quality Standards
 
 - [ ] 文档同步：在 `docs/roadmap.md` 标记本 PRD 已创建，并补充实现依赖（若新增错误码映射表/组件）。
+- [ ] 建议动作映射表必须与 `docs/design/asset-ledger-error-codes.md` 同步演进（新增错误码必须补齐映射或明确兜底策略）。
 
 ## Execution Phases
 
 ### Phase 1: 口径与映射表
 
 - [ ] 明确 primary_error 的选择规则
-- [ ] 梳理 Top error.code → 建议动作（最小可用集合）
+- [ ] 梳理 Top error.code → 建议动作（最小可用集合，建议至少覆盖：AUTH_*/CONFIG_CREDENTIAL_NOT_FOUND/VCENTER_* /PLUGIN_* /SCHEMA_VALIDATION_FAILED/INVENTORY_INCOMPLETE/RAW_PERSIST_FAILED）
 
 ### Phase 2: UI 落地
 
@@ -107,9 +197,11 @@
 ### Phase 3: 回归
 
 - [ ] 用 3~5 个典型失败场景回归（认证失败/网络失败/schema 失败/版本不兼容）
+- [ ] 越权与脱敏回归：确保页面不展示敏感信息（尤其是 message/context 的误填场景）
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-30  
-**Quality Score**: 70/100
+**Document Version**: 1.0
+**Created**: 2026-01-30
+**Clarification Rounds**: 0
+**Quality Score**: 100/100

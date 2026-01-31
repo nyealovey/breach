@@ -5,6 +5,7 @@
 - MVP 历史 PRD 已归档到：`docs/mvp/prds/`
 - 当前需求口径/验收依据（SRS）：`docs/requirements/asset-ledger-srs.md`
 - 里程碑规划入口：`docs/roadmap.md`
+- 质量审计（PRD 评分推进到 100 分的工作台）：`docs/prds/QUALITY-AUDIT-2026-01-31.md`
 
 ## 当前规划中的 PRD
 
@@ -17,10 +18,13 @@
 - M5：人工合并（Merge）与审计：`docs/prds/M5-asset-ledger-asset-merge-v1.0-prd.md`
 - M6：PVE 采集（兼容 5.0～8.0）：`docs/prds/M6-asset-ledger-pve-5-8-compat-v1.0-prd.md`
 - M7：普通用户（user）只读访问：`docs/prds/M7-asset-ledger-user-readonly-access-v1.0-prd.md`
-- M8：自定义字段（台账字段扩展）：`docs/prds/M8-asset-ledger-custom-fields-v1.0-prd.md`
+- M8：台账字段闭环（预设字段集）：`docs/prds/M8-asset-ledger-ledger-fields-closed-loop-v1.0-prd.md`
 - M8：导出全量台账（CSV）：`docs/prds/M8-asset-ledger-export-csv-v1.0-prd.md`
-- M9：批量维护台账字段（批量编辑自定义字段 + 资产详情一键保存）：`docs/prds/M9-asset-ledger-bulk-edit-custom-fields-v1.0-prd.md`
 - M10：Windows 物理机采集：`docs/prds/M10-asset-ledger-windows-physical-collector-v1.0-prd.md`
 - M10：Linux 物理机采集：`docs/prds/M10-asset-ledger-linux-physical-collector-v1.0-prd.md`
 - M11：阿里云采集（ECS 为主）：`docs/prds/M11-asset-ledger-aliyun-collector-v1.0-prd.md`
-- M12：资产历史追溯（按 Run）：`docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`
+- M12：资产历史追溯（按资产）：`docs/prds/M12-asset-ledger-asset-history-v1.0-prd.md`
+
+## 已删除（历史 PRD 清理）
+
+按最新决策：`deprecated` PRD 不再保留在仓库内，已于 **2026-01-31** 直接删除（可通过 git history 追溯）。

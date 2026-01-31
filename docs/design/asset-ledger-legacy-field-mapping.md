@@ -46,7 +46,7 @@ Schema 定义见：`docs/design/asset-ledger-json-schema.md`（已新增 `networ
     - `attributes.disk_used_bytes`（number，bytes，已用）
   - 说明：BMC/Redfish 通常只能拿到物理盘容量，拿不到文件系统 used；used 需要 OS/Agent/监控侧补齐。
 - 敏感信息（如“管理码”）：**禁止明文入库**；仅写 `attributes.management_secret_ref`（密钥引用）。
-- “状态/分类/服务级别”等治理字段：如暂未实现自定义字段，建议先保留原值到 `attributes.legacy_*`，避免污染结构化字段枚举。
+- “状态/分类/服务级别”等治理字段：如暂未实现台账字段（预设字段集），建议先保留原值到 `attributes.legacy_*`，避免污染结构化字段枚举。
 
 ## 1. Host（物理机）字段映射（legacy → normalized-v1）
 

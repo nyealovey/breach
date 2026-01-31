@@ -14,7 +14,7 @@
   - 概念数据模型：`docs/design/asset-ledger-data-model.md`
   - normalized/canonical JSON Schema：`docs/design/asset-ledger-json-schema.md`
 
-> 目标：台账“本体”自研（入库、关系、疑似重复、人工合并、审计、自定义字段等），采集插件尽量基于成熟开源组件/官方 SDK，插件只做“薄适配层”，避免重复造轮子。
+> 目标：台账“本体”自研（入库、关系、疑似重复、人工合并、审计、台账字段等），采集插件尽量基于成熟开源组件/官方 SDK，插件只做“薄适配层”，避免重复造轮子。
 
 ## 1. 设计原则
 

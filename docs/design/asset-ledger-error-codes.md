@@ -1,7 +1,7 @@
 # 资产台账错误码规范（Error Codes）
 
-版本：v1.1  
-日期：2026-01-29
+版本：v1.3
+日期：2026-01-31
 
 ## 文档简介
 
@@ -17,7 +17,7 @@
 - 日志规范：`docs/design/asset-ledger-logging-spec.md`
 - 采集插件契约：`docs/design/asset-ledger-collector-reference.md`
 
-> 范围说明：本错误码表按 **vCenter MVP v1.0** 覆盖（仅 admin、仅 vCenter、raw 不提供 UI/API 入口、历史对比后置）。
+> 范围说明：本错误码表以 **vCenter MVP v1.0** 为基线，并按后续需求持续扩展（只增不改）。
 
 ## 1. 字段口径（强约束）
 
@@ -43,7 +43,7 @@
 - `message` 必须可读且**脱敏**（不得包含任何明文凭证/Token/AK/SK/密码）。
 - `redacted_context` 只允许放安全上下文（例如 endpoint host、HTTP status、trace_id、stderr_excerpt 截断、source_id/run_id/mode 等）。
 
-## 2. 错误码注册表（vCenter MVP v1.0）
+## 2. 错误码注册表（基线 + 增量）
 
 > 表内 “默认 HTTP 状态码”仅适用于 `http.request`；Worker/插件场景不适用可留空。
 
@@ -54,6 +54,10 @@
 | AUTH_FORBIDDEN                    | web    | permission | false     | 403              | 已登录但无权限（v1.0 仅 admin；预留）                                                                            |
 | AUTH_SESSION_EXPIRED              | web    | auth       | false     | 401              | 会话过期（session 失效）                                                                                         |
 | CONFIG_INVALID_REQUEST            | web    | config     | false     | 400              | 请求参数校验失败（Zod/表单校验）                                                                                 |
+| CONFIG_LEDGER_FIELD_KEY_INVALID   | web    | config     | false     | 400              | 台账字段 key 非法/不允许                                                                                         |
+| CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH | web | config   | false     | 400              | 台账字段与资产类型不匹配（例如将 host 字段写入 vm）                                                               |
+| CONFIG_LEDGER_FIELD_VALUE_INVALID | web    | config     | false     | 400              | 台账字段值格式非法（date/ipv4 等）                                                                               |
+| CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED | web   | config     | false     | 400              | 台账字段批量更新超限（N>100）                                                                                     |
 | CONFIG_INVALID_TIMEZONE           | web    | config     | false     | 400              | 调度组时区非法（非 IANA TZ）                                                                                     |
 | CONFIG_INVALID_HHMM               | web    | config     | false     | 400              | 调度组触发时间非法（非 `HH:mm`）                                                                                 |
 | CONFIG_SOURCE_NOT_FOUND           | web    | config     | false     | 404              | 来源不存在（Source 不存在）                                                                                      |
@@ -61,6 +65,9 @@
 | CONFIG_RUN_NOT_FOUND              | web    | config     | false     | 404              | Run 不存在                                                                                                       |
 | CONFIG_ASSET_NOT_FOUND            | web    | config     | false     | 404              | 资产不存在                                                                                                       |
 | CONFIG_SOURCE_RECORD_NOT_FOUND    | web    | config     | false     | 404              | 源记录不存在（SourceRecord 不存在）                                                                              |
+| CONFIG_PREFERENCE_NOT_FOUND       | web    | config     | false     | 404              | 用户偏好不存在（preference key 未设置）                                                                         |
+| CONFIG_EXPORT_NOT_FOUND           | web    | config     | false     | 404              | 导出任务不存在（Export 不存在）                                                                                 |
+| CONFIG_EXPORT_EXPIRED             | web    | config     | false     | 410              | 导出文件已下载失效（下载即失效策略）                                                                            |
 | CONFIG_SCHEDULE_GROUP_NOT_FOUND   | web    | config     | false     | 404              | 调度组不存在                                                                                                     |
 | CONFIG_DUPLICATE_NAME             | web    | config     | false     | 409              | 名称重复导致冲突                                                                                                 |
 | CONFIG_RESOURCE_CONFLICT          | web    | config     | false     | 409              | 资源冲突（例如存在依赖/存在活动 Run）                                                                            |
@@ -72,6 +79,7 @@
 | PLUGIN_RESPONSE_INVALID           | worker | parse      | false     |                  | 插件响应缺少必填字段/结构不符合契约（例如缺少 `assets[]`）                                                       |
 | SCHEMA_VALIDATION_FAILED          | worker | parse      | false     |                  | `normalized-v1`/canonical 输出 schema 校验失败                                                                   |
 | INVENTORY_INCOMPLETE              | worker | parse      | false     |                  | collect 未提供完整清单（`inventory_complete=false`）                                                             |
+| INVENTORY_RELATIONS_EMPTY         | worker | parse      | false     |                  | 虚拟化类来源关系清单为空（`relations=0`），会导致关系链不可用（禁止伪成功）                                      |
 | RAW_PERSIST_FAILED                | worker | unknown    | true      |                  | raw/元数据写入失败（raw 永久保留语义无法满足）                                                                   |
 | DB_WRITE_FAILED                   | worker | unknown    | true      |                  | 数据库写入失败（Run/source_record/relation 等持久化失败）                                                        |
 | DB_READ_FAILED                    | worker | unknown    | true      |                  | 数据库读取失败                                                                                                   |
@@ -84,6 +92,31 @@
 | VCENTER_PARSE_ERROR               | plugin | parse      | false     |                  | vCenter 响应解析失败/协议不兼容                                                                                  |
 | VCENTER_API_VERSION_UNSUPPORTED   | plugin | parse      | false     |                  | vCenter API 版本/能力不支持（需升级 driver 或明确失败）                                                          |
 | VCENTER_HOST_DETAIL_NOT_FOUND     | plugin | network    | false     |                  | **DEPRECATED**：不再允许降级。应改为以 `VCENTER_API_VERSION_UNSUPPORTED` 失败并提示选择正确版本范围/升级 vCenter |
+| PVE_CONFIG_INVALID                | plugin | config     | false     |                  | PVE 输入配置非法（endpoint/regions/认证方式等）                                                                  |
+| PVE_AUTH_FAILED                   | plugin | auth       | false     |                  | PVE 认证失败（Token/用户名密码错误）                                                                             |
+| PVE_PERMISSION_DENIED             | plugin | permission | false     |                  | PVE 权限不足（无法枚举 inventory/读取必要字段）                                                                  |
+| PVE_NETWORK_ERROR                 | plugin | network    | true      |                  | PVE 网络/连接失败（DNS/TCP/超时等）                                                                              |
+| PVE_TLS_ERROR                     | plugin | network    | false     |                  | PVE TLS/证书失败                                                                                                  |
+| PVE_RATE_LIMIT                    | plugin | rate_limit | true      |                  | PVE API 限流/节流                                                                                                 |
+| PVE_PARSE_ERROR                   | plugin | parse      | false     |                  | PVE 响应解析失败/协议不兼容                                                                                       |
+| HYPERV_CONFIG_INVALID             | plugin | config     | false     |                  | Hyper-V 输入配置非法（endpoint/port/scope 等）                                                                   |
+| HYPERV_AUTH_FAILED                | plugin | auth       | false     |                  | Hyper-V 认证失败（用户名/密码/域错误）                                                                           |
+| HYPERV_PERMISSION_DENIED          | plugin | permission | false     |                  | Hyper-V 权限不足（无法枚举 inventory/读取必要字段）                                                              |
+| HYPERV_NETWORK_ERROR              | plugin | network    | true      |                  | Hyper-V 网络/连接失败（DNS/TCP/超时等）                                                                          |
+| HYPERV_TLS_ERROR                  | plugin | network    | false     |                  | Hyper-V TLS/证书失败                                                                                              |
+| HYPERV_PARSE_ERROR                | plugin | parse      | false     |                  | Hyper-V 响应解析失败/协议不兼容                                                                                   |
+| ALIYUN_CONFIG_INVALID             | plugin | config     | false     |                  | 阿里云输入配置非法（regions 缺失/格式不合法等）                                                                  |
+| ALIYUN_AUTH_FAILED                | plugin | auth       | false     |                  | 阿里云认证失败（AK/SK 或 STS Token 无效）                                                                        |
+| ALIYUN_PERMISSION_DENIED          | plugin | permission | false     |                  | 阿里云权限不足（RAM 权限缺失）                                                                                   |
+| ALIYUN_NETWORK_ERROR              | plugin | network    | true      |                  | 阿里云网络/请求失败（DNS/TCP/超时等）                                                                            |
+| ALIYUN_RATE_LIMIT                 | plugin | rate_limit | true      |                  | 阿里云 API 限流/节流                                                                                              |
+| ALIYUN_PARSE_ERROR                | plugin | parse      | false     |                  | 阿里云响应解析失败/协议不兼容                                                                                     |
+| PHYSICAL_CONFIG_INVALID           | plugin | config     | false     |                  | 物理机来源输入配置非法（endpoint/port/auth_type 等）                                                             |
+| PHYSICAL_AUTH_FAILED              | plugin | auth       | false     |                  | 物理机来源认证失败（SSH/WinRM 凭证错误）                                                                          |
+| PHYSICAL_PERMISSION_DENIED        | plugin | permission | false     |                  | 物理机来源权限不足（无法读取必要字段）                                                                            |
+| PHYSICAL_NETWORK_ERROR            | plugin | network    | true      |                  | 物理机来源网络/连接失败（DNS/TCP/超时等）                                                                         |
+| PHYSICAL_TLS_ERROR                | plugin | network    | false     |                  | 物理机来源 TLS/证书失败（WinRM HTTPS 等）                                                                         |
+| PHYSICAL_PARSE_ERROR              | plugin | parse      | false     |                  | 物理机来源响应解析失败/协议不兼容                                                                                 |
 | INTERNAL_ERROR                    | common | unknown    | false     | 500              | 未分类内部错误                                                                                                   |
 | INTERNAL_NOT_IMPLEMENTED          | common | unknown    | false     | 501              | 未实现功能                                                                                                       |
 
@@ -107,12 +140,12 @@
 
 ## 4. 完整错误码枚举（TypeScript）
 
-> 以下为 v1.0 完整错误码枚举，可直接用于代码生成。
+> 以下为 v1.x 完整错误码枚举，可直接用于代码生成。
 
 ```typescript
 /**
  * 资产台账系统错误码枚举
- * @version v1.0
+ * @version v1.3
  */
 export const ErrorCode = {
   // ========== Web 层（AUTH_* / CONFIG_*）==========
@@ -122,6 +155,10 @@ export const ErrorCode = {
   AUTH_SESSION_EXPIRED: 'AUTH_SESSION_EXPIRED',
 
   CONFIG_INVALID_REQUEST: 'CONFIG_INVALID_REQUEST',
+  CONFIG_LEDGER_FIELD_KEY_INVALID: 'CONFIG_LEDGER_FIELD_KEY_INVALID',
+  CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH: 'CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH',
+  CONFIG_LEDGER_FIELD_VALUE_INVALID: 'CONFIG_LEDGER_FIELD_VALUE_INVALID',
+  CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED: 'CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED',
   CONFIG_INVALID_TIMEZONE: 'CONFIG_INVALID_TIMEZONE',
   CONFIG_INVALID_HHMM: 'CONFIG_INVALID_HHMM',
   CONFIG_SOURCE_NOT_FOUND: 'CONFIG_SOURCE_NOT_FOUND',
@@ -129,6 +166,9 @@ export const ErrorCode = {
   CONFIG_RUN_NOT_FOUND: 'CONFIG_RUN_NOT_FOUND',
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
   CONFIG_SOURCE_RECORD_NOT_FOUND: 'CONFIG_SOURCE_RECORD_NOT_FOUND',
+  CONFIG_PREFERENCE_NOT_FOUND: 'CONFIG_PREFERENCE_NOT_FOUND',
+  CONFIG_EXPORT_NOT_FOUND: 'CONFIG_EXPORT_NOT_FOUND',
+  CONFIG_EXPORT_EXPIRED: 'CONFIG_EXPORT_EXPIRED',
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: 'CONFIG_SCHEDULE_GROUP_NOT_FOUND',
   CONFIG_DUPLICATE_NAME: 'CONFIG_DUPLICATE_NAME',
   CONFIG_RESOURCE_CONFLICT: 'CONFIG_RESOURCE_CONFLICT',
@@ -143,6 +183,7 @@ export const ErrorCode = {
 
   SCHEMA_VALIDATION_FAILED: 'SCHEMA_VALIDATION_FAILED',
   INVENTORY_INCOMPLETE: 'INVENTORY_INCOMPLETE',
+  INVENTORY_RELATIONS_EMPTY: 'INVENTORY_RELATIONS_EMPTY',
   RAW_PERSIST_FAILED: 'RAW_PERSIST_FAILED',
   DB_WRITE_FAILED: 'DB_WRITE_FAILED',
   DB_READ_FAILED: 'DB_READ_FAILED',
@@ -157,6 +198,36 @@ export const ErrorCode = {
   VCENTER_PARSE_ERROR: 'VCENTER_PARSE_ERROR',
   VCENTER_API_VERSION_UNSUPPORTED: 'VCENTER_API_VERSION_UNSUPPORTED',
   VCENTER_HOST_DETAIL_NOT_FOUND: 'VCENTER_HOST_DETAIL_NOT_FOUND',
+
+  // ========== 插件层（PVE_* / HYPERV_* / ALIYUN_* / PHYSICAL_*）==========
+  PVE_CONFIG_INVALID: 'PVE_CONFIG_INVALID',
+  PVE_AUTH_FAILED: 'PVE_AUTH_FAILED',
+  PVE_PERMISSION_DENIED: 'PVE_PERMISSION_DENIED',
+  PVE_NETWORK_ERROR: 'PVE_NETWORK_ERROR',
+  PVE_TLS_ERROR: 'PVE_TLS_ERROR',
+  PVE_RATE_LIMIT: 'PVE_RATE_LIMIT',
+  PVE_PARSE_ERROR: 'PVE_PARSE_ERROR',
+
+  HYPERV_CONFIG_INVALID: 'HYPERV_CONFIG_INVALID',
+  HYPERV_AUTH_FAILED: 'HYPERV_AUTH_FAILED',
+  HYPERV_PERMISSION_DENIED: 'HYPERV_PERMISSION_DENIED',
+  HYPERV_NETWORK_ERROR: 'HYPERV_NETWORK_ERROR',
+  HYPERV_TLS_ERROR: 'HYPERV_TLS_ERROR',
+  HYPERV_PARSE_ERROR: 'HYPERV_PARSE_ERROR',
+
+  ALIYUN_CONFIG_INVALID: 'ALIYUN_CONFIG_INVALID',
+  ALIYUN_AUTH_FAILED: 'ALIYUN_AUTH_FAILED',
+  ALIYUN_PERMISSION_DENIED: 'ALIYUN_PERMISSION_DENIED',
+  ALIYUN_NETWORK_ERROR: 'ALIYUN_NETWORK_ERROR',
+  ALIYUN_RATE_LIMIT: 'ALIYUN_RATE_LIMIT',
+  ALIYUN_PARSE_ERROR: 'ALIYUN_PARSE_ERROR',
+
+  PHYSICAL_CONFIG_INVALID: 'PHYSICAL_CONFIG_INVALID',
+  PHYSICAL_AUTH_FAILED: 'PHYSICAL_AUTH_FAILED',
+  PHYSICAL_PERMISSION_DENIED: 'PHYSICAL_PERMISSION_DENIED',
+  PHYSICAL_NETWORK_ERROR: 'PHYSICAL_NETWORK_ERROR',
+  PHYSICAL_TLS_ERROR: 'PHYSICAL_TLS_ERROR',
+  PHYSICAL_PARSE_ERROR: 'PHYSICAL_PARSE_ERROR',
 
   // ========== 通用（INTERNAL_*）==========
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -181,6 +252,8 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
 | `VCENTER_`  | Plugin | vCenter 插件专用         |
 | `PVE_`      | Plugin | PVE 插件专用（预留）     |
 | `HYPERV_`   | Plugin | Hyper-V 插件专用（预留） |
+| `ALIYUN_`   | Plugin | 阿里云插件专用（预留）   |
+| `PHYSICAL_` | Plugin | 物理机/第三方插件专用（预留） |
 | `INTERNAL_` | 通用   | 内部错误/未分类          |
 
 ### 5.2 新增错误码流程
@@ -243,6 +316,22 @@ export const ErrorMessages: Record<
     zh: '请求参数校验失败：{{details}}',
     en: 'Request validation failed: {{details}}',
   },
+  CONFIG_LEDGER_FIELD_KEY_INVALID: {
+    zh: '台账字段非法：{{field_key}}',
+    en: 'Invalid ledger field: {{field_key}}',
+  },
+  CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH: {
+    zh: '台账字段与资产类型不匹配：{{asset_type}} / {{field_key}}',
+    en: 'Ledger field asset type mismatch: {{asset_type}} / {{field_key}}',
+  },
+  CONFIG_LEDGER_FIELD_VALUE_INVALID: {
+    zh: '台账字段值格式非法：{{field_key}}',
+    en: 'Invalid ledger field value: {{field_key}}',
+  },
+  CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED: {
+    zh: '批量更新超限：{{limit}}',
+    en: 'Bulk update limit exceeded: {{limit}}',
+  },
   CONFIG_INVALID_TIMEZONE: {
     zh: '时区格式非法，请使用 IANA 时区格式（如 Asia/Shanghai）',
     en: 'Invalid timezone format, please use IANA timezone (e.g., Asia/Shanghai)',
@@ -270,6 +359,18 @@ export const ErrorMessages: Record<
   CONFIG_SOURCE_RECORD_NOT_FOUND: {
     zh: '源记录不存在：{{record_id}}',
     en: 'Source record not found: {{record_id}}',
+  },
+  CONFIG_PREFERENCE_NOT_FOUND: {
+    zh: '用户偏好未设置：{{key}}',
+    en: 'Preference not found: {{key}}',
+  },
+  CONFIG_EXPORT_NOT_FOUND: {
+    zh: '导出任务不存在：{{export_id}}',
+    en: 'Export not found: {{export_id}}',
+  },
+  CONFIG_EXPORT_EXPIRED: {
+    zh: '导出文件已失效（下载即失效）：{{export_id}}',
+    en: 'Export expired (single-download): {{export_id}}',
   },
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: {
     zh: '调度组不存在：{{group_id}}',
@@ -314,6 +415,10 @@ export const ErrorMessages: Record<
   INVENTORY_INCOMPLETE: {
     zh: '采集清单不完整，无法保证数据一致性',
     en: 'Inventory incomplete, cannot guarantee data consistency',
+  },
+  INVENTORY_RELATIONS_EMPTY: {
+    zh: '关系清单为空（relations=0），虚拟化关系链不可用',
+    en: 'Relations empty (relations=0), virtualization relation chain unavailable',
   },
   RAW_PERSIST_FAILED: {
     zh: '原始数据存储失败，请检查存储配置',
@@ -362,6 +467,106 @@ export const ErrorMessages: Record<
   VCENTER_HOST_DETAIL_NOT_FOUND: {
     zh: 'vCenter Host 详情接口不可用（已废弃降级口径）；请调整 Source 版本范围或升级 vCenter',
     en: 'vCenter host detail endpoint unavailable (fallback deprecated); adjust source version range or upgrade vCenter',
+  },
+  PVE_CONFIG_INVALID: {
+    zh: 'PVE 配置无效：{{details}}',
+    en: 'PVE configuration invalid: {{details}}',
+  },
+  PVE_AUTH_FAILED: {
+    zh: 'PVE 认证失败，请检查 Token 或用户名密码',
+    en: 'PVE authentication failed, please check token or credentials',
+  },
+  PVE_PERMISSION_DENIED: {
+    zh: 'PVE 权限不足，无法访问所需资源',
+    en: 'PVE permission denied, cannot access required resources',
+  },
+  PVE_NETWORK_ERROR: {
+    zh: 'PVE 网络连接失败：{{endpoint}}',
+    en: 'PVE network connection failed: {{endpoint}}',
+  },
+  PVE_TLS_ERROR: {
+    zh: 'PVE TLS/证书错误',
+    en: 'PVE TLS/certificate error',
+  },
+  PVE_RATE_LIMIT: {
+    zh: 'PVE API 请求被限流，请稍后重试',
+    en: 'PVE API rate limited, please retry later',
+  },
+  PVE_PARSE_ERROR: {
+    zh: 'PVE 响应解析失败',
+    en: 'PVE response parse error',
+  },
+  HYPERV_CONFIG_INVALID: {
+    zh: 'Hyper-V 配置无效：{{details}}',
+    en: 'Hyper-V configuration invalid: {{details}}',
+  },
+  HYPERV_AUTH_FAILED: {
+    zh: 'Hyper-V 认证失败，请检查账号/密码/域',
+    en: 'Hyper-V authentication failed, please check account/password/domain',
+  },
+  HYPERV_PERMISSION_DENIED: {
+    zh: 'Hyper-V 权限不足，无法访问所需资源',
+    en: 'Hyper-V permission denied, cannot access required resources',
+  },
+  HYPERV_NETWORK_ERROR: {
+    zh: 'Hyper-V 网络连接失败：{{endpoint}}',
+    en: 'Hyper-V network connection failed: {{endpoint}}',
+  },
+  HYPERV_TLS_ERROR: {
+    zh: 'Hyper-V TLS/证书错误',
+    en: 'Hyper-V TLS/certificate error',
+  },
+  HYPERV_PARSE_ERROR: {
+    zh: 'Hyper-V 响应解析失败',
+    en: 'Hyper-V response parse error',
+  },
+  ALIYUN_CONFIG_INVALID: {
+    zh: '阿里云配置无效：{{details}}',
+    en: 'Aliyun configuration invalid: {{details}}',
+  },
+  ALIYUN_AUTH_FAILED: {
+    zh: '阿里云认证失败，请检查 AK/SK 或 STS Token',
+    en: 'Aliyun authentication failed, please check AK/SK or STS token',
+  },
+  ALIYUN_PERMISSION_DENIED: {
+    zh: '阿里云权限不足，请检查 RAM 权限',
+    en: 'Aliyun permission denied, please check RAM permissions',
+  },
+  ALIYUN_NETWORK_ERROR: {
+    zh: '阿里云网络/请求失败：{{details}}',
+    en: 'Aliyun network/request failed: {{details}}',
+  },
+  ALIYUN_RATE_LIMIT: {
+    zh: '阿里云 API 请求被限流，请稍后重试',
+    en: 'Aliyun API rate limited, please retry later',
+  },
+  ALIYUN_PARSE_ERROR: {
+    zh: '阿里云响应解析失败',
+    en: 'Aliyun response parse error',
+  },
+  PHYSICAL_CONFIG_INVALID: {
+    zh: '物理机来源配置无效：{{details}}',
+    en: 'Physical source configuration invalid: {{details}}',
+  },
+  PHYSICAL_AUTH_FAILED: {
+    zh: '物理机来源认证失败，请检查凭证',
+    en: 'Physical source authentication failed, please check credentials',
+  },
+  PHYSICAL_PERMISSION_DENIED: {
+    zh: '物理机来源权限不足，无法读取所需信息',
+    en: 'Physical source permission denied, cannot read required information',
+  },
+  PHYSICAL_NETWORK_ERROR: {
+    zh: '物理机来源网络连接失败：{{endpoint}}',
+    en: 'Physical source network connection failed: {{endpoint}}',
+  },
+  PHYSICAL_TLS_ERROR: {
+    zh: '物理机来源 TLS/证书错误',
+    en: 'Physical source TLS/certificate error',
+  },
+  PHYSICAL_PARSE_ERROR: {
+    zh: '物理机来源响应解析失败',
+    en: 'Physical source response parse error',
   },
   INTERNAL_ERROR: {
     zh: '系统内部错误，请联系管理员',

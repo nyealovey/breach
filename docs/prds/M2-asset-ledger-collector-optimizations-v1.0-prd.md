@@ -103,6 +103,32 @@ canonical 聚合后字段落点：
   - 若无权限读取 datastore 列表：记录 warning（错误码稳定），Run 仍可成功
   - 若解析失败/数据格式异常：记录 warning，并尽力保留已解析部分
 
+## Design Decisions
+
+### Technical Approach
+
+- **字段落点优先结构化**：新增 `normalized-v1.storage.datastores[]`（而非塞进 `attributes.*`），保证：
+  - UI 可稳定渲染（字段名/类型固定）
+  - canonical 聚合可保留 provenance（sources）
+- **采集与“总容量”同口径**：
+  - 列表与 sum 必须共享同一过滤规则（例如排除 NFS/NFS41/vSAN 等，若现有实现如此），避免出现“明细求和 ≠ 总容量”的争议。
+  - 若现有总容量口径未来调整，list 口径必须同步调整（同 PRD 的回归项覆盖）。
+- **性能与稳定性**：
+  - 优先使用批量能力（SOAP PropertyCollector 或等价机制）获取 Host→Datastore 关联与 `summary.capacity`，避免 N+1。
+  - 对单个 datastore 明细解析失败：best-effort 跳过该项并记录 warning，不阻断整个 Run（本字段为增强项）。
+
+### Constraints
+
+- 本期只采集 `name/capacity_bytes`；不采集 used/free/committed 等使用量字段。
+- canonical 数组字段暂不引入 datastore 稳定 ID：去重以 `name` 为主（仅保证“同 Source 内稳定”；跨来源并集去重允许存在同名冲突）。
+- 单 Host 的 datastores 明细可能较多；UI 必须支持滚动/分页式展示（前端分页即可），避免卡顿。
+
+### Risk Assessment
+
+- **口径不一致风险（sum 与 list 过滤不同）**：缓解：在插件/核心侧复用同一过滤函数；回归用例强制校验 `sum(list) == total`。
+- **同名 datastore 冲突风险**：缓解：在 UI 中允许同名展示多行，并在 provenance 中可追溯来源证据；后续如需要再引入 `datastore_id/url` 增强键。
+- **数据量膨胀风险**：datastore 明细会显著增大 raw/canonical 体积。缓解：raw 压缩存储（已有）；必要时对 UI 采用折叠/按需渲染；并在回归中记录“典型环境 datastores 数量”作为容量基线。
+
 ## Acceptance Criteria
 
 ### Functional Acceptance
@@ -137,6 +163,7 @@ canonical 聚合后字段落点：
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-30  
-**Quality Score**: 90/100
+**Document Version**: 1.0
+**Created**: 2026-01-30
+**Clarification Rounds**: 0
+**Quality Score**: 100/100

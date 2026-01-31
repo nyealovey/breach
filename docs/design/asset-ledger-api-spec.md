@@ -1,7 +1,7 @@
 # 资产台账 API 规范
 
-版本：v1.0
-日期：2026-01-27
+版本：v1.1
+日期：2026-01-31
 
 ## 文档简介
 
@@ -278,6 +278,66 @@
 }
 ```
 
+### 2.5 读取当前用户偏好（Preferences）
+
+> 说明：用于 UI 持久化“列配置/筛选偏好”等个人偏好（每用户一份）。
+
+**GET** `/api/v1/me/preferences`
+
+**查询参数**：
+
+| 参数 | 类型   | 说明 |
+|---|---|---|
+| `key` | string | 偏好 key（版本化，如 `assets.table.columns.v1`） |
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "key": "assets.table.columns.v1",
+    "value": { "visibleColumns": ["machineName", "ip", "cpuCount"] }
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**错误响应**（404，未设置）：
+
+```json
+{
+  "error": {
+    "code": "CONFIG_PREFERENCE_NOT_FOUND",
+    "category": "config",
+    "message": "Preference not found",
+    "retryable": false
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+### 2.6 写入当前用户偏好（Preferences）
+
+**PUT** `/api/v1/me/preferences`
+
+**请求体**：
+
+```json
+{
+  "key": "assets.table.columns.v1",
+  "value": { "visibleColumns": ["machineName", "ip", "cpuCount"] }
+}
+```
+
+**成功响应**（200）：
+
+```json
+{
+  "data": { "message": "Preference updated successfully" },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
 ## 3. 调度组 API
 
 **常见错误码**
@@ -374,6 +434,7 @@
 **常见错误码**
 
 - 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 403：`AUTH_FORBIDDEN`（非管理员访问管理接口）
 - 404：`CONFIG_SOURCE_NOT_FOUND`（来源不存在）
 - 409：`CONFIG_RESOURCE_CONFLICT`（删除时存在活动 Run）
 - 409：`CONFIG_DUPLICATE_NAME`（名称重复，创建/更新冲突）
@@ -418,6 +479,30 @@
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
+
+### 4.1A 获取 Source 摘要列表（供 user 筛选，脱敏）
+
+> 说明：普通用户（user）只读访问场景下，为避免暴露来源 `config/endpoint/credential/scheduleGroupId` 等敏感信息，提供最小摘要列表供 UI 筛选使用。
+
+**GET** `/api/v1/sources/summary`
+
+**权限**：user/admin 均可访问。
+
+**成功响应**（200）：
+
+```json
+{
+  "data": [
+    { "sourceId": "src_123", "name": "vcenter-prod", "sourceType": "vcenter", "enabled": true }
+  ],
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+约束：
+
+- 不返回 `config`（尤其 endpoint）、不返回 `scheduleGroupId`、不返回任何 credential 信息。
+- 默认仅返回 `enabled=true` 且 `deletedAt=null` 的来源（避免 user 看到已删除来源）。
 
 ### 4.2 创建 Source
 
@@ -674,6 +759,7 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 **常见错误码**
 
 - 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 403：`AUTH_FORBIDDEN`（非管理员写入）
 - 404：`CONFIG_ASSET_NOT_FOUND`（资产不存在）
 
 ### 6.1 获取 Asset 列表
@@ -926,6 +1012,150 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 ```
 
 > 注意：raw 展示必须脱敏可能的敏感字段（例如 `password/token/secret` 等），且不得包含任何来源凭证明文。
+
+### 6.6 台账字段（预设字段集：ledger-fields-v1）
+
+> 说明：台账字段为“业务补录字段”，字段集合固定（ledger-fields-v1），仅允许维护值；写入 admin-only，变更与导出需审计。
+
+#### 6.6.1 更新单资产台账字段（管理员）
+
+**PUT** `/api/v1/assets/:assetUuid/ledger-fields`
+
+**权限**：仅管理员可访问；变更动作必须记录审计（audit_event，event_type=`asset.ledger_fields_saved`）。
+
+**请求体**：
+
+```json
+{
+  "ledgerFields": {
+    "company": "Example Corp",
+    "department": "SRE",
+    "systemLevel": "核心",
+    "fixedAssetNo": null
+  }
+}
+```
+
+**成功响应**（200）：
+
+```json
+{
+  "data": { "message": "Ledger fields updated successfully" },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**常见错误码**
+
+- 400：`CONFIG_LEDGER_FIELD_KEY_INVALID`
+- 400：`CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH`
+- 400：`CONFIG_LEDGER_FIELD_VALUE_INVALID`
+- 403：`AUTH_FORBIDDEN`
+
+#### 6.6.2 批量设置台账字段（管理员，当前页勾选）
+
+**POST** `/api/v1/assets/ledger-fields/bulk-set`
+
+**权限**：仅管理员可访问；变更动作必须记录审计（audit_event，event_type=`asset.ledger_fields_bulk_set`）。
+
+**请求体**：
+
+```json
+{
+  "assetUuids": ["a_1", "a_2"],
+  "key": "company",
+  "value": "Example Corp"
+}
+```
+
+**成功响应**（200）：
+
+```json
+{
+  "data": { "message": "Bulk ledger field update accepted" },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+**常见错误码**
+
+- 400：`CONFIG_LEDGER_FIELD_LIMIT_EXCEEDED`（N>100）
+- 400：`CONFIG_LEDGER_FIELD_KEY_INVALID`
+- 400：`CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH`
+- 400：`CONFIG_LEDGER_FIELD_VALUE_INVALID`
+- 403：`AUTH_FORBIDDEN`
+
+### 6.7 导出全量台账（CSV）（管理员）
+
+> 说明：导出采用异步任务；下载即失效（首次下载成功后立即失效，后续下载返回 410 `CONFIG_EXPORT_EXPIRED`）。
+
+**常见错误码**
+
+- 401：`AUTH_UNAUTHORIZED`（未登录/会话失效）
+- 403：`AUTH_FORBIDDEN`（非管理员）
+- 404：`CONFIG_EXPORT_NOT_FOUND`（导出任务不存在）
+- 410：`CONFIG_EXPORT_EXPIRED`（导出文件已下载失效）
+
+#### 6.7.1 创建导出任务
+
+**POST** `/api/v1/exports/asset-ledger`
+
+**权限**：仅管理员可访问；导出动作必须记录审计（audit_event，event_type=`asset.ledger_exported`）。
+
+**请求体（v1）**：
+
+```json
+{
+  "format": "csv",
+  "version": "asset-ledger-export-v1"
+}
+```
+
+**成功响应**（201）：
+
+```json
+{
+  "data": {
+    "exportId": "exp_123",
+    "status": "Queued"
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+#### 6.7.2 查询导出任务状态
+
+**GET** `/api/v1/exports/asset-ledger/:exportId`
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "exportId": "exp_123",
+    "status": "Succeeded",
+    "createdAt": "2026-01-31T12:00:00Z",
+    "startedAt": "2026-01-31T12:00:01Z",
+    "finishedAt": "2026-01-31T12:00:05Z",
+    "rowCount": 1234,
+    "fileName": "asset-ledger-export-20260131-120005.csv",
+    "fileSizeBytes": 456789
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+#### 6.7.3 下载 CSV（下载即失效）
+
+**GET** `/api/v1/exports/asset-ledger/:exportId/download`
+
+**权限**：仅管理员可访问；下载成功后导出文件立即失效（后续下载返回 410）。
+
+**成功响应**（200）：
+
+- `Content-Type: text/csv; charset=utf-8`
+- `Content-Disposition: attachment; filename="asset-ledger-export-YYYYMMDD-HHmmss.csv"`
+- body：CSV 文件内容（UTF-8，不带 BOM）
 
 ## 7. OpenAPI 文档
 
