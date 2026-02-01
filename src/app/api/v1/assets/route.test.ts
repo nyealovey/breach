@@ -110,6 +110,7 @@ describe('GET /api/v1/assets', () => {
         vmPowerState: 'poweredOn',
         toolsRunning: null,
         ip: '10.10.100.106',
+        recordedAt: '2026-01-28T00:00:00.000Z',
         ledgerFields: {
           region: null,
           company: null,
@@ -202,6 +203,7 @@ describe('GET /api/v1/assets', () => {
       cpuCount: 64,
       memoryBytes: 274877906944,
       totalDiskBytes: 1234,
+      recordedAt: '2026-01-30T00:00:00.000Z',
     });
   });
 

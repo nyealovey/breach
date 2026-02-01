@@ -151,7 +151,7 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - `/login`：登录（admin/user）
 - `/runs`：采集 Run 列表与详情（admin/user；失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
-- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）（admin/user）；raw 查看仅 admin（脱敏+审计）；资产详情包含“历史/时间线”（M12）
+- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）（admin/user）；raw 查看仅 admin（脱敏+审计）；资产详情包含“历史/时间线”（M12）；支持筛选：操作系统、地区、业务对接人员、公司、部门、系统分类、系统分级（下拉候选来自 `GET /api/v1/assets/ledger-fields/options`）；资产列表新增“录入时间”（默认显示首次采集时间）；列设置支持两列展示避免高度溢出，且“机器名/IP”为核心列固定显示；资产详情的来源记录查看（normalized/raw）为页面跳转：`/source-records/:recordId?tab=normalized|raw`（避免模态框），并按资产类型隐藏不相关字段
 - `/exports`：资产台账导出 CSV（admin-only；异步任务；下载即失效）
 - `/schedule-groups`：调度组配置（admin-only）
 - `/sources`：来源配置（admin-only）
@@ -196,6 +196,8 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 
 - `bun run db:generate`：生成 Prisma Client
 - `bun run db:migrate`：本地创建/更新数据库表（开发环境）
+- `bun run db:seed:dev`：生成一套本地开发用的“模拟数据”（凭据/来源/调度组/Run/资产/快照/关系/SourceRecord；幂等，不覆盖你手工改过的数据）
+- `bun run db:setup`：一键初始化（`db:migrate` + `db:seed:dev`）
 - `bun run scheduler`：启动调度器（按“调度组固定时间”创建 Run；错过触发点不补跑）
 - `bun run worker`：启动 worker（消费 Queued Run，子进程调用插件）
 

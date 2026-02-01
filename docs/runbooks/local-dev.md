@@ -95,6 +95,18 @@ bun run db:migrate
 - `bun run db:migrate` 是幂等的：同一份库已是最新时可以重复执行，它会只应用缺失迁移。
 - 如果你换了 `DATABASE_URL`、重建了容器、或新增了迁移，也需要再执行一次。
 
+（推荐）初始化一套开发种子数据（无真实采集时用于调试 UI / 批量编辑等）：
+
+```bash
+bun run db:seed:dev
+```
+
+说明：
+
+- 会创建：凭据、来源、调度组、Run、资产、快照、关系、SourceRecord，并彼此关联。
+- 幂等：重复执行会“只补齐缺失数据”，不会覆盖你手工改过的数据。
+- 种子数据里使用的是 mock endpoint（不可真实采集）；调度组默认 disabled，避免你启动 scheduler/worker 后不断产生失败 Run。
+
 （可选）打开 Prisma Studio 看数据：
 
 ```bash

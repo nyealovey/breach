@@ -149,6 +149,7 @@ export async function GET(request: Request) {
             rackPosition: true,
             managementCode: true,
             fixedAssetNo: true,
+            createdAt: true,
           },
         },
         runSnapshots: {
@@ -180,6 +181,7 @@ export async function GET(request: Request) {
 
       const vmName = asset.assetType === 'vm' ? (pickVmName(fields) ?? asset.displayName ?? asset.uuid) : null;
       const hostName = asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : null;
+      const recordedAt = (asset.ledgerFields?.createdAt ?? asset.createdAt).toISOString();
 
       return {
         assetUuid: asset.uuid,
@@ -195,6 +197,7 @@ export async function GET(request: Request) {
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields),
+        recordedAt,
         ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
         cpuCount:
           asset.assetType === 'host' && typeof osName === 'string' && osName.trim() === 'ESXi'

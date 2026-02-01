@@ -20,6 +20,8 @@
     "build:analyze": "next build && next experimental-analyze",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:seed:dev": "bun src/bin/dev-seed.ts",
+    "db:setup": "bun run db:migrate && bun run db:seed:dev",
     "db:studio": "prisma studio",
     "scheduler": "bun src/bin/scheduler.ts",
     "worker": "bun src/bin/worker.ts",

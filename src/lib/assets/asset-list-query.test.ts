@@ -17,10 +17,13 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: 'src_1',
       q: 'host-01',
+      region: undefined,
       company: undefined,
       department: undefined,
       systemCategory: undefined,
       systemLevel: undefined,
+      bizOwner: undefined,
+      os: undefined,
       vmPowerState: 'poweredOn',
       ipMissing: true,
     });
@@ -33,10 +36,13 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: undefined,
       q: undefined,
+      region: undefined,
       company: undefined,
       department: undefined,
       systemCategory: undefined,
       systemLevel: undefined,
+      bizOwner: undefined,
+      os: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
     });
@@ -49,10 +55,13 @@ describe('asset list query', () => {
       excludeAssetType: 'cluster',
       sourceId: undefined,
       q: undefined,
+      region: undefined,
       company: undefined,
       department: undefined,
       systemCategory: undefined,
       systemLevel: undefined,
+      bizOwner: undefined,
+      os: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
     });
@@ -187,21 +196,41 @@ describe('asset list query', () => {
     });
   });
 
-  it('supports ledger-fields-v1 filters (company/department/systemCategory/systemLevel)', () => {
+  it('supports ledger-fields-v1 filters (region/company/department/systemCategory/systemLevel/bizOwner)', () => {
     const where = buildAssetListWhere({
+      region: 'cn-shanghai',
       company: 'ACME',
       department: 'IT',
       systemCategory: '财经',
       systemLevel: '核心',
+      bizOwner: 'Alice',
     });
 
     expect(where).toMatchObject({
       AND: expect.arrayContaining([
         { status: { not: 'merged' } },
+        { ledgerFields: { is: { region: { contains: 'cn-shanghai', mode: 'insensitive' } } } },
         { ledgerFields: { is: { company: { contains: 'ACME', mode: 'insensitive' } } } },
         { ledgerFields: { is: { department: { contains: 'IT', mode: 'insensitive' } } } },
         { ledgerFields: { is: { systemCategory: { contains: '财经', mode: 'insensitive' } } } },
         { ledgerFields: { is: { systemLevel: { contains: '核心', mode: 'insensitive' } } } },
+        { ledgerFields: { is: { bizOwner: { contains: 'Alice', mode: 'insensitive' } } } },
+      ]),
+    });
+  });
+
+  it('supports os filter via canonical fields.os.name', () => {
+    const where = buildAssetListWhere({ os: 'Ubuntu' });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        {
+          runSnapshots: {
+            some: {
+              canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: 'Ubuntu', mode: 'insensitive' },
+            },
+          },
+        },
       ]),
     });
   });

@@ -41,6 +41,7 @@ type AssetListItem = {
   vmPowerState: string | null;
   toolsRunning: boolean | null;
   ip: string | null;
+  recordedAt: string;
   ledgerFields: LedgerFieldsV1;
   cpuCount: number | null;
   memoryBytes: number | null;
@@ -56,12 +57,23 @@ type Pagination = {
 
 type SourceOption = { sourceId: string; name: string };
 
+type LedgerFieldFilterOptions = {
+  regions: string[];
+  companies: string[];
+  departments: string[];
+  systemCategories: string[];
+  systemLevels: string[];
+  bizOwners: string[];
+  osNames: string[];
+};
+
 type AssetListColumnId =
   | 'machineName'
   | 'vmName'
   | 'hostName'
   | 'os'
   | 'ip'
+  | 'recordedAt'
   | 'cpuCount'
   | 'memoryBytes'
   | 'totalDiskBytes'
@@ -76,10 +88,11 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   description?: string;
 }> = [
   { id: 'machineName', label: '机器名', description: '支持“覆盖显示”，并标记覆盖≠采集。' },
-  { id: 'vmName', label: '虚拟机名' },
-  { id: 'hostName', label: '宿主机名', description: 'VM --runs_on--> Host 的 displayName。' },
+  { id: 'vmName', label: '虚拟机名', description: '仅 VM。' },
+  { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
   { id: 'ip', label: 'IP', description: 'VM 若 Tools 未运行可能缺失。' },
+  { id: 'recordedAt', label: '录入时间', description: '若未录入台账字段，默认显示第一次采集时间。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
@@ -99,12 +112,44 @@ const ASSET_LIST_COLUMNS: Array<{ id: AssetListColumnId; label: string; descript
   ...LEDGER_FIELD_COLUMNS,
 ];
 
-// Default columns remain unchanged; ledger fields are opt-in.
+// Base columns are visible by default; ledger fields are opt-in.
 const DEFAULT_VISIBLE_COLUMNS: AssetListColumnId[] = BASE_ASSET_LIST_COLUMNS.map((c) => c.id);
 const ASSET_LIST_COLUMN_ID_SET = new Set<AssetListColumnId>(ASSET_LIST_COLUMNS.map((c) => c.id));
 const ASSET_LIST_COLUMN_LABEL_BY_ID = new Map<AssetListColumnId, string>(
   ASSET_LIST_COLUMNS.map((c) => [c.id, c.label]),
 );
+
+const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['machineName', 'ip'];
+const VM_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'vmName' | 'hostName'>> = ['vmName', 'hostName'];
+
+const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
+  regions: [],
+  companies: [],
+  departments: [],
+  systemCategories: [],
+  systemLevels: [],
+  bizOwners: [],
+  osNames: [],
+};
+
+function ensureCoreVisibleColumns(columns: AssetListColumnId[]): AssetListColumnId[] {
+  const set = new Set(columns);
+  let next = [...columns];
+
+  if (!set.has('machineName')) next = ['machineName', ...next];
+
+  if (!set.has('ip')) {
+    const insertAfterOs = next.indexOf('os');
+    const insertAfterMachineName = next.indexOf('machineName');
+    const insertIndex =
+      insertAfterOs >= 0 ? insertAfterOs + 1 : insertAfterMachineName >= 0 ? insertAfterMachineName + 1 : next.length;
+    next = [...next.slice(0, insertIndex), 'ip', ...next.slice(insertIndex)];
+  }
+
+  // De-dupe while preserving order.
+  const seen = new Set<AssetListColumnId>();
+  return next.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+}
 
 function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
   if (!Array.isArray(input)) return null;
@@ -115,7 +160,7 @@ function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
     .filter((v): v is AssetListColumnId => ASSET_LIST_COLUMN_ID_SET.has(v as AssetListColumnId));
 
   const unique = Array.from(new Set(ids));
-  return unique.length > 0 ? unique : null;
+  return unique.length > 0 ? ensureCoreVisibleColumns(unique) : null;
 }
 
 function powerStateLabel(powerState: string) {
@@ -130,6 +175,21 @@ function powerStateBadgeVariant(powerState: string): React.ComponentProps<typeof
   if (powerState === 'poweredOff') return 'secondary';
   if (powerState === 'suspended') return 'outline';
   return 'outline';
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '-';
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 function formatBytes(bytes: number | null) {
@@ -161,6 +221,9 @@ export default function AssetsPage() {
   const isAdmin = role === 'admin';
 
   const [sourceOptions, setSourceOptions] = useState<SourceOption[]>([]);
+  const [ledgerFieldFilterOptions, setLedgerFieldFilterOptions] = useState<LedgerFieldFilterOptions>(
+    EMPTY_LEDGER_FIELD_FILTER_OPTIONS,
+  );
 
   const [visibleColumns, setVisibleColumns] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
@@ -180,10 +243,13 @@ export default function AssetsPage() {
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
+  const [regionInput, setRegionInput] = useState('');
   const [companyInput, setCompanyInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
   const [systemCategoryInput, setSystemCategoryInput] = useState('');
   const [systemLevelInput, setSystemLevelInput] = useState('');
+  const [bizOwnerInput, setBizOwnerInput] = useState('');
+  const [osInput, setOsInput] = useState('');
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -206,10 +272,13 @@ export default function AssetsPage() {
       assetType: impliedAssetType,
       excludeAssetType: impliedAssetType ? undefined : ('cluster' as const),
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
+      region: regionInput.trim() ? regionInput.trim() : undefined,
       company: companyInput.trim() ? companyInput.trim() : undefined,
       department: departmentInput.trim() ? departmentInput.trim() : undefined,
       systemCategory: systemCategoryInput.trim() ? systemCategoryInput.trim() : undefined,
       systemLevel: systemLevelInput.trim() ? systemLevelInput.trim() : undefined,
+      bizOwner: bizOwnerInput.trim() ? bizOwnerInput.trim() : undefined,
+      os: osInput.trim() ? osInput.trim() : undefined,
       vmPowerState,
       ipMissing,
       page,
@@ -217,27 +286,40 @@ export default function AssetsPage() {
     };
   }, [
     assetTypeInput,
+    bizOwnerInput,
     companyInput,
     departmentInput,
     ipMissingInput,
+    osInput,
     page,
     pageSize,
     qInput,
+    regionInput,
     sourceIdInput,
     systemCategoryInput,
     systemLevelInput,
     vmPowerStateInput,
   ]);
 
+  const visibleColumnsForTable = useMemo(() => {
+    const cols = ensureCoreVisibleColumns(visibleColumns);
+    return assetTypeInput === 'host' || assetTypeInput === 'cluster'
+      ? cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]))
+      : cols;
+  }, [assetTypeInput, visibleColumns]);
+
   useEffect(() => {
     const parsed = parseAssetListUrlState(new URLSearchParams(searchParams.toString()));
     setQInput(parsed.q ?? '');
     setAssetTypeInput(parsed.assetType ?? 'all');
     setSourceIdInput(parsed.sourceId ?? 'all');
+    setRegionInput(parsed.region ?? '');
     setCompanyInput(parsed.company ?? '');
     setDepartmentInput(parsed.department ?? '');
     setSystemCategoryInput(parsed.systemCategory ?? '');
     setSystemLevelInput(parsed.systemLevel ?? '');
+    setBizOwnerInput(parsed.bizOwner ?? '');
+    setOsInput(parsed.os ?? '');
     setVmPowerStateInput(parsed.vmPowerState ?? 'all');
     setIpMissingInput(parsed.ipMissing === true);
     setPage(parsed.page);
@@ -252,10 +334,13 @@ export default function AssetsPage() {
       assetType: query.assetType,
       excludeAssetType: query.excludeAssetType,
       sourceId: query.sourceId,
+      region: query.region,
       company: query.company,
       department: query.department,
       systemCategory: query.systemCategory,
       systemLevel: query.systemLevel,
+      bizOwner: query.bizOwner,
+      os: query.os,
       vmPowerState: query.vmPowerState,
       ipMissing: query.ipMissing,
       page: query.page,
@@ -302,6 +387,25 @@ export default function AssetsPage() {
 
   useEffect(() => {
     let active = true;
+    const loadLedgerFieldFilterOptions = async () => {
+      const res = await fetch('/api/v1/assets/ledger-fields/options');
+      if (!res.ok) {
+        if (active) setLedgerFieldFilterOptions(EMPTY_LEDGER_FIELD_FILTER_OPTIONS);
+        return;
+      }
+
+      const body = (await res.json().catch(() => null)) as { data?: LedgerFieldFilterOptions } | null;
+      if (active) setLedgerFieldFilterOptions(body?.data ?? EMPTY_LEDGER_FIELD_FILTER_OPTIONS);
+    };
+
+    void loadLedgerFieldFilterOptions();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     const loadColumnPreference = async () => {
       const res = await fetch(`/api/v1/me/preferences?key=${encodeURIComponent(ASSETS_TABLE_COLUMNS_PREFERENCE_KEY)}`);
       if (!active) return;
@@ -334,10 +438,13 @@ export default function AssetsPage() {
         assetType: query.assetType,
         excludeAssetType: query.excludeAssetType,
         sourceId: query.sourceId,
+        region: query.region,
         company: query.company,
         department: query.department,
         systemCategory: query.systemCategory,
         systemLevel: query.systemLevel,
+        bizOwner: query.bizOwner,
+        os: query.os,
         vmPowerState: query.vmPowerState,
         ipMissing: query.ipMissing,
         page: query.page,
@@ -492,7 +599,7 @@ export default function AssetsPage() {
               size="sm"
               variant="outline"
               onClick={() => {
-                setColumnDraft(visibleColumns);
+                setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
                 setColumnSettingsOpen(true);
               }}
             >
@@ -501,39 +608,167 @@ export default function AssetsPage() {
           </div>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-4">
-          <Input
-            placeholder="公司（台账）"
-            value={companyInput}
-            onChange={(e) => {
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Select
+            value={regionInput || 'all'}
+            onValueChange={(value) => {
               setPage(1);
-              setCompanyInput(e.target.value);
+              setRegionInput(value === 'all' ? '' : value);
             }}
-          />
-          <Input
-            placeholder="部门（台账）"
-            value={departmentInput}
-            onChange={(e) => {
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="地区（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部地区</SelectItem>
+              {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
+                <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.regions.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={companyInput || 'all'}
+            onValueChange={(value) => {
               setPage(1);
-              setDepartmentInput(e.target.value);
+              setCompanyInput(value === 'all' ? '' : value);
             }}
-          />
-          <Input
-            placeholder="系统分类（台账）"
-            value={systemCategoryInput}
-            onChange={(e) => {
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="公司（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部公司</SelectItem>
+              {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
+                <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.companies.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={departmentInput || 'all'}
+            onValueChange={(value) => {
               setPage(1);
-              setSystemCategoryInput(e.target.value);
+              setDepartmentInput(value === 'all' ? '' : value);
             }}
-          />
-          <Input
-            placeholder="系统分级（台账）"
-            value={systemLevelInput}
-            onChange={(e) => {
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="部门（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部部门</SelectItem>
+              {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
+                <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.departments.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={systemCategoryInput || 'all'}
+            onValueChange={(value) => {
               setPage(1);
-              setSystemLevelInput(e.target.value);
+              setSystemCategoryInput(value === 'all' ? '' : value);
             }}
-          />
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="系统分类（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部系统分类</SelectItem>
+              {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
+                <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.systemCategories.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={systemLevelInput || 'all'}
+            onValueChange={(value) => {
+              setPage(1);
+              setSystemLevelInput(value === 'all' ? '' : value);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="系统分级（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部系统分级</SelectItem>
+              {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
+                <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.systemLevels.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={bizOwnerInput || 'all'}
+            onValueChange={(value) => {
+              setPage(1);
+              setBizOwnerInput(value === 'all' ? '' : value);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="业务对接人员（台账）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部业务对接人员</SelectItem>
+              {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
+                <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.bizOwners.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={osInput || 'all'}
+            onValueChange={(value) => {
+              setPage(1);
+              setOsInput(value === 'all' ? '' : value);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="操作系统" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部操作系统</SelectItem>
+              {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
+                <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
+              ) : null}
+              {ledgerFieldFilterOptions.osNames.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {isAdmin ? (
@@ -584,7 +819,7 @@ export default function AssetsPage() {
                     </TableHead>
                   ) : null}
 
-                  {visibleColumns.map((colId) => {
+                  {visibleColumnsForTable.map((colId) => {
                     const label = ASSET_LIST_COLUMN_LABEL_BY_ID.get(colId) ?? colId;
                     const rightAligned = colId === 'cpuCount' || colId === 'memoryBytes' || colId === 'totalDiskBytes';
                     return (
@@ -617,7 +852,7 @@ export default function AssetsPage() {
                       </TableCell>
                     ) : null}
 
-                    {visibleColumns.map((colId) => {
+                    {visibleColumnsForTable.map((colId) => {
                       if (colId === 'machineName') {
                         return (
                           <TableCell key={colId} className="font-medium">
@@ -677,6 +912,14 @@ export default function AssetsPage() {
                             ) : (
                               '-'
                             )}
+                          </TableCell>
+                        );
+                      }
+
+                      if (colId === 'recordedAt') {
+                        return (
+                          <TableCell key={colId} className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                            {formatDateTime(item.recordedAt)}
                           </TableCell>
                         );
                       }
@@ -782,22 +1025,30 @@ export default function AssetsPage() {
           onOpenChange={(open) => {
             setColumnSettingsOpen(open);
             if (!open) {
-              setColumnDraft(visibleColumns);
+              setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
               setColumnSaving(false);
             }
           }}
         >
-          <DialogContent>
+          <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
             <DialogHeader>
               <DialogTitle>列设置</DialogTitle>
               <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-2">
+            <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
               {ASSET_LIST_COLUMNS.map((col) => {
-                const checked = columnDraft.includes(col.id);
+                const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
+                const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
+                const disabled = locked || (vmOnly && (assetTypeInput === 'host' || assetTypeInput === 'cluster'));
+                const checked = locked ? true : columnDraft.includes(col.id);
                 return (
-                  <div key={col.id} className="flex items-center justify-between gap-4 rounded-md border p-3">
+                  <div
+                    key={col.id}
+                    className={`flex items-center justify-between gap-4 rounded-md border p-3 ${
+                      disabled ? 'bg-muted/40 opacity-70' : ''
+                    }`}
+                  >
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{col.label}</div>
                       {col.description ? (
@@ -806,10 +1057,15 @@ export default function AssetsPage() {
                     </div>
                     <Switch
                       checked={checked}
+                      disabled={disabled}
                       onCheckedChange={(next) => {
                         setColumnDraft((prev) => {
-                          if (next) return prev.includes(col.id) ? prev : [...prev, col.id];
-                          return prev.filter((id) => id !== col.id);
+                          const draft = next
+                            ? prev.includes(col.id)
+                              ? prev
+                              : [...prev, col.id]
+                            : prev.filter((id) => id !== col.id);
+                          return ensureCoreVisibleColumns(draft);
                         });
                       }}
                     />
@@ -818,14 +1074,17 @@ export default function AssetsPage() {
               })}
             </div>
 
-            <div className="text-xs text-muted-foreground">至少选择 1 列（当前：{columnDraft.length} 列）。</div>
+            <div className="text-xs text-muted-foreground">
+              机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host/Cluster 时不展示）；其余列可选（当前：
+              {columnDraft.length} 列）。
+            </div>
 
             <DialogFooter>
               <Button
                 variant="outline"
                 disabled={columnSaving}
                 onClick={() => {
-                  setColumnDraft(DEFAULT_VISIBLE_COLUMNS);
+                  setColumnDraft(ensureCoreVisibleColumns(DEFAULT_VISIBLE_COLUMNS));
                 }}
               >
                 恢复默认
@@ -844,12 +1103,15 @@ export default function AssetsPage() {
                 onClick={async () => {
                   setColumnSaving(true);
                   try {
+                    const draft = ensureCoreVisibleColumns(columnDraft);
+                    setColumnDraft(draft);
+
                     const res = await fetch('/api/v1/me/preferences', {
                       method: 'PUT',
                       headers: { 'content-type': 'application/json' },
                       body: JSON.stringify({
                         key: ASSETS_TABLE_COLUMNS_PREFERENCE_KEY,
-                        value: { visibleColumns: columnDraft },
+                        value: { visibleColumns: draft },
                       }),
                     });
 
@@ -862,7 +1124,7 @@ export default function AssetsPage() {
                     const body = (await res.json().catch(() => null)) as {
                       data?: { value?: { visibleColumns?: unknown } };
                     } | null;
-                    const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns) ?? columnDraft;
+                    const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns) ?? draft;
                     setVisibleColumns(next);
                     toast.success('列配置已保存');
                     setColumnSettingsOpen(false);

@@ -5,10 +5,13 @@ export type AssetListQuery = {
   excludeAssetType: AssetType | undefined;
   sourceId: string | undefined;
   q: string | undefined;
+  region: string | undefined;
   company: string | undefined;
   department: string | undefined;
   systemCategory: string | undefined;
   systemLevel: string | undefined;
+  bizOwner: string | undefined;
+  os: string | undefined;
   vmPowerState: 'poweredOn' | 'poweredOff' | 'suspended' | undefined;
   ipMissing: boolean | undefined;
 };
@@ -41,10 +44,13 @@ export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
     excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
     q: parseOptionalString(params.get('q')),
+    region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
     department: parseOptionalString(params.get('department')),
     systemCategory: parseOptionalString(params.get('system_category')),
     systemLevel: parseOptionalString(params.get('system_level')),
+    bizOwner: parseOptionalString(params.get('biz_owner')),
+    os: parseOptionalString(params.get('os')),
     vmPowerState: parseVmPowerState(params.get('vm_power_state')),
     ipMissing: parseIpMissing(params.get('ip_missing')),
   };
@@ -76,10 +82,13 @@ export function buildAssetListWhere(query: {
   excludeAssetType?: AssetType;
   sourceId?: string;
   q?: string;
+  region?: string;
   company?: string;
   department?: string;
   systemCategory?: string;
   systemLevel?: string;
+  bizOwner?: string;
+  os?: string;
   vmPowerState?: AssetListQuery['vmPowerState'];
   ipMissing?: boolean;
 }): Prisma.AssetWhereInput {
@@ -93,6 +102,7 @@ export function buildAssetListWhere(query: {
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
 
   // Ledger-fields-v1 filters (case-insensitive substring).
+  if (query.region) and.push({ ledgerFields: { is: { region: { contains: query.region, mode: 'insensitive' } } } });
   if (query.company) and.push({ ledgerFields: { is: { company: { contains: query.company, mode: 'insensitive' } } } });
   if (query.department)
     and.push({ ledgerFields: { is: { department: { contains: query.department, mode: 'insensitive' } } } });
@@ -102,6 +112,18 @@ export function buildAssetListWhere(query: {
     });
   if (query.systemLevel)
     and.push({ ledgerFields: { is: { systemLevel: { contains: query.systemLevel, mode: 'insensitive' } } } });
+  if (query.bizOwner)
+    and.push({ ledgerFields: { is: { bizOwner: { contains: query.bizOwner, mode: 'insensitive' } } } });
+
+  if (query.os) {
+    and.push({
+      runSnapshots: {
+        some: {
+          canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: query.os, mode: 'insensitive' },
+        },
+      },
+    });
+  }
 
   if (query.assetType === AssetType.vm && query.vmPowerState) {
     and.push({

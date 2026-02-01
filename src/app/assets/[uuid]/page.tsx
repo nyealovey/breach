@@ -9,7 +9,6 @@ import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
-import { RawDialog } from '@/components/raw/raw-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -146,10 +145,6 @@ export default function AssetDetailPage() {
   const [ledgerDraft, setLedgerDraft] = useState<Partial<Record<LedgerFieldKey, string>>>({});
   const [ledgerSaving, setLedgerSaving] = useState(false);
 
-  const [selectedNormalized, setSelectedNormalized] = useState<{ recordId: string; payload: unknown } | null>(null);
-  const [rawOpen, setRawOpen] = useState(false);
-  const [rawRecordId, setRawRecordId] = useState<string | null>(null);
-
   const [chainHost, setChainHost] = useState<{
     assetUuid: string;
     assetType: string | null;
@@ -201,9 +196,6 @@ export default function AssetDetailPage() {
           setLedgerEditing(false);
           setLedgerDraft({});
           setLedgerSaving(false);
-          setSelectedNormalized(null);
-          setRawOpen(false);
-          setRawRecordId(null);
           setLoading(false);
         }
         return;
@@ -225,9 +217,6 @@ export default function AssetDetailPage() {
         setLedgerEditing(false);
         setLedgerDraft({});
         setLedgerSaving(false);
-        setSelectedNormalized(null);
-        setRawOpen(false);
-        setRawRecordId(null);
         setLoading(false);
       }
     };
@@ -327,6 +316,20 @@ export default function AssetDetailPage() {
   }, [asset?.latestSnapshot?.canonical]);
 
   const groupedFields = useMemo(() => groupAssetFieldsForDisplay(canonicalFields), [canonicalFields]);
+  const visibleGroupedFields = useMemo(() => {
+    const assetType = asset?.assetType ?? null;
+
+    const allowedGroupA =
+      assetType === 'vm'
+        ? new Set(['common', 'vm', 'attributes', 'unknown'])
+        : assetType === 'host'
+          ? new Set(['common', 'host', 'attributes', 'unknown'])
+          : assetType === 'cluster'
+            ? new Set(['common', 'cluster', 'attributes', 'unknown'])
+            : null;
+
+    return allowedGroupA ? groupedFields.filter((g) => allowedGroupA.has(g.groupA)) : groupedFields;
+  }, [asset?.assetType, groupedFields]);
 
   const summary = useMemo(() => {
     const assetType = asset?.assetType ?? '';
@@ -418,6 +421,9 @@ export default function AssetDetailPage() {
 
   const directCluster = asset.assetType === 'host' ? findMemberOfCluster(relations) : null;
   const datastoresTotals = hostDatastoreTotals ?? { totalBytes: null, sumBytes: 0, hasList: false, mismatch: false };
+  const allowedLedgerFieldMetas = LEDGER_FIELD_METAS.filter((meta) =>
+    isLedgerFieldAllowedForAssetType(meta, asset.assetType as any),
+  );
 
   return (
     <div className="space-y-6">
@@ -766,7 +772,7 @@ export default function AssetDetailPage() {
                     variant="outline"
                     onClick={() => {
                       const nextDraft: Partial<Record<LedgerFieldKey, string>> = {};
-                      for (const meta of LEDGER_FIELD_METAS) {
+                      for (const meta of allowedLedgerFieldMetas) {
                         nextDraft[meta.key] = asset.ledgerFields?.[meta.key] ?? '';
                       }
                       setLedgerDraft(nextDraft);
@@ -788,8 +794,7 @@ export default function AssetDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {LEDGER_FIELD_METAS.map((meta) => {
-                  const allowed = isLedgerFieldAllowedForAssetType(meta, asset.assetType as any);
+                {allowedLedgerFieldMetas.map((meta) => {
                   const value = asset.ledgerFields?.[meta.key] ?? null;
                   const draft = ledgerDraft[meta.key] ?? value ?? '';
 
@@ -802,9 +807,7 @@ export default function AssetDetailPage() {
                         ) : null}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {!allowed ? (
-                          <span className="text-muted-foreground">-</span>
-                        ) : ledgerEditing && isAdmin ? (
+                        {ledgerEditing && isAdmin ? (
                           meta.kind === 'date' ? (
                             <Input
                               type="date"
@@ -915,9 +918,11 @@ export default function AssetDetailPage() {
             <div className="text-sm text-muted-foreground">暂无 canonical 快照。</div>
           ) : groupedFields.length === 0 ? (
             <div className="text-sm text-muted-foreground">canonical.fields 为空或不可解析。</div>
+          ) : visibleGroupedFields.length === 0 ? (
+            <div className="text-sm text-muted-foreground">当前资产类型无可展示字段（已隐藏不相关字段）。</div>
           ) : (
             <div className="space-y-4">
-              {groupedFields.map((section) => (
+              {visibleGroupedFields.map((section) => (
                 <div key={section.groupA} className="space-y-2">
                   <div className="text-sm font-semibold">{section.labelZh}</div>
                   {section.groups.map((g) => (
@@ -1105,23 +1110,20 @@ export default function AssetDetailPage() {
                     <TableCell className="text-xs text-muted-foreground">{r.runId}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedNormalized({ recordId: r.recordId, payload: r.normalized })}
-                        >
-                          查看 normalized
+                        <Button asChild size="sm" variant="outline">
+                          <Link
+                            href={`/source-records/${encodeURIComponent(r.recordId)}?tab=normalized&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
+                          >
+                            查看 normalized
+                          </Link>
                         </Button>
                         {isAdmin ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setRawRecordId(r.recordId);
-                              setRawOpen(true);
-                            }}
-                          >
-                            查看 raw
+                          <Button asChild size="sm" variant="outline">
+                            <Link
+                              href={`/source-records/${encodeURIComponent(r.recordId)}?tab=raw&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
+                            >
+                              查看 raw
+                            </Link>
                           </Button>
                         ) : null}
                       </div>
@@ -1131,28 +1133,8 @@ export default function AssetDetailPage() {
               </TableBody>
             </Table>
           )}
-
-          {selectedNormalized ? (
-            <div>
-              <div className="text-sm font-medium">normalized · {selectedNormalized.recordId}</div>
-              <pre className="mt-2 max-h-80 overflow-auto rounded bg-muted p-3 text-xs">
-                {JSON.stringify(selectedNormalized.payload, null, 2)}
-              </pre>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
-
-      {isAdmin ? (
-        <RawDialog
-          recordId={rawRecordId}
-          open={rawOpen}
-          onOpenChange={(open) => {
-            setRawOpen(open);
-            if (!open) setRawRecordId(null);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
