@@ -14,6 +14,14 @@ export type HypervConfig = {
   tls_verify?: boolean;
   timeout_ms?: number;
 
+  /**
+   * WinRM 认证方式：
+   * - auto：有 domain 时优先 Kerberos（默认 WinRM 配置），否则使用 basic
+   * - kerberos：强制 Kerberos（依赖 worker 环境具备 Kerberos client/curl negotiate）
+   * - ntlm/basic：legacy（仅用于特殊环境；默认 WinRM 通常禁用 basic）
+   */
+  auth_method?: 'auto' | 'kerberos' | 'ntlm' | 'basic';
+
   // auto 会在 detect 阶段给出建议；collect 时仍以配置为准
   scope?: 'auto' | 'standalone' | 'cluster';
   max_parallel_nodes?: number;

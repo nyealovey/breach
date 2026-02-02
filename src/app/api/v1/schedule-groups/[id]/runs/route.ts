@@ -1,7 +1,17 @@
+import { z } from 'zod/v4';
+
 import { requireAdmin } from '@/lib/auth/require-admin';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
+
+const BodySchema = z
+  .object({
+    mode: z.enum(['collect', 'detect', 'healthcheck']).optional(),
+  })
+  .strict();
+
+type RequestedMode = z.infer<typeof BodySchema>['mode'];
 
 type TxResult = {
   queued: number;
@@ -22,6 +32,45 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
+
+  // Back-compat: old UI sends empty body; default to collect.
+  let requestedMode: RequestedMode = 'collect';
+  const contentType = request.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    const text = await request.text();
+    if (text.trim().length > 0) {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text) as unknown;
+      } catch {
+        return fail(
+          {
+            code: ErrorCode.CONFIG_INVALID_REQUEST,
+            category: 'config',
+            message: 'Validation failed',
+            retryable: false,
+          },
+          400,
+          { requestId: auth.requestId },
+        );
+      }
+
+      const parsed = BodySchema.safeParse(raw);
+      if (!parsed.success) {
+        return fail(
+          {
+            code: ErrorCode.CONFIG_INVALID_REQUEST,
+            category: 'config',
+            message: 'Validation failed',
+            retryable: false,
+          },
+          400,
+          { requestId: auth.requestId },
+        );
+      }
+      requestedMode = parsed.data.mode ?? 'collect';
+    }
+  }
 
   const group = await prisma.scheduleGroup.findUnique({ where: { id }, select: { id: true } });
   if (!group) {
@@ -51,13 +100,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     `;
 
     const skipped_missing_credential = sources.filter((s) => s.credentialId === null).length;
-    const skipped_missing_config = sources.filter(
-      (s) => s.sourceType === 'vcenter' && !hasVcenterPreferredVersion(s.config),
-    ).length;
+    const isCollectMode = requestedMode === 'collect';
+    const skipped_missing_config = isCollectMode
+      ? sources.filter((s) => s.sourceType === 'vcenter' && !hasVcenterPreferredVersion(s.config)).length
+      : 0;
 
     const eligibleSources = sources.filter((s) => {
       if (s.credentialId === null) return false;
-      if (s.sourceType === 'vcenter') return hasVcenterPreferredVersion(s.config);
+      if (isCollectMode && s.sourceType === 'vcenter') return hasVcenterPreferredVersion(s.config);
       return true;
     });
     const eligibleSourceIds = eligibleSources.map((s) => s.id);
@@ -78,6 +128,33 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       distinct: ['sourceId', 'mode'],
     });
     const activeSet = new Set(active.map((r) => `${r.sourceId}:${r.mode}`));
+
+    if (!isCollectMode) {
+      const runs = eligibleSources
+        .filter((s) => !activeSet.has(`${s.id}:${requestedMode}`))
+        .map((s) => ({
+          sourceId: s.id,
+          scheduleGroupId: group.id,
+          triggerType: 'manual' as const,
+          mode: requestedMode,
+          status: 'Queued' as const,
+        }));
+
+      if (runs.length > 0) await tx.run.createMany({ data: runs });
+
+      const queued = runs.length;
+      const wanted = eligibleSources.length;
+      const skipped_active = Math.max(0, wanted - queued);
+
+      const message =
+        queued === 0
+          ? skipped_active > 0
+            ? 'all eligible sources have active runs'
+            : 'no eligible sources'
+          : 'queued';
+
+      return { queued, skipped_active, skipped_missing_credential, skipped_missing_config, message };
+    }
 
     const vcenterSources = eligibleSources.filter((s) => s.sourceType === 'vcenter');
     const otherSources = eligibleSources.filter((s) => s.sourceType !== 'vcenter');

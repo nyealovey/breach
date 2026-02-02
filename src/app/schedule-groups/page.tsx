@@ -7,6 +7,16 @@ import { toast } from 'sonner';
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 type ScheduleGroup = {
@@ -27,10 +37,15 @@ type ManualRunResult = {
   message: string;
 };
 
+type GroupRunMode = 'healthcheck' | 'detect' | 'collect';
+
 export default function ScheduleGroupsPage() {
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [pendingGroup, setPendingGroup] = useState<{ id: string; name: string } | null>(null);
+  const [runMode, setRunMode] = useState<GroupRunMode>('collect');
 
   useEffect(() => {
     let active = true;
@@ -54,11 +69,24 @@ export default function ScheduleGroupsPage() {
     };
   }, []);
 
-  const onRun = async (groupId: string) => {
+  const openRunDialog = (group: ScheduleGroup) => {
     if (runningId) return;
-    setRunningId(groupId);
+    setPendingGroup({ id: group.groupId, name: group.name });
+    setRunMode('collect');
+    setRunDialogOpen(true);
+  };
+
+  const onConfirmRun = async () => {
+    if (!pendingGroup) return;
+    if (runningId) return;
+
+    setRunningId(pendingGroup.id);
     try {
-      const res = await fetch(`/api/v1/schedule-groups/${groupId}/runs`, { method: 'POST' });
+      const res = await fetch(`/api/v1/schedule-groups/${pendingGroup.id}/runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: runMode }),
+      });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
         toast.error(body?.error?.message ?? '触发失败');
@@ -70,6 +98,7 @@ export default function ScheduleGroupsPage() {
       const summary = `queued=${r.queued} · skipped_active=${r.skipped_active} · skipped_missing_credential=${r.skipped_missing_credential} · skipped_missing_config=${skippedMissingConfig}`;
       if (r.queued === 0) toast.message(r.message || '无可入队来源', { description: summary });
       else toast.success('已触发运行', { description: summary });
+      setRunDialogOpen(false);
     } finally {
       setRunningId(null);
     }
@@ -78,6 +107,55 @@ export default function ScheduleGroupsPage() {
   return (
     <>
       <RequireAdminClient />
+      <Dialog
+        open={runDialogOpen}
+        onOpenChange={(open) => {
+          setRunDialogOpen(open);
+          if (!open) setPendingGroup(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>触发运行</DialogTitle>
+            <DialogDescription>
+              {pendingGroup ? (
+                <span>
+                  调度组：<span className="font-mono">{pendingGroup.name}</span>
+                </span>
+              ) : (
+                '请选择运行模式。'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="runMode">模式</Label>
+            <Select value={runMode} onValueChange={(v) => setRunMode(v as GroupRunMode)}>
+              <SelectTrigger id="runMode">
+                <SelectValue placeholder="选择模式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="healthcheck">healthcheck（连通性/认证）</SelectItem>
+                <SelectItem value="detect">detect（探测能力/driver 建议）</SelectItem>
+                <SelectItem value="collect">collect（采集清单）</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="text-xs text-muted-foreground">
+              说明：collect 对 vCenter 会拆分为 collect_hosts + collect_vms；建议先 healthcheck/detect 再 collect。
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRunDialogOpen(false)} disabled={!!runningId}>
+              取消
+            </Button>
+            <Button type="button" onClick={() => void onConfirmRun()} disabled={!!runningId || !pendingGroup}>
+              {runningId ? '运行中…' : '运行'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>调度组</CardTitle>
@@ -117,12 +195,7 @@ export default function ScheduleGroupsPage() {
                     <TableCell>{group.lastTriggeredOn ?? '-'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={runningId === group.groupId}
-                          onClick={() => void onRun(group.groupId)}
-                        >
+                        <Button size="sm" variant="outline" disabled={!!runningId} onClick={() => openRunDialog(group)}>
                           运行
                         </Button>
                         <Button asChild size="sm" variant="outline">

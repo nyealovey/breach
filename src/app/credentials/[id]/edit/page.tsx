@@ -184,8 +184,11 @@ export default function EditCredentialPage() {
                   <div className="space-y-2">
                     <Label htmlFor="domain">域（可选）</Label>
                     <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} />
-                    <div className="text-xs text-muted-foreground">
-                      填写后会以 DOMAIN\username 的形式进行认证（触发 NTLM）。
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div>说明：当 Source 选择 auto/kerberos 时，采集会优先使用 Kerberos（WinRM 默认）。</div>
+                      <div>domain 可用于 Kerberos realm 推导。</div>
+                      <div>Kerberos 失败时才会以 DOMAIN\username 走 NTLM（legacy）。</div>
+                      <div>如你知道 UPN，建议直接在用户名填写 user@domain（更稳定）。</div>
                     </div>
                   </div>
                 ) : null}

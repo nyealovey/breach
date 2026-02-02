@@ -36,8 +36,16 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   let endpoint = '';
   let soapFail = false;
   let soapRetrievePropertiesExUnsupported = false;
+  let soapSerialNumberUnsupported = false;
   let soapNvmeTopologyUnsupported = false;
   let soapLoginCookie = 'vmware_soap_session="soap-123"';
+  let restSessionToken = 'token-123';
+  let restSessionApiJsonRpcError = false;
+  let restCisSessionCalls = 0;
+  let restVcenterApiGetNotAllowed = false;
+  let restVcenterRestCalls = 0;
+  let restVmListHostsParamUnsupported = false;
+  let restVmListFilterHostsCalls = 0;
   let restWrapValue = false;
   let restVmDetailFlat = false;
   let restSystemVersion = '7.0.3';
@@ -146,6 +154,52 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           return;
         }
 
+        if (
+          soapNvmeTopologyUnsupported &&
+          body.includes('<vim25:RetrieveProperties>') &&
+          body.includes('nvmeTopology')
+        ) {
+          res.statusCode = 500;
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>ServerFaultCode</faultcode>
+      <faultstring></faultstring>
+      <detail>
+        <InvalidPropertyFault xmlns="urn:vim25" xsi:type="InvalidProperty">
+          <name>config.storageDevice.nvmeTopology</name>
+        </InvalidPropertyFault>
+      </detail>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
+        if (
+          soapSerialNumberUnsupported &&
+          body.includes('<vim25:RetrieveProperties>') &&
+          body.includes('serialNumber')
+        ) {
+          res.statusCode = 500;
+          res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>ServerFaultCode</faultcode>
+      <faultstring></faultstring>
+      <detail>
+        <InvalidPropertyFault xmlns="urn:vim25" xsi:type="InvalidProperty">
+          <name>hardware.systemInfo.serialNumber</name>
+        </InvalidPropertyFault>
+      </detail>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`);
+          return;
+        }
+
         if (body.includes('RetrievePropertiesEx')) {
           if (body.includes('<vim25:type>Datastore</vim25:type>')) {
             // Datastore summaries for host datastore aggregation.
@@ -191,13 +245,22 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
           <propSet><name>summary.config.product.build</name><val>20036589</val></propSet>
           <propSet><name>summary.hardware.numCpuCores</name><val>32</val></propSet>
           <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
-          <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
-          <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
-          <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
-          <propSet>
-            <name>config.network.vnic</name>
-            <val>
-              <HostVirtualNic>
+	          <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
+	          <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+	          <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
+	          <propSet>
+	            <name>hardware.systemInfo.otherIdentifyingInfo</name>
+	            <val>
+	              <HostSystemIdentificationInfo>
+	                <identifierType><key>ServiceTag</key><label>ServiceTag</label></identifierType>
+	                <identifierValue>SN-123</identifierValue>
+	              </HostSystemIdentificationInfo>
+	            </val>
+	          </propSet>
+	          <propSet>
+	            <name>config.network.vnic</name>
+	            <val>
+	              <HostVirtualNic>
                 <device>vmk0</device>
                 <portgroup>Management Network</portgroup>
                 <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
@@ -271,13 +334,22 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         <propSet><name>summary.config.product.build</name><val>20036589</val></propSet>
         <propSet><name>summary.hardware.numCpuCores</name><val>32</val></propSet>
         <propSet><name>summary.hardware.memorySize</name><val>274877906944</val></propSet>
-        <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
-        <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
-        <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
-        <propSet>
-          <name>config.network.vnic</name>
-          <val>
-            <HostVirtualNic>
+	        <propSet><name>hardware.systemInfo.vendor</name><val>HP</val></propSet>
+	        <propSet><name>hardware.systemInfo.model</name><val>ProLiant DL380p Gen8</val></propSet>
+	        <propSet><name>hardware.systemInfo.serialNumber</name><val>SN-123</val></propSet>
+	        <propSet>
+	          <name>hardware.systemInfo.otherIdentifyingInfo</name>
+	          <val>
+	            <HostSystemIdentificationInfo>
+	              <identifierType><key>ServiceTag</key><label>ServiceTag</label></identifierType>
+	              <identifierValue>SN-123</identifierValue>
+	            </HostSystemIdentificationInfo>
+	          </val>
+	        </propSet>
+	        <propSet>
+	          <name>config.network.vnic</name>
+	          <val>
+	            <HostVirtualNic>
               <device>vmk0</device>
               <portgroup>Management Network</portgroup>
               <spec><ip><ipAddress>192.168.1.10</ipAddress></ip></spec>
@@ -330,21 +402,82 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
+
+      if (restSessionApiJsonRpcError) {
+        // Some older deployments/proxies respond with a JSON-RPC error envelope here.
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32600, message: 'Invalid Request' },
+          }),
+        );
+        return;
+      }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify('token-123'));
+      res.end(JSON.stringify(restSessionToken));
+      return;
+    }
+
+    // Legacy session endpoint.
+    if (method === 'POST' && url === '/rest/com/vmware/cis/session') {
+      restCisSessionCalls++;
+      const auth = req.headers.authorization ?? '';
+      if (auth !== `Basic ${Buffer.from('user:pass').toString('base64')}`) {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ value: restSessionToken }));
+      return;
+    }
+
+    if (
+      restVcenterApiGetNotAllowed &&
+      method === 'GET' &&
+      (pathname === '/api/vcenter/system/version' || pathname.startsWith('/api/vcenter/'))
+    ) {
+      res.statusCode = 405;
+      res.setHeader('Content-Type', 'text/html; charset=ISO-8859-1');
+      res.end(`<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=ISO-8859-1"/>
+<title>Error 405 HTTP method GET is not supported by this URL</title>
+</head>
+<body><h2>HTTP ERROR 405 HTTP method GET is not supported by this URL</h2>
+<table>
+<tr><th>URI:</th><td>${pathname}</td></tr>
+<tr><th>STATUS:</th><td>405</td></tr>
+<tr><th>MESSAGE:</th><td>HTTP method GET is not supported by this URL</td></tr>
+<tr><th>SERVLET:</th><td>servlet 3</td></tr>
+</table>
+</body>
+</html>
+`);
       return;
     }
 
     // The remaining endpoints only require the session header.
-    if (req.headers['vmware-api-session-id'] !== 'token-123') {
+    if (req.headers['vmware-api-session-id'] !== restSessionToken) {
       res.statusCode = 401;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: 'missing-session' }));
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/system/version') {
+    if (pathname.startsWith('/rest/vcenter/')) restVcenterRestCalls++;
+
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/system/version' || pathname === '/rest/vcenter/system/version')
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = { product: 'VMware vCenter Server', version: restSystemVersion, build: restSystemBuild };
@@ -352,7 +485,37 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/vm' && searchParams.get('hosts') === 'host-1') {
+    if (
+      restVmListHostsParamUnsupported &&
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm' || pathname === '/rest/vcenter/vm') &&
+      searchParams.has('hosts')
+    ) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          type: 'com.vmware.vapi.std.errors.unexpected_input',
+          value: {
+            messages: [
+              {
+                args: ['[hosts]', 'operation-input'],
+                default_message: "Found unexpected fields [hosts] in structure 'operation-input'.",
+                id: 'vapi.data.structure.field.unexpected',
+              },
+            ],
+          },
+        }),
+      );
+      return;
+    }
+
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm' || pathname === '/rest/vcenter/vm') &&
+      searchParams.get('filter.hosts') === 'host-1'
+    ) {
+      restVmListFilterHostsCalls++;
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [{ vm: 'vm-1' }];
@@ -360,14 +523,30 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/vm' && !searchParams.has('hosts')) {
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm' || pathname === '/rest/vcenter/vm') &&
+      searchParams.get('hosts') === 'host-1'
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [{ vm: 'vm-1' }];
       res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
       return;
     }
-    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1') {
+
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm' || pathname === '/rest/vcenter/vm') &&
+      !searchParams.has('hosts')
+    ) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      const payload = [{ vm: 'vm-1' }];
+      res.end(JSON.stringify(restWrapValue ? { value: payload } : payload));
+      return;
+    }
+    if (method === 'GET' && (pathname === '/api/vcenter/vm/vm-1' || pathname === '/rest/vcenter/vm/vm-1')) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = restVmDetailFlat
@@ -392,7 +571,11 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking/interfaces') {
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm/vm-1/guest/networking/interfaces' ||
+        pathname === '/rest/vcenter/vm/vm-1/guest/networking/interfaces')
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [
@@ -405,7 +588,10 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/vm/vm-1/guest/networking') {
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/vm/vm-1/guest/networking' || pathname === '/rest/vcenter/vm/vm-1/guest/networking')
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = { dns_values: { host_name: 'vm1.local' } };
@@ -413,7 +599,11 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/host' && searchParams.get('clusters') === 'domain-c7') {
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/host' || pathname === '/rest/vcenter/host') &&
+      searchParams.get('clusters') === 'domain-c7'
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [{ host: 'host-1' }];
@@ -421,7 +611,11 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/host' && !searchParams.has('clusters')) {
+    if (
+      method === 'GET' &&
+      (pathname === '/api/vcenter/host' || pathname === '/rest/vcenter/host') &&
+      !searchParams.has('clusters')
+    ) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [{ host: 'host-1', name: 'esxi-01', connection_state: 'CONNECTED', power_state: 'POWERED_ON' }];
@@ -429,7 +623,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/vcenter/cluster') {
+    if (method === 'GET' && (pathname === '/api/vcenter/cluster' || pathname === '/rest/vcenter/cluster')) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       const payload = [{ cluster: 'domain-c7', name: 'Cluster A' }];
@@ -443,7 +637,8 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   });
 
   beforeAll(async () => {
-    await new Promise<void>((resolve) => server.listen(0, resolve));
+    // Bind to loopback to avoid sandbox restrictions on 0.0.0.0.
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('expected numeric address');
     endpoint = `http://127.0.0.1:${address.port}`;
@@ -534,6 +729,104 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     });
   });
 
+  it('collect_hosts retries when hardware.systemInfo.serialNumber is an invalid SOAP property', async () => {
+    soapRetrievePropertiesExUnsupported = true;
+    soapSerialNumberUnsupported = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_hosts_serial_fallback', mode: 'collect_hosts', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        stats: { warnings: Array<{ code?: string }> };
+        errors?: unknown[];
+      };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.stats.warnings).toEqual([]);
+    } finally {
+      soapRetrievePropertiesExUnsupported = false;
+      soapSerialNumberUnsupported = false;
+    }
+  });
+
+  it('collect_hosts retries when multiple SOAP properties are invalid (nvmeTopology then serialNumber)', async () => {
+    soapRetrievePropertiesExUnsupported = true;
+    soapNvmeTopologyUnsupported = true;
+    soapSerialNumberUnsupported = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_hosts_multi_invalid', mode: 'collect_hosts', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        stats: { warnings: Array<{ code?: string }> };
+        errors?: unknown[];
+      };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.stats.warnings).toEqual([]);
+    } finally {
+      soapRetrievePropertiesExUnsupported = false;
+      soapNvmeTopologyUnsupported = false;
+      soapSerialNumberUnsupported = false;
+    }
+  });
+
+  it('collect_hosts falls back to /rest/vcenter/* when /api/vcenter/* GET is not allowed', async () => {
+    restVcenterApiGetNotAllowed = true;
+    restVcenterRestCalls = 0;
+    restSystemVersion = '6.5.0';
+    restSystemBuild = '123456';
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '6.5-6.7' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_hosts_rest_fallback', mode: 'collect_hosts', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+      expect(restVcenterRestCalls).toBeGreaterThan(0);
+
+      const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: unknown[] };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+    } finally {
+      restVcenterApiGetNotAllowed = false;
+      restVcenterRestCalls = 0;
+      restSystemVersion = '7.0.3';
+      restSystemBuild = '20036589';
+    }
+  });
+
   it('collect_vms returns vm assets + vm-host relations', async () => {
     const request = {
       schema_version: 'collector-request-v1',
@@ -584,6 +877,34 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     );
   });
 
+  it('collect_vms falls back to filter.hosts when hosts filter is rejected', async () => {
+    restVmListHostsParamUnsupported = true;
+    restVmListFilterHostsCalls = 0;
+    restSystemVersion = '6.5.0';
+    restSystemBuild = '123456';
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '6.5-6.7' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_vms_filter_hosts', mode: 'collect_vms', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+      expect(restVmListFilterHostsCalls).toBeGreaterThan(0);
+    } finally {
+      restVmListHostsParamUnsupported = false;
+      restVmListFilterHostsCalls = 0;
+      restSystemVersion = '7.0.3';
+      restSystemBuild = '20036589';
+    }
+  });
+
   it('collect_vms tolerates { value: ... } wrappers and 6.5-style flat fields', async () => {
     restWrapValue = true;
     restVmDetailFlat = true;
@@ -624,6 +945,44 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
         runtime: { power_state: 'poweredOn' },
       });
     } finally {
+      restWrapValue = false;
+      restVmDetailFlat = false;
+      restSystemVersion = '7.0.3';
+      restSystemBuild = '20036589';
+    }
+  });
+
+  it('collect_vms falls back to legacy /rest/com/vmware/cis/session when /api/session returns a JSON-RPC error', async () => {
+    restSessionApiJsonRpcError = true;
+    restSessionToken = 'token-legacy';
+    restCisSessionCalls = 0;
+    restWrapValue = true;
+    restVmDetailFlat = true;
+    restSystemVersion = '6.5.0';
+    restSystemBuild = '123456';
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '6.5-6.7' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_vms_legacy_session', mode: 'collect_vms', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+      expect(restCisSessionCalls).toBeGreaterThan(0);
+
+      const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: unknown[] };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+    } finally {
+      restSessionApiJsonRpcError = false;
+      restSessionToken = 'token-123';
+      restCisSessionCalls = 0;
       restWrapValue = false;
       restVmDetailFlat = false;
       restSystemVersion = '7.0.3';

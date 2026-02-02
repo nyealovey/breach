@@ -29,6 +29,7 @@ type SourceDetail = {
     scope?: 'auto' | 'standalone' | 'cluster';
     max_parallel_nodes?: number;
     auth_type?: 'api_token' | 'user_password';
+    auth_method?: 'auto' | 'kerberos' | 'ntlm' | 'basic';
     scheme?: 'https' | 'http';
     port?: number;
   };
@@ -49,12 +50,13 @@ export default function EditSourcePage() {
   const [pveScope, setPveScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
-  const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('https');
-  const [hypervPort, setHypervPort] = useState(5986);
+  const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('http');
+  const [hypervPort, setHypervPort] = useState(5985);
   const [hypervTlsVerify, setHypervTlsVerify] = useState(true);
   const [hypervTimeoutMs, setHypervTimeoutMs] = useState(60_000);
   const [hypervScope, setHypervScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [hypervMaxParallelNodes, setHypervMaxParallelNodes] = useState(5);
+  const [hypervAuthMethod, setHypervAuthMethod] = useState<'auto' | 'kerberos' | 'ntlm' | 'basic'>('auto');
   const [enabled, setEnabled] = useState(true);
   const [scheduleGroupId, setScheduleGroupId] = useState<string | null>(null);
   const [scheduleGroupName, setScheduleGroupName] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export default function EditSourcePage() {
             setPveAuthType(source.config?.auth_type ?? 'api_token');
           }
           if (source.sourceType === 'hyperv') {
-            const scheme = source.config?.scheme === 'http' ? 'http' : 'https';
+            const scheme = source.config?.scheme === 'https' ? 'https' : 'http';
             setHypervScheme(scheme);
             setHypervPort(
               typeof source.config?.port === 'number' && Number.isFinite(source.config.port)
@@ -100,6 +102,7 @@ export default function EditSourcePage() {
                   ? 5986
                   : 5985,
             );
+            setHypervAuthMethod(source.config?.auth_method ?? 'auto');
             setHypervTlsVerify(source.config?.tls_verify ?? true);
             setHypervTimeoutMs(
               typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
@@ -173,6 +176,7 @@ export default function EditSourcePage() {
             ...(sourceType === 'hyperv'
               ? {
                   connection_method: 'winrm',
+                  auth_method: hypervAuthMethod,
                   scheme: hypervScheme,
                   port: hypervPort,
                   tls_verify: hypervTlsVerify,
@@ -266,12 +270,13 @@ export default function EditSourcePage() {
                     setPveScope('auto');
                     setPveMaxParallelNodes(5);
                     setPveAuthType('api_token');
-                    setHypervScheme('https');
-                    setHypervPort(5986);
+                    setHypervScheme('http');
+                    setHypervPort(5985);
                     setHypervTlsVerify(true);
                     setHypervTimeoutMs(60_000);
                     setHypervScope('auto');
                     setHypervMaxParallelNodes(5);
+                    setHypervAuthMethod('auto');
                   }}
                 >
                   <option value="vcenter">vCenter</option>
@@ -369,6 +374,24 @@ export default function EditSourcePage() {
                   <div className="text-sm font-medium">Hyper-V 配置（WinRM）</div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="hypervAuthMethod">auth_method</Label>
+                    <select
+                      id="hypervAuthMethod"
+                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
+                      value={hypervAuthMethod}
+                      onChange={(e) => setHypervAuthMethod(e.target.value as typeof hypervAuthMethod)}
+                    >
+                      <option value="auto">auto（默认：优先 Kerberos）</option>
+                      <option value="kerberos">kerberos（强制）</option>
+                      <option value="ntlm">ntlm（legacy）</option>
+                      <option value="basic">basic（legacy）</option>
+                    </select>
+                    <div className="text-xs text-muted-foreground">
+                      说明：默认 WinRM 通常禁用 basic，建议使用 auto/kerberos；如填写了 domain，auto 会优先 Kerberos。
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="hypervScheme">scheme</Label>
                     <select
                       id="hypervScheme"
@@ -381,8 +404,8 @@ export default function EditSourcePage() {
                         if (hypervPort === 5985 && next === 'https') setHypervPort(5986);
                       }}
                     >
-                      <option value="https">https（默认）</option>
                       <option value="http">http</option>
+                      <option value="https">https</option>
                     </select>
                   </div>
 

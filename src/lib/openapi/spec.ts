@@ -62,6 +62,7 @@ const AssetListItemSchema = z.object({
 
 const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
 const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
+const ScheduleGroupRunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
 
 const CredentialListItemSchema = z.object({
   credentialId: z.string(),
@@ -400,7 +401,16 @@ registry.registerPath({
   method: 'post',
   path: '/api/v1/schedule-groups/{id}/runs',
   tags: ['schedule-groups'],
-  request: { params: z.object({ id: z.string() }) },
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ mode: ScheduleGroupRunModeSchema.optional() }),
+        },
+      },
+    },
+  },
   responses: {
     200: {
       description: 'OK',
@@ -411,12 +421,14 @@ registry.registerPath({
               queued: z.number().int(),
               skipped_active: z.number().int(),
               skipped_missing_credential: z.number().int(),
+              skipped_missing_config: z.number().int(),
               message: z.string(),
             }),
           ),
         },
       },
     },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
     404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
   },
 });

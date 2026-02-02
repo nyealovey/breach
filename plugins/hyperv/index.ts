@@ -15,6 +15,13 @@ function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV
   };
 }
 
+function getRunId(request: CollectorRequestV1): string | undefined {
+  const runId = request.request?.run_id;
+  if (typeof runId !== 'string') return undefined;
+  const trimmed = runId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 async function readStdinJson(): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
@@ -48,20 +55,28 @@ function toWinrmUsername(cred: HypervCredential): string {
   const username = (cred.username ?? '').trim();
   const domain = typeof cred.domain === 'string' ? cred.domain.trim() : '';
   if (!domain) return username;
-  // winrm-client 使用 "DOMAIN\\user" 触发 NTLM
+  // legacy（winrm-client）使用 "DOMAIN\\user" 触发 NTLM
   return `${domain}\\${username}`;
 }
 
 function toHypervError(err: unknown, stage: string): CollectorError {
   const cause = err instanceof Error ? err.message : String(err);
   const lower = cause.toLowerCase();
+  const winrmHttp =
+    err && typeof err === 'object' && !Array.isArray(err) && 'winrm_http' in (err as Record<string, unknown>)
+      ? (err as Record<string, unknown>).winrm_http
+      : undefined;
+  const winrmHttpContext =
+    winrmHttp && typeof winrmHttp === 'object' && !Array.isArray(winrmHttp) ? winrmHttp : undefined;
 
   // Config/credential issues (fail-fast)
   if (
     lower.includes('missing endpoint') ||
     lower.includes('invalid config') ||
     lower.includes('missing username') ||
-    lower.includes('missing password')
+    lower.includes('missing password') ||
+    lower.includes('kerberos requires') ||
+    lower.includes('enoent')
   ) {
     return {
       code: 'HYPERV_CONFIG_INVALID',
@@ -91,12 +106,27 @@ function toHypervError(err: unknown, stage: string): CollectorError {
     lower.includes('authentication failed') ||
     lower.includes('unauthorized') ||
     lower.includes('failed to process the request: 401') ||
-    lower.includes('ntlm authentication failed')
+    lower.includes('ntlm authentication failed') ||
+    lower.includes('kinit failed') ||
+    lower.includes('createshell failed with status 401') ||
+    lower.includes('command failed with status 401')
   ) {
-    return { code: 'HYPERV_AUTH_FAILED', category: 'auth', message: 'authentication failed', retryable: false };
+    return {
+      code: 'HYPERV_AUTH_FAILED',
+      category: 'auth',
+      message: 'authentication failed',
+      retryable: false,
+      redacted_context: { stage, cause, ...(winrmHttpContext ? { winrm_http: winrmHttpContext } : {}) },
+    };
   }
   if (lower.includes('access is denied') || lower.includes('failed to process the request: 403')) {
-    return { code: 'HYPERV_PERMISSION_DENIED', category: 'permission', message: 'permission denied', retryable: false };
+    return {
+      code: 'HYPERV_PERMISSION_DENIED',
+      category: 'permission',
+      message: 'permission denied',
+      retryable: false,
+      redacted_context: { stage, cause, ...(winrmHttpContext ? { winrm_http: winrmHttpContext } : {}) },
+    };
   }
 
   // Parse/shape issues
@@ -127,7 +157,7 @@ function buildWinrmOptions(request: CollectorRequestV1) {
   const endpoint = (cfg.endpoint ?? '').trim();
   if (!endpoint) throw new Error('missing endpoint');
 
-  const scheme = (cfg.scheme === 'http' || cfg.scheme === 'https' ? cfg.scheme : 'https') as 'http' | 'https';
+  const scheme = (cfg.scheme === 'http' || cfg.scheme === 'https' ? cfg.scheme : 'http') as 'http' | 'https';
   const port =
     typeof cfg.port === 'number' && Number.isFinite(cfg.port) && Number.isInteger(cfg.port) && cfg.port > 0
       ? cfg.port
@@ -139,10 +169,22 @@ function buildWinrmOptions(request: CollectorRequestV1) {
   const timeoutMs = clampPositiveInt(cfg.timeout_ms, 60_000);
 
   const cred = request.source.credential as HypervCredential;
-  const username = toWinrmUsername(cred);
+  const rawUsername = (cred.username ?? '').trim();
   const password = (cred.password ?? '').trim();
-  if (!username) throw new Error('missing username');
+  if (!rawUsername) throw new Error('missing username');
   if (!password) throw new Error('missing password');
+
+  const authMethod =
+    cfg.auth_method === 'kerberos' ||
+    cfg.auth_method === 'ntlm' ||
+    cfg.auth_method === 'basic' ||
+    cfg.auth_method === 'auto'
+      ? cfg.auth_method
+      : 'auto';
+
+  const domain = typeof cred.domain === 'string' && cred.domain.trim().length > 0 ? cred.domain.trim() : undefined;
+  const legacyUsername = domain ? `${domain}\\${rawUsername}` : rawUsername;
+  const username = authMethod === 'basic' ? rawUsername : legacyUsername;
 
   return {
     host: endpoint,
@@ -152,6 +194,9 @@ function buildWinrmOptions(request: CollectorRequestV1) {
     timeoutMs,
     username,
     password,
+    authMethod,
+    domain,
+    rawUsername,
   };
 }
 
@@ -162,6 +207,7 @@ function buildWinrmOptionsForHost(base: ReturnType<typeof buildWinrmOptions>, ho
 async function healthcheck(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const opts = buildWinrmOptions(request);
+    const runId = getRunId(request);
 
     // Minimal baseline: can run a trivial command and (best-effort) list VM cmdlet presence.
     const script = `
@@ -173,7 +219,7 @@ try {
 [pscustomobject]@{ ok = $true; can_list_vms = $canList } | ConvertTo-Json -Compress
 `.trim();
 
-    await runPowershellWithTimeout(opts, script);
+    await runPowershellWithTimeout(opts, script, 'hyperv.healthcheck', { runId });
     return { response: makeResponse({ errors: [] }), exitCode: 0 };
   } catch (err) {
     return { response: makeResponse({ errors: [toHypervError(err, 'healthcheck')] }), exitCode: 1 };
@@ -183,6 +229,7 @@ try {
 async function detect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const opts = buildWinrmOptions(request);
+    const runId = getRunId(request);
     const configuredScope = request.source.config?.scope ?? 'auto';
 
     const script = `
@@ -235,7 +282,7 @@ $recommendedScope = if ($isCluster) { 'cluster' } else { 'standalone' }
 } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
-    const detectResult = await runPowershellJson<Record<string, unknown>>(opts, script, 'hyperv.detect');
+    const detectResult = await runPowershellJson<Record<string, unknown>>(opts, script, 'hyperv.detect', { runId });
 
     return {
       response: makeResponse({
@@ -259,7 +306,10 @@ type ClusterDiscovery = {
   error: string | null;
 };
 
-async function discoverCluster(opts: ReturnType<typeof buildWinrmOptions>): Promise<ClusterDiscovery> {
+async function discoverCluster(
+  opts: ReturnType<typeof buildWinrmOptions>,
+  meta?: { runId?: string },
+): Promise<ClusterDiscovery> {
   const script = `
 $ErrorActionPreference = 'Stop'
 $isCluster = $false
@@ -279,7 +329,7 @@ try {
 [pscustomobject]@{ is_cluster = $isCluster; cluster_name = $clusterName; nodes = $nodes; error = $err } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
-  const raw = await runPowershellJson<Record<string, unknown>>(opts, script, 'hyperv.cluster.discovery');
+  const raw = await runPowershellJson<Record<string, unknown>>(opts, script, 'hyperv.cluster.discovery', meta);
   const nodes =
     raw && typeof raw === 'object' && 'nodes' in raw && Array.isArray((raw as any).nodes)
       ? ((raw as any).nodes as unknown[])
@@ -302,6 +352,7 @@ type ClusterVmOwner = { name: string; owner_node: string | null; group_type: str
 
 async function listClusterVmOwners(
   opts: ReturnType<typeof buildWinrmOptions>,
+  meta?: { runId?: string },
 ): Promise<Array<{ name: string; owner_node: string | null }>> {
   const script = `
 $ErrorActionPreference = 'Stop'
@@ -320,7 +371,7 @@ try {
 $out | ConvertTo-Json -Compress -Depth 4
 `.trim();
 
-  const raw = await runPowershellJson<unknown>(opts, script, 'hyperv.cluster.groups').catch(() => null);
+  const raw = await runPowershellJson<unknown>(opts, script, 'hyperv.cluster.groups', meta).catch(() => null);
   if (!Array.isArray(raw)) return [];
 
   const rows = raw
@@ -343,6 +394,7 @@ async function collectStandalone(
   request: CollectorRequestV1,
 ): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   const opts = buildWinrmOptions(request);
+  const runId = getRunId(request);
 
   const script = `
 $ErrorActionPreference = 'Stop'
@@ -387,7 +439,7 @@ try {
 [pscustomobject]@{ host = $host; vms = $vms } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
-  const payload = await runPowershellJson<{ host: any; vms: any[] }>(opts, script, 'hyperv.collect');
+  const payload = await runPowershellJson<{ host: any; vms: any[] }>(opts, script, 'hyperv.collect', { runId });
 
   const hostAsset = normalizeHost(payload.host);
   const vmAssets = (Array.isArray(payload.vms) ? payload.vms : []).map((vm) => normalizeVm(vm));
@@ -454,9 +506,10 @@ async function collectCluster(
   request: CollectorRequestV1,
 ): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   const baseOpts = buildWinrmOptions(request);
+  const runId = getRunId(request);
   const maxParallelNodes = clampPositiveInt(request.source.config?.max_parallel_nodes, 5);
 
-  const discovery = await discoverCluster(baseOpts);
+  const discovery = await discoverCluster(baseOpts, { runId });
   if (!discovery.is_cluster || !discovery.cluster_name || discovery.nodes.length === 0) {
     const error: CollectorError = {
       code: 'HYPERV_CONFIG_INVALID',
@@ -476,7 +529,7 @@ async function collectCluster(
   const clusterAsset = normalizeCluster({ name: discovery.cluster_name });
 
   // Best-effort: map VM Name -> OwnerNode from cluster groups.
-  const ownerRows = await listClusterVmOwners(baseOpts);
+  const ownerRows = await listClusterVmOwners(baseOpts, { runId });
   const ownerByName = new Map<string, string>();
   for (const row of ownerRows) {
     if (row.owner_node) ownerByName.set(row.name, row.owner_node);
@@ -530,6 +583,7 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
           nodeOpts,
           nodeScript,
           `hyperv.collect.cluster.node.${node}`,
+          { runId },
         );
 
         const hostAsset = normalizeHost(payload.host);
@@ -661,12 +715,13 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
 
 async function collect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
+    const runId = getRunId(request);
     const scope = request.source.config?.scope ?? 'auto';
     if (scope === 'cluster') return await collectCluster(request);
     if (scope === 'auto') {
       // Best-effort: if the entry endpoint is cluster-capable, prefer cluster inventory.
       const opts = buildWinrmOptions(request);
-      const discovery = await discoverCluster(opts).catch(() => null);
+      const discovery = await discoverCluster(opts, { runId }).catch(() => null);
       if (discovery?.is_cluster) return await collectCluster(request);
     }
 

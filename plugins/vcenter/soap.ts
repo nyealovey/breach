@@ -95,6 +95,13 @@ function parseSoapFaultString(xml: string): string | undefined {
   }
 }
 
+function parseSoapInvalidPropertyName(xml: string): string | undefined {
+  // Example: <InvalidPropertyFault ...><name>hardware.systemInfo.serialNumber</name>...</InvalidPropertyFault>
+  const match = xml.match(/InvalidProperty[\s\S]*?<name>([^<]+)<\/name>/i);
+  const name = match?.[1]?.trim();
+  return name ? name : undefined;
+}
+
 function toStringValue(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -1033,26 +1040,31 @@ export async function collectHostSoapDetails(input: {
     meta,
   );
   if (exUnsupported) {
-    debugLog('global', 'RetrieveProperties.request', { host_ids_count: hostIds.length, path_set: pathSet }, meta);
-    const retrieveRes = await retrieveProperties(hostPropSetXml, hostObjectSetXml);
-    debugLog(
-      'global',
-      'RetrieveProperties.response',
-      {
-        status: retrieveRes.status,
-        body_length: retrieveRes.bodyText.length,
-        body_excerpt: excerpt(retrieveRes.bodyText),
-      },
-      meta,
-    );
-    if (retrieveRes.status >= 200 && retrieveRes.status < 300) {
-      const details = parseRetrievePropertiesHostResult(retrieveRes.bodyText, input.runId);
+    const runAttempt = async (paths: string[], label: string) => {
+      const propXml = buildPropSetXml('HostSystem', paths);
+      debugLog('global', `${label}.request`, { host_ids_count: hostIds.length, path_set: paths }, meta);
+      const res = await retrieveProperties(propXml, hostObjectSetXml);
+      debugLog(
+        'global',
+        `${label}.response`,
+        {
+          status: res.status,
+          body_length: res.bodyText.length,
+          body_excerpt: excerpt(res.bodyText),
+        },
+        meta,
+      );
+      return res;
+    };
+
+    const finalize = async (bodyText: string, op: string) => {
+      const details = parseRetrievePropertiesHostResult(bodyText, input.runId);
       await attachDatastoreTotals(details, false);
       debugLog(
         'global',
         'collectHostSoapDetails.success',
         {
-          op: 'RetrieveProperties',
+          op,
           hosts_requested: hostIds.length,
           hosts_returned: details.size,
           missing_host_ids_sample: hostIds.filter((id) => !details.has(id)).slice(0, 10),
@@ -1064,49 +1076,36 @@ export async function collectHostSoapDetails(input: {
         meta,
       );
       return details;
+    };
+
+    let paths = [...pathSet];
+    let retrieveRes = await runAttempt(paths, 'RetrieveProperties');
+    if (retrieveRes.status >= 200 && retrieveRes.status < 300)
+      return await finalize(retrieveRes.bodyText, 'RetrieveProperties');
+
+    // Some stacks can fail with multiple InvalidPropertyFaults one-by-one. Keep removing the invalid
+    // property reported by the SOAP fault until we succeed or no progress can be made.
+    const removedInvalid: string[] = [];
+    for (let attempt = 0; attempt < pathSet.length; attempt++) {
+      const invalid = parseSoapInvalidPropertyName(retrieveRes.bodyText);
+      if (!invalid) break;
+      if (!paths.includes(invalid)) break;
+      if (removedInvalid.includes(invalid)) break;
+
+      removedInvalid.push(invalid);
+      paths = paths.filter((p) => p !== invalid);
+      retrieveRes = await runAttempt(paths, `RetrieveProperties.retry_remove_invalid.${attempt + 1}`);
+      if (retrieveRes.status >= 200 && retrieveRes.status < 300) {
+        return await finalize(retrieveRes.bodyText, `RetrieveProperties (no ${removedInvalid.join(', ')})`);
+      }
     }
 
     // Back-compat: nvmeTopology is unavailable on older stacks; retry without it.
-    if (pathSetNoNvme.length !== pathSet.length) {
-      debugLog(
-        'global',
-        'RetrieveProperties.retry_no_nvme.request',
-        {
-          host_ids_count: hostIds.length,
-          path_set: pathSetNoNvme,
-        },
-        meta,
-      );
-      const retryRes = await retrieveProperties(hostPropSetNoNvmeXml, hostObjectSetXml);
-      debugLog(
-        'global',
-        'RetrieveProperties.retry_no_nvme.response',
-        {
-          status: retryRes.status,
-          body_length: retryRes.bodyText.length,
-          body_excerpt: excerpt(retryRes.bodyText),
-        },
-        meta,
-      );
+    if (paths.includes('config.storageDevice.nvmeTopology')) {
+      const retryPaths = paths.filter((p) => p !== 'config.storageDevice.nvmeTopology');
+      const retryRes = await runAttempt(retryPaths, 'RetrieveProperties.retry_no_nvme');
       if (retryRes.status >= 200 && retryRes.status < 300) {
-        const details = parseRetrievePropertiesHostResult(retryRes.bodyText, input.runId);
-        await attachDatastoreTotals(details, false);
-        debugLog(
-          'global',
-          'collectHostSoapDetails.success',
-          {
-            op: 'RetrieveProperties (no nvmeTopology)',
-            hosts_requested: hostIds.length,
-            hosts_returned: details.size,
-            missing_host_ids_sample: hostIds.filter((id) => !details.has(id)).slice(0, 10),
-            hosts_missing_disk_total: Array.from(details.entries())
-              .filter(([, d]) => d.diskTotalBytes === undefined)
-              .map(([id]) => id)
-              .slice(0, 10),
-          },
-          meta,
-        );
-        return details;
+        return await finalize(retryRes.bodyText, 'RetrieveProperties (no nvmeTopology)');
       }
       throw makeHttpError({ op: 'RetrieveProperties', status: retryRes.status, bodyText: retryRes.bodyText });
     }

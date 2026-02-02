@@ -23,7 +23,11 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
     actions: [
       {
         title: '检查凭据与账号状态',
-        steps: ['在 Credentials 检查用户名/密码是否正确', '确认账号未锁定/未过期', '回到 Sources 先跑一次 healthcheck'],
+        steps: [
+          '在 Credentials 检查用户名/密码是否正确',
+          '确认账号未锁定/未过期',
+          '在调度组页面点击「运行」并选择 healthcheck（或在 /api/docs 调用 POST /api/v1/sources/:id/runs）',
+        ],
         links: [
           { label: '打开 Credentials', href: '/credentials' },
           { label: '打开 Sources', href: '/sources' },
@@ -36,7 +40,11 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
     actions: [
       {
         title: '检查 API Token / 用户密码',
-        steps: ['确认 tokenId/secret 或用户名/密码正确', '确认 token 未被撤销', '回到 Sources 先跑一次 healthcheck'],
+        steps: [
+          '确认 tokenId/secret 或用户名/密码正确',
+          '确认 token 未被撤销',
+          '在调度组页面点击「运行」并选择 healthcheck（或在 /api/docs 调用 POST /api/v1/sources/:id/runs）',
+        ],
         links: [{ label: '打开 Sources', href: '/sources' }],
       },
     ],
@@ -49,7 +57,7 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
         steps: [
           '确认 domain/username/password 正确',
           '确认目标主机允许该账号远程只读查询',
-          '回到 Sources 先跑一次 healthcheck',
+          '在调度组页面点击「运行」并选择 healthcheck（或在 /api/docs 调用 POST /api/v1/sources/:id/runs）',
         ],
         links: [{ label: '打开 Sources', href: '/sources' }],
       },
@@ -63,7 +71,7 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
         steps: [
           '确认 AccessKey 未失效',
           '确认 RAM 权限包含 ECS/Region 枚举所需最小权限',
-          '回到 Sources 先跑一次 healthcheck',
+          '在调度组页面点击「运行」并选择 healthcheck（或在 /api/docs 调用 POST /api/v1/sources/:id/runs）',
         ],
         links: [{ label: '打开 Sources', href: '/sources' }],
       },

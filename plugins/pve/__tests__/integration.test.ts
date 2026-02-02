@@ -141,7 +141,8 @@ describe('pve plugin integration (mock PVE API)', () => {
   });
 
   beforeAll(async () => {
-    await new Promise<void>((resolve) => server.listen(0, resolve));
+    // Bind to loopback to avoid sandbox restrictions on 0.0.0.0.
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('expected numeric address');
     endpoint = `http://127.0.0.1:${address.port}`;

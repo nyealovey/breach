@@ -20,18 +20,17 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
+import { compareCandidateFieldValues, extractCandidateReasons } from '@/lib/duplicate-candidates/candidate-ui-utils';
 import {
   candidateStatusLabel,
   confidenceBadgeVariant,
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-type CandidateReason = {
-  code: string;
-  weight: number;
-  evidence?: { field?: string; a?: unknown; b?: unknown };
-};
+import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
+import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
 
 type CandidateAsset = {
   assetUuid: string;
@@ -70,23 +69,6 @@ function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   return cur;
 }
 
-function normalizeComparable(value: unknown): unknown {
-  if (typeof value === 'string') return value.trim();
-  if (
-    Array.isArray(value) &&
-    value.every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
-  ) {
-    return [...value]
-      .map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : v))
-      .sort((a, b) => String(a).localeCompare(String(b)));
-  }
-  return value;
-}
-
-function isEqualish(a: unknown, b: unknown): boolean {
-  return JSON.stringify(normalizeComparable(a)) === JSON.stringify(normalizeComparable(b));
-}
-
 export default function DuplicateCandidateMergePage() {
   const router = useRouter();
   const params = useParams<{ candidateId: string }>();
@@ -98,6 +80,10 @@ export default function DuplicateCandidateMergePage() {
   const [canonicalLoading, setCanonicalLoading] = useState(false);
   const [canonicalFieldsA, setCanonicalFieldsA] = useState<unknown | null>(null);
   const [canonicalFieldsB, setCanonicalFieldsB] = useState<unknown | null>(null);
+
+  const [vmHostA, setVmHostA] = useState<RelationChainNode | null>(null);
+  const [vmHostB, setVmHostB] = useState<RelationChainNode | null>(null);
+  const [vmHostLoading, setVmHostLoading] = useState(false);
 
   const [primarySide, setPrimarySide] = useState<'A' | 'B'>('A');
 
@@ -153,6 +139,48 @@ export default function DuplicateCandidateMergePage() {
 
   useEffect(() => {
     let active = true;
+    const loadVmHosts = async () => {
+      if (!data) return;
+      if (data.assetA.assetType !== 'vm' || data.assetB.assetType !== 'vm') return;
+
+      setVmHostLoading(true);
+      setVmHostA(null);
+      setVmHostB(null);
+
+      try {
+        const [aRes, bRes] = await Promise.all([
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`),
+        ]);
+
+        const parse = async (res: Response): Promise<RelationRef[]> => {
+          if (!res.ok) return [];
+          const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
+          return Array.isArray(body?.data) ? (body.data as RelationRef[]) : [];
+        };
+
+        const [aRels, bRels] = await Promise.all([parse(aRes), parse(bRes)]);
+        const hostA = findRunsOnHost(aRels);
+        const hostB = findRunsOnHost(bRels);
+
+        if (active) {
+          setVmHostA(hostA);
+          setVmHostB(hostB);
+          setVmHostLoading(false);
+        }
+      } catch {
+        if (active) setVmHostLoading(false);
+      }
+    };
+
+    void loadVmHosts();
+    return () => {
+      active = false;
+    };
+  }, [data]);
+
+  useEffect(() => {
+    let active = true;
     const loadCanonical = async () => {
       if (!data) return;
 
@@ -194,30 +222,50 @@ export default function DuplicateCandidateMergePage() {
 
   const reasons = useMemo(() => {
     if (!data) return [];
-    if (!Array.isArray(data.reasons)) return [];
-    return (data.reasons as CandidateReason[]).filter((r) => r && typeof r === 'object' && typeof r.code === 'string');
+    return extractCandidateReasons(data.reasons);
   }, [data]);
 
-  const assetType = data?.assetA.assetType ?? null;
-  const compareKeys = useMemo(() => {
-    if (assetType === 'vm')
+  const compareRows = useMemo(() => {
+    if (!data) return [];
+
+    const fromCanonical = (path: string) => ({
+      key: path,
+      label: path,
+      a: getCanonicalFieldValue(canonicalFieldsA, path),
+      b: getCanonicalFieldValue(canonicalFieldsB, path),
+      source: canonicalFieldsA || canonicalFieldsB ? ('canonical' as const) : ('missing' as const),
+    });
+
+    const assetType = data.assetA.assetType;
+    if (assetType === 'vm') {
       return [
-        'identity.machine_uuid',
-        'identity.hostname',
-        'network.ip_addresses',
-        'network.mac_addresses',
-        'os.fingerprint',
+        {
+          key: 'runs_on_host',
+          label: 'runs_on_host',
+          a: vmHostA?.displayName ?? vmHostA?.assetUuid,
+          b: vmHostB?.displayName ?? vmHostB?.assetUuid,
+          source: vmHostA || vmHostB ? ('relation' as const) : ('missing' as const),
+        },
+        fromCanonical('identity.machine_uuid'),
+        fromCanonical('identity.hostname'),
+        fromCanonical('network.ip_addresses'),
+        fromCanonical('network.mac_addresses'),
+        fromCanonical('os.fingerprint'),
       ];
-    if (assetType === 'host')
+    }
+
+    if (assetType === 'host') {
       return [
-        'identity.serial_number',
-        'network.bmc_ip',
-        'network.management_ip',
-        'identity.hostname',
-        'os.fingerprint',
+        fromCanonical('identity.serial_number'),
+        fromCanonical('network.bmc_ip'),
+        fromCanonical('network.management_ip'),
+        fromCanonical('identity.hostname'),
+        fromCanonical('os.fingerprint'),
       ];
+    }
+
     return [];
-  }, [assetType]);
+  }, [canonicalFieldsA, canonicalFieldsB, data, vmHostA, vmHostB]);
 
   const primary = data ? (primarySide === 'A' ? data.assetA : data.assetB) : null;
   const secondary = data ? (primarySide === 'A' ? data.assetB : data.assetA) : null;
@@ -281,6 +329,23 @@ export default function DuplicateCandidateMergePage() {
                         </Badge>
                       </div>
                       <div className="text-sm font-medium">{data.assetA.displayName ?? '-'}</div>
+                      {data.assetA.assetType === 'vm' ? (
+                        <div className="text-xs text-muted-foreground">
+                          宿主机:{' '}
+                          {vmHostLoading ? (
+                            '加载中…'
+                          ) : vmHostA ? (
+                            <Link
+                              href={`/assets/${encodeURIComponent(vmHostA.assetUuid)}`}
+                              className="underline underline-offset-2"
+                            >
+                              {vmHostA.displayName ?? vmHostA.assetUuid}
+                            </Link>
+                          ) : (
+                            '-'
+                          )}
+                        </div>
+                      ) : null}
                       <div className="font-mono text-xs text-muted-foreground">{data.assetA.assetUuid}</div>
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetA.lastSeenAt ?? '-'}</div>
                       <Button asChild size="sm" variant="outline">
@@ -301,6 +366,23 @@ export default function DuplicateCandidateMergePage() {
                         </Badge>
                       </div>
                       <div className="text-sm font-medium">{data.assetB.displayName ?? '-'}</div>
+                      {data.assetB.assetType === 'vm' ? (
+                        <div className="text-xs text-muted-foreground">
+                          宿主机:{' '}
+                          {vmHostLoading ? (
+                            '加载中…'
+                          ) : vmHostB ? (
+                            <Link
+                              href={`/assets/${encodeURIComponent(vmHostB.assetUuid)}`}
+                              className="underline underline-offset-2"
+                            >
+                              {vmHostB.displayName ?? vmHostB.assetUuid}
+                            </Link>
+                          ) : (
+                            '-'
+                          )}
+                        </div>
+                      ) : null}
                       <div className="font-mono text-xs text-muted-foreground">{data.assetB.assetUuid}</div>
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetB.lastSeenAt ?? '-'}</div>
                       <Button asChild size="sm" variant="outline">
@@ -388,23 +470,23 @@ export default function DuplicateCandidateMergePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {compareKeys.map((path) => {
-                      const aVal = getCanonicalFieldValue(canonicalFieldsA, path);
-                      const bVal = getCanonicalFieldValue(canonicalFieldsB, path);
-                      const equal = isEqualish(aVal, bVal);
-                      const variant = equal ? 'secondary' : 'destructive';
+                    {compareRows.map((row) => {
+                      const compare = compareCandidateFieldValues(row.a, row.b);
+                      const label = compare === 'match' ? '一致' : compare === 'missing' ? '缺失' : '冲突';
+                      const variant =
+                        compare === 'match' ? 'secondary' : compare === 'missing' ? 'outline' : 'destructive';
 
                       return (
-                        <TableRow key={path} className={equal ? '' : 'bg-destructive/5'}>
-                          <TableCell className="font-mono text-xs">{path}</TableCell>
+                        <TableRow key={row.key} className={compare === 'mismatch' ? 'bg-destructive/5' : ''}>
+                          <TableCell className="font-mono text-xs">{row.label}</TableCell>
                           <TableCell className="max-w-[440px] whitespace-normal break-words text-sm">
-                            {formatAssetFieldValue(aVal)}
+                            {formatAssetFieldValue(row.a)}
                           </TableCell>
                           <TableCell className="max-w-[440px] whitespace-normal break-words text-sm">
-                            {formatAssetFieldValue(bVal)}
+                            {formatAssetFieldValue(row.b)}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={variant}>{equal ? '一致' : '冲突'}</Badge>
+                            <Badge variant={variant}>{label}</Badge>
                           </TableCell>
                         </TableRow>
                       );
