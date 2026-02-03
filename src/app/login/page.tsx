@@ -36,7 +36,7 @@ export default function LoginPage() {
       }
 
       toast.success('登录成功');
-      router.replace('/');
+      router.replace('/assets');
     } finally {
       setSubmitting(false);
     }

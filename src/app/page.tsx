@@ -11,7 +11,7 @@ export default async function Home() {
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">资产台账（vCenter MVP）</h1>
       <p className="text-sm text-muted-foreground">
-        从左侧导航开始：配置调度组、创建 Source、触发 Run，然后在资产页查看统一视图与关系链。
+        从顶部导航开始：配置调度组，在「配置中心」创建来源/凭据，触发 Run，然后在资产页查看统一视图与关系链。
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -152,7 +152,9 @@ List of websites that started off with Next.js TypeScript Starter:
 
 页面入口：
 
-- `/login`：登录（admin/user）
+- 导航：顶部主导航（一级）；「配置中心」为一级菜单，二级菜单包含「来源」「凭据」。
+
+- `/login`：登录（admin/user；登录成功默认跳转 `/assets`）
 - `/runs`：采集 Run 列表与详情（admin/user；失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
 - `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）（admin/user）；raw 查看仅 admin（脱敏+审计）；资产详情包含“历史/时间线”（M12）；支持筛选：操作系统、地区、业务对接人员、公司、部门、系统分类、系统分级（下拉候选来自 `GET /api/v1/assets/ledger-fields/options`）；资产列表新增“录入时间”（默认显示首次采集时间）；列设置支持两列展示避免高度溢出，且“机器名/IP”为核心列固定显示；资产详情的来源记录查看（normalized/raw）为页面跳转：`/source-records/:recordId?tab=normalized|raw`（避免模态框），并按资产类型隐藏不相关字段
 - `/exports`：资产台账导出 CSV（admin-only；异步任务；下载即失效）
