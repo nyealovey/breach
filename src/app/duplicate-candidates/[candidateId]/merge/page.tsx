@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
+import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -285,17 +286,20 @@ export default function DuplicateCandidateMergePage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => router.push(`/duplicate-candidates/${encodeURIComponent(candidateId)}`)}
-          >
-            返回候选
-          </Button>
-          <div className="font-mono text-xs text-muted-foreground">{candidateId}</div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="合并确认"
+          meta={<span className="font-mono">{candidateId}</span>}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => router.push(`/duplicate-candidates/${encodeURIComponent(candidateId)}`)}
+            >
+              返回候选
+            </Button>
+          }
+        />
 
         {loading ? (
           <div className="text-sm text-muted-foreground">加载中…</div>

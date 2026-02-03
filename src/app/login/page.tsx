@@ -4,8 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -43,12 +44,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-4 pt-10">
+    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
+      <PageHeader title="管理员登录" description="仅支持 admin（用户名固定为 admin）。" />
+
       <Card>
-        <CardHeader>
-          <CardTitle>管理员登录</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
               <Label htmlFor="username">用户名</Label>
@@ -75,7 +75,7 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
-      <p className="text-xs text-muted-foreground">v1.0 仅支持 admin（用户名固定为 admin）。</p>
+      <p className="text-xs text-muted-foreground">v1.0</p>
     </div>
   );
 }

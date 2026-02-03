@@ -13,11 +13,11 @@
     "typescript"
   ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next dev",
+    "build": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build",
     "start": "next start",
-    "type-check": "SKIP_ENV_VALIDATION=true next typegen && SKIP_ENV_VALIDATION=true tsc --noEmit",
-    "build:analyze": "next build && next experimental-analyze",
+    "type-check": "SKIP_ENV_VALIDATION=true __NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next typegen && SKIP_ENV_VALIDATION=true tsc --noEmit",
+    "build:analyze": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build && next experimental-analyze",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed:dev": "bun src/bin/dev-seed.ts",

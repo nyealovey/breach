@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
+import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -363,27 +364,29 @@ export default function DuplicateCandidateDetailPage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => router.push('/duplicate-candidates')}>
-            返回列表
-          </Button>
-          <div className="font-mono text-xs text-muted-foreground">{candidateId}</div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => router.push(`/duplicate-candidates/${encodeURIComponent(candidateId)}/merge`)}
-              disabled={!data}
-            >
-              进入 Merge
-            </Button>
-            <Button size="sm" variant="destructive" disabled={ignoreDisabled} onClick={() => setIgnoreOpen(true)}>
-              Ignore
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="候选详情"
+          meta={<span className="font-mono">{candidateId}</span>}
+          actions={
+            <>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/duplicate-candidates">返回列表</Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => router.push(`/duplicate-candidates/${encodeURIComponent(candidateId)}/merge`)}
+                disabled={!data}
+              >
+                进入 Merge
+              </Button>
+              <Button size="sm" variant="destructive" disabled={ignoreDisabled} onClick={() => setIgnoreOpen(true)}>
+                Ignore
+              </Button>
+            </>
+          }
+        />
 
         {loading ? (
           <div className="text-sm text-muted-foreground">加载中…</div>

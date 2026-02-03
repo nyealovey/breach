@@ -30,9 +30,9 @@ export default async function RootLayout({
 
   return (
     <html lang="zh-CN">
-      <body className={cn(geistSans.variable, 'min-h-screen bg-background text-foreground antialiased')}>
+      <body className={cn(geistSans.variable, 'min-h-screen font-sans bg-background text-foreground antialiased')}>
         <div className="flex min-h-screen flex-col">
-          <header className="sticky top-0 z-40 border-b bg-background">
+          <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             {session ? (
               <AppTopNav isAdmin={isAdmin} />
             ) : (
@@ -45,7 +45,9 @@ export default async function RootLayout({
             )}
           </header>
 
-          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+          <main className="min-w-0 flex-1 bg-muted/30 p-4 md:p-6">
+            <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+          </main>
         </div>
 
         <Toaster />

@@ -5,9 +5,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -484,23 +485,36 @@ export default function AssetsPage() {
   const canNext = (pagination?.page ?? 1) < (pagination?.totalPages ?? 1);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>资产</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="flex flex-1 items-center gap-2">
-            <Input
-              placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/台账字段/externalId/uuid）"
-              value={qInput}
-              onChange={(e) => {
-                setPage(1);
-                setQInput(e.target.value);
-              }}
-            />
-          </div>
-          <div className="flex items-center gap-2">
+    <div className="space-y-6">
+      <PageHeader
+        title="资产"
+        description="统一视图（canonical）。支持搜索/筛选/列设置与台账字段批量维护。"
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
+              setColumnSettingsOpen(true);
+            }}
+          >
+            列设置
+          </Button>
+        }
+      />
+
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <Input
+            placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/台账字段/externalId/uuid）"
+            value={qInput}
+            onChange={(e) => {
+              setPage(1);
+              setQInput(e.target.value);
+            }}
+          />
+
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
             <Select
               value={assetTypeInput}
               onValueChange={(value) => {
@@ -514,7 +528,7 @@ export default function AssetsPage() {
                 }
               }}
             >
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full md:w-[150px]">
                 <SelectValue placeholder="类型" />
               </SelectTrigger>
               <SelectContent>
@@ -532,7 +546,7 @@ export default function AssetsPage() {
                 setSourceIdInput(value);
               }}
             >
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full md:w-[240px]">
                 <SelectValue placeholder="来源" />
               </SelectTrigger>
               <SelectContent>
@@ -554,7 +568,7 @@ export default function AssetsPage() {
                 if (value !== 'all') setAssetTypeInput('vm');
               }}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full md:w-[160px]">
                 <SelectValue placeholder="电源状态" />
               </SelectTrigger>
               <SelectContent>
@@ -565,7 +579,11 @@ export default function AssetsPage() {
               </SelectContent>
             </Select>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 md:w-[220px]">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">仅 IP 缺失</div>
+                <div className="text-xs text-muted-foreground">仅 VM 且 IP 缺失</div>
+              </div>
               <Switch
                 checked={ipMissingInput}
                 onCheckedChange={(checked) => {
@@ -574,7 +592,6 @@ export default function AssetsPage() {
                   if (checked) setAssetTypeInput('vm');
                 }}
               />
-              <span className="text-sm">仅 IP 缺失</span>
             </div>
 
             <Select
@@ -584,7 +601,7 @@ export default function AssetsPage() {
                 setPageSize(Number(value));
               }}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-full md:w-[140px]">
                 <SelectValue placeholder="每页" />
               </SelectTrigger>
               <SelectContent>
@@ -594,416 +611,420 @@ export default function AssetsPage() {
                 <SelectItem value="100">100 / 页</SelectItem>
               </SelectContent>
             </Select>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
-                setColumnSettingsOpen(true);
-              }}
-            >
-              列设置
-            </Button>
           </div>
-        </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <Select
-            value={regionInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setRegionInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="地区（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部地区</SelectItem>
-              {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
-                <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.regions.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={companyInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setCompanyInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="公司（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部公司</SelectItem>
-              {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
-                <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.companies.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={departmentInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setDepartmentInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="部门（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部部门</SelectItem>
-              {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
-                <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.departments.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={systemCategoryInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setSystemCategoryInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="系统分类（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部系统分类</SelectItem>
-              {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
-                <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.systemCategories.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={systemLevelInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setSystemLevelInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="系统分级（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部系统分级</SelectItem>
-              {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
-                <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.systemLevels.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={bizOwnerInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setBizOwnerInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="业务对接人员（台账）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部业务对接人员</SelectItem>
-              {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
-                <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.bizOwners.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={osInput || 'all'}
-            onValueChange={(value) => {
-              setPage(1);
-              setOsInput(value === 'all' ? '' : value);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="操作系统" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部操作系统</SelectItem>
-              {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
-                <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
-              ) : null}
-              {ledgerFieldFilterOptions.osNames.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {isAdmin ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={selectedAssetUuids.length < 1}
-              onClick={() => {
-                setBulkKey('');
-                setBulkValue('');
-                setBulkSetOpen(true);
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <Select
+              value={regionInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setRegionInput(value === 'all' ? '' : value);
               }}
             >
-              批量设置台账字段
-            </Button>
-            {selectedAssetUuids.length > 0 ? (
-              <>
-                <span className="text-xs text-muted-foreground">已选择 {selectedAssetUuids.length} 个（当前页）</span>
+              <SelectTrigger>
+                <SelectValue placeholder="地区（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部地区</SelectItem>
+                {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
+                  <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.regions.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={companyInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setCompanyInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="公司（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部公司</SelectItem>
+                {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
+                  <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.companies.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={departmentInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setDepartmentInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="部门（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部部门</SelectItem>
+                {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
+                  <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.departments.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={systemCategoryInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setSystemCategoryInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="系统分类（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部系统分类</SelectItem>
+                {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
+                  <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.systemCategories.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={systemLevelInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setSystemLevelInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="系统分级（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部系统分级</SelectItem>
+                {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
+                  <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.systemLevels.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={bizOwnerInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setBizOwnerInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="业务对接人员（台账）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部业务对接人员</SelectItem>
+                {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
+                  <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.bizOwners.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={osInput || 'all'}
+              onValueChange={(value) => {
+                setPage(1);
+                setOsInput(value === 'all' ? '' : value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="操作系统" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部操作系统</SelectItem>
+                {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
+                  <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
+                ) : null}
+                {ledgerFieldFilterOptions.osNames.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 space-y-0 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <div className="text-sm font-medium">列表</div>
+            <div className="text-xs text-muted-foreground">
+              {loading
+                ? '加载中…'
+                : pagination
+                  ? `第 ${pagination.page} / ${pagination.totalPages} 页 · 共 ${pagination.total} 条`
+                  : items.length === 0
+                    ? '暂无数据'
+                    : null}
+              {isAdmin && selectedAssetUuids.length > 0 ? ` · 已选 ${selectedAssetUuids.length} 个（当前页）` : null}
+            </div>
+          </div>
+
+          {isAdmin ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedAssetUuids.length < 1}
+                onClick={() => {
+                  setBulkKey('');
+                  setBulkValue('');
+                  setBulkSetOpen(true);
+                }}
+              >
+                批量设置台账字段
+              </Button>
+              {selectedAssetUuids.length > 0 ? (
                 <Button size="sm" variant="ghost" onClick={() => setSelectedAssetUuids([])}>
                   清空选择
                 </Button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
-        ) : items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">暂无资产。请先配置来源并触发一次 collect Run。</div>
-        ) : (
-          <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {isAdmin ? (
-                    <TableHead className="w-[36px]">
-                      <input
-                        type="checkbox"
-                        aria-label="选择当前页"
-                        checked={items.length > 0 && items.every((it) => selectedAssetUuidSet.has(it.assetUuid))}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedAssetUuids(items.map((it) => it.assetUuid));
-                          else setSelectedAssetUuids([]);
-                        }}
-                      />
-                    </TableHead>
-                  ) : null}
-
-                  {visibleColumnsForTable.map((colId) => {
-                    const label = ASSET_LIST_COLUMN_LABEL_BY_ID.get(colId) ?? colId;
-                    const rightAligned = colId === 'cpuCount' || colId === 'memoryBytes' || colId === 'totalDiskBytes';
-                    return (
-                      <TableHead key={colId} className={rightAligned ? 'text-right' : undefined}>
-                        {label}
-                      </TableHead>
-                    );
-                  })}
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.assetUuid}>
+              ) : null}
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <div className="text-sm text-muted-foreground">加载中…</div>
+          ) : items.length === 0 ? (
+            <div className="text-sm text-muted-foreground">暂无资产。请先配置来源并触发一次 collect Run。</div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
                     {isAdmin ? (
-                      <TableCell>
+                      <TableHead className="w-[36px]">
                         <input
                           type="checkbox"
-                          aria-label="选择资产"
-                          checked={selectedAssetUuidSet.has(item.assetUuid)}
+                          aria-label="选择当前页"
+                          checked={items.length > 0 && items.every((it) => selectedAssetUuidSet.has(it.assetUuid))}
                           onChange={(e) => {
-                            setSelectedAssetUuids((prev) => {
-                              const set = new Set(prev);
-                              if (e.target.checked) set.add(item.assetUuid);
-                              else set.delete(item.assetUuid);
-                              return Array.from(set);
-                            });
+                            if (e.target.checked) setSelectedAssetUuids(items.map((it) => it.assetUuid));
+                            else setSelectedAssetUuids([]);
                           }}
                         />
-                      </TableCell>
+                      </TableHead>
                     ) : null}
 
                     {visibleColumnsForTable.map((colId) => {
-                      if (colId === 'machineName') {
-                        return (
-                          <TableCell key={colId} className="font-medium">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span>{item.machineName ?? ''}</span>
-                              {item.machineNameOverride ? (
-                                item.machineNameMismatch ? (
-                                  <Badge variant="destructive">覆盖≠采集</Badge>
-                                ) : (
-                                  <Badge variant="secondary">覆盖</Badge>
-                                )
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'vmName') {
-                        return (
-                          <TableCell key={colId} className="font-medium">
-                            {item.vmName ?? '-'}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'hostName') {
-                        return (
-                          <TableCell key={colId} className="font-medium">
-                            {item.hostName ?? '-'}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'os') {
-                        return (
-                          <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
-                            {item.os ?? '-'}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'ip') {
-                        return (
-                          <TableCell
-                            key={colId}
-                            className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
-                          >
-                            {item.ip ? (
-                              item.ip
-                            ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
-                              <span
-                                className="cursor-help text-muted-foreground"
-                                title="VMware Tools 未安装或未运行，无法获取 IP 地址"
-                              >
-                                - (Tools 未运行)
-                              </span>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'recordedAt') {
-                        return (
-                          <TableCell key={colId} className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                            {formatDateTime(item.recordedAt)}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'cpuCount') {
-                        return (
-                          <TableCell key={colId} className="text-right">
-                            {item.cpuCount ?? '-'}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'memoryBytes') {
-                        return (
-                          <TableCell key={colId} className="text-right">
-                            {formatBytes(item.memoryBytes)}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'totalDiskBytes') {
-                        return (
-                          <TableCell key={colId} className="text-right">
-                            {formatBytes(item.totalDiskBytes)}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId === 'vmPowerState') {
-                        return (
-                          <TableCell key={colId}>
-                            {item.vmPowerState ? (
-                              <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
-                                {powerStateLabel(item.vmPowerState)}
-                              </Badge>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                        );
-                      }
-
-                      if (colId.startsWith('ledger.')) {
-                        const key = colId.slice('ledger.'.length) as LedgerFieldKey;
-                        return (
-                          <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
-                            {item.ledgerFields?.[key] ?? '-'}
-                          </TableCell>
-                        );
-                      }
-
-                      return <TableCell key={colId}>-</TableCell>;
+                      const label = ASSET_LIST_COLUMN_LABEL_BY_ID.get(colId) ?? colId;
+                      const rightAligned =
+                        colId === 'cpuCount' || colId === 'memoryBytes' || colId === 'totalDiskBytes';
+                      return (
+                        <TableHead key={colId} className={rightAligned ? 'text-right' : undefined}>
+                          {label}
+                        </TableHead>
+                      );
                     })}
-
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {isAdmin ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditTarget(item);
-                              setEditMachineNameValue(item.machineNameOverride ?? '');
-                              setEditMachineNameOpen(true);
-                            }}
-                          >
-                            编辑机器名
-                          </Button>
-                        ) : null}
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/assets/${item.assetUuid}`}>查看</Link>
-                        </Button>
-                      </div>
-                    </TableCell>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.assetUuid}>
+                      {isAdmin ? (
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            aria-label="选择资产"
+                            checked={selectedAssetUuidSet.has(item.assetUuid)}
+                            onChange={(e) => {
+                              setSelectedAssetUuids((prev) => {
+                                const set = new Set(prev);
+                                if (e.target.checked) set.add(item.assetUuid);
+                                else set.delete(item.assetUuid);
+                                return Array.from(set);
+                              });
+                            }}
+                          />
+                        </TableCell>
+                      ) : null}
 
-            <div className="flex items-center justify-between pt-2">
-              <div className="text-xs text-muted-foreground">
-                {pagination ? `第 ${pagination.page} / ${pagination.totalPages} 页 · 共 ${pagination.total} 条` : null}
-              </div>
-              <div className="flex items-center gap-2">
+                      {visibleColumnsForTable.map((colId) => {
+                        if (colId === 'machineName') {
+                          return (
+                            <TableCell key={colId} className="font-medium">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{item.machineName ?? ''}</span>
+                                {item.machineNameOverride ? (
+                                  item.machineNameMismatch ? (
+                                    <Badge variant="destructive">覆盖≠采集</Badge>
+                                  ) : (
+                                    <Badge variant="secondary">覆盖</Badge>
+                                  )
+                                ) : null}
+                              </div>
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'vmName') {
+                          return (
+                            <TableCell key={colId} className="font-medium">
+                              {item.vmName ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'hostName') {
+                          return (
+                            <TableCell key={colId} className="font-medium">
+                              {item.hostName ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'os') {
+                          return (
+                            <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
+                              {item.os ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'ip') {
+                          return (
+                            <TableCell
+                              key={colId}
+                              className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
+                            >
+                              {item.ip ? (
+                                item.ip
+                              ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
+                                <span
+                                  className="cursor-help text-muted-foreground"
+                                  title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                                >
+                                  - (Tools 未运行)
+                                </span>
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'recordedAt') {
+                          return (
+                            <TableCell
+                              key={colId}
+                              className="whitespace-nowrap font-mono text-xs text-muted-foreground"
+                            >
+                              {formatDateTime(item.recordedAt)}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'cpuCount') {
+                          return (
+                            <TableCell key={colId} className="text-right">
+                              {item.cpuCount ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'memoryBytes') {
+                          return (
+                            <TableCell key={colId} className="text-right">
+                              {formatBytes(item.memoryBytes)}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'totalDiskBytes') {
+                          return (
+                            <TableCell key={colId} className="text-right">
+                              {formatBytes(item.totalDiskBytes)}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'vmPowerState') {
+                          return (
+                            <TableCell key={colId}>
+                              {item.vmPowerState ? (
+                                <Badge variant={powerStateBadgeVariant(item.vmPowerState)}>
+                                  {powerStateLabel(item.vmPowerState)}
+                                </Badge>
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId.startsWith('ledger.')) {
+                          const key = colId.slice('ledger.'.length) as LedgerFieldKey;
+                          return (
+                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                              {item.ledgerFields?.[key] ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        return <TableCell key={colId}>-</TableCell>;
+                      })}
+
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          {isAdmin ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditTarget(item);
+                                setEditMachineNameValue(item.machineNameOverride ?? '');
+                                setEditMachineNameOpen(true);
+                              }}
+                            >
+                              编辑机器名
+                            </Button>
+                          ) : null}
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/assets/${item.assetUuid}`}>查看</Link>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <Button
                   size="sm"
                   variant="outline"
@@ -1016,333 +1037,340 @@ export default function AssetsPage() {
                   下一页
                 </Button>
               </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        <Dialog
-          open={columnSettingsOpen}
-          onOpenChange={(open) => {
-            setColumnSettingsOpen(open);
-            if (!open) {
-              setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
-              setColumnSaving(false);
-            }
-          }}
-        >
-          <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
-            <DialogHeader>
-              <DialogTitle>列设置</DialogTitle>
-              <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
-            </DialogHeader>
+          <Dialog
+            open={columnSettingsOpen}
+            onOpenChange={(open) => {
+              setColumnSettingsOpen(open);
+              if (!open) {
+                setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
+                setColumnSaving(false);
+              }
+            }}
+          >
+            <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
+              <DialogHeader>
+                <DialogTitle>列设置</DialogTitle>
+                <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
+              </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-              {ASSET_LIST_COLUMNS.map((col) => {
-                const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
-                const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
-                const disabled = locked || (vmOnly && (assetTypeInput === 'host' || assetTypeInput === 'cluster'));
-                const checked = locked ? true : columnDraft.includes(col.id);
-                return (
-                  <div
-                    key={col.id}
-                    className={`flex items-center justify-between gap-4 rounded-md border p-3 ${
-                      disabled ? 'bg-muted/40 opacity-70' : ''
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{col.label}</div>
-                      {col.description ? (
-                        <div className="mt-0.5 text-xs text-muted-foreground">{col.description}</div>
-                      ) : null}
+              <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {ASSET_LIST_COLUMNS.map((col) => {
+                  const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
+                  const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
+                  const disabled = locked || (vmOnly && (assetTypeInput === 'host' || assetTypeInput === 'cluster'));
+                  const checked = locked ? true : columnDraft.includes(col.id);
+                  return (
+                    <div
+                      key={col.id}
+                      className={`flex items-center justify-between gap-4 rounded-md border p-3 ${
+                        disabled ? 'bg-muted/40 opacity-70' : ''
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{col.label}</div>
+                        {col.description ? (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{col.description}</div>
+                        ) : null}
+                      </div>
+                      <Switch
+                        checked={checked}
+                        disabled={disabled}
+                        onCheckedChange={(next) => {
+                          setColumnDraft((prev) => {
+                            const draft = next
+                              ? prev.includes(col.id)
+                                ? prev
+                                : [...prev, col.id]
+                              : prev.filter((id) => id !== col.id);
+                            return ensureCoreVisibleColumns(draft);
+                          });
+                        }}
+                      />
                     </div>
-                    <Switch
-                      checked={checked}
-                      disabled={disabled}
-                      onCheckedChange={(next) => {
-                        setColumnDraft((prev) => {
-                          const draft = next
-                            ? prev.includes(col.id)
-                              ? prev
-                              : [...prev, col.id]
-                            : prev.filter((id) => id !== col.id);
-                          return ensureCoreVisibleColumns(draft);
-                        });
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-            <div className="text-xs text-muted-foreground">
-              机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host/Cluster 时不展示）；其余列可选（当前：
-              {columnDraft.length} 列）。
-            </div>
+              <div className="text-xs text-muted-foreground">
+                机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host/Cluster
+                时不展示）；其余列可选（当前：
+                {columnDraft.length} 列）。
+              </div>
 
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={columnSaving}
-                onClick={() => {
-                  setColumnDraft(ensureCoreVisibleColumns(DEFAULT_VISIBLE_COLUMNS));
-                }}
-              >
-                恢复默认
-              </Button>
-              <Button
-                variant="outline"
-                disabled={columnSaving}
-                onClick={() => {
-                  setColumnSettingsOpen(false);
-                }}
-              >
-                取消
-              </Button>
-              <Button
-                disabled={columnSaving || columnDraft.length < 1}
-                onClick={async () => {
-                  setColumnSaving(true);
-                  try {
-                    const draft = ensureCoreVisibleColumns(columnDraft);
-                    setColumnDraft(draft);
-
-                    const res = await fetch('/api/v1/me/preferences', {
-                      method: 'PUT',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({
-                        key: ASSETS_TABLE_COLUMNS_PREFERENCE_KEY,
-                        value: { visibleColumns: draft },
-                      }),
-                    });
-
-                    if (!res.ok) {
-                      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-                      toast.error(body?.error?.message ?? '保存失败');
-                      return;
-                    }
-
-                    const body = (await res.json().catch(() => null)) as {
-                      data?: { value?: { visibleColumns?: unknown } };
-                    } | null;
-                    const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns) ?? draft;
-                    setVisibleColumns(next);
-                    toast.success('列配置已保存');
-                    setColumnSettingsOpen(false);
-                  } finally {
-                    setColumnSaving(false);
-                  }
-                }}
-              >
-                保存
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={bulkSetOpen}
-          onOpenChange={(open) => {
-            setBulkSetOpen(open);
-            if (!open) {
-              setBulkKey('');
-              setBulkValue('');
-              setBulkSaving(false);
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>批量设置台账字段</DialogTitle>
-              <DialogDescription>仅支持对“当前页勾选”的资产批量设置 1 个字段（N≤100）。</DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="text-xs text-muted-foreground">已选择：{selectedAssetUuids.length} 个资产</div>
-
-              <div className="space-y-2">
-                <Label>字段</Label>
-                <Select
-                  value={bulkKey || 'choose'}
-                  onValueChange={(value) => {
-                    setBulkKey(value === 'choose' ? '' : (value as LedgerFieldKey));
-                    setBulkValue('');
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  disabled={columnSaving}
+                  onClick={() => {
+                    setColumnDraft(ensureCoreVisibleColumns(DEFAULT_VISIBLE_COLUMNS));
                   }}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择字段" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="choose">请选择</SelectItem>
-                    {LEDGER_FIELD_METAS.map((m) => {
-                      const disabled =
-                        m.scope === 'host_only' &&
-                        items.some((it) => selectedAssetUuidSet.has(it.assetUuid) && it.assetType === 'vm');
-                      return (
-                        <SelectItem key={m.key} value={m.key} disabled={disabled}>
-                          {m.labelZh}
-                          {m.scope === 'host_only' ? '（仅 Host）' : ''}
-                        </SelectItem>
+                  恢复默认
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={columnSaving}
+                  onClick={() => {
+                    setColumnSettingsOpen(false);
+                  }}
+                >
+                  取消
+                </Button>
+                <Button
+                  disabled={columnSaving || columnDraft.length < 1}
+                  onClick={async () => {
+                    setColumnSaving(true);
+                    try {
+                      const draft = ensureCoreVisibleColumns(columnDraft);
+                      setColumnDraft(draft);
+
+                      const res = await fetch('/api/v1/me/preferences', {
+                        method: 'PUT',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                          key: ASSETS_TABLE_COLUMNS_PREFERENCE_KEY,
+                          value: { visibleColumns: draft },
+                        }),
+                      });
+
+                      if (!res.ok) {
+                        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                        toast.error(body?.error?.message ?? '保存失败');
+                        return;
+                      }
+
+                      const body = (await res.json().catch(() => null)) as {
+                        data?: { value?: { visibleColumns?: unknown } };
+                      } | null;
+                      const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns) ?? draft;
+                      setVisibleColumns(next);
+                      toast.success('列配置已保存');
+                      setColumnSettingsOpen(false);
+                    } finally {
+                      setColumnSaving(false);
+                    }
+                  }}
+                >
+                  保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={bulkSetOpen}
+            onOpenChange={(open) => {
+              setBulkSetOpen(open);
+              if (!open) {
+                setBulkKey('');
+                setBulkValue('');
+                setBulkSaving(false);
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>批量设置台账字段</DialogTitle>
+                <DialogDescription>仅支持对“当前页勾选”的资产批量设置 1 个字段（N≤100）。</DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="text-xs text-muted-foreground">已选择：{selectedAssetUuids.length} 个资产</div>
+
+                <div className="space-y-2">
+                  <Label>字段</Label>
+                  <Select
+                    value={bulkKey || 'choose'}
+                    onValueChange={(value) => {
+                      setBulkKey(value === 'choose' ? '' : (value as LedgerFieldKey));
+                      setBulkValue('');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择字段" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="choose">请选择</SelectItem>
+                      {LEDGER_FIELD_METAS.map((m) => {
+                        const disabled =
+                          m.scope === 'host_only' &&
+                          items.some((it) => selectedAssetUuidSet.has(it.assetUuid) && it.assetType === 'vm');
+                        return (
+                          <SelectItem key={m.key} value={m.key} disabled={disabled}>
+                            {m.labelZh}
+                            {m.scope === 'host_only' ? '（仅 Host）' : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>值</Label>
+                  {bulkKey && LEDGER_FIELD_METAS.find((m) => m.key === bulkKey)?.kind === 'date' ? (
+                    <Input type="date" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} />
+                  ) : (
+                    <Input
+                      value={bulkValue}
+                      placeholder="留空表示清空"
+                      onChange={(e) => setBulkValue(e.target.value)}
+                    />
+                  )}
+                  <div className="text-xs text-muted-foreground">留空表示清空（等价 value=null）。</div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  disabled={bulkSaving}
+                  onClick={() => {
+                    setBulkSetOpen(false);
+                  }}
+                >
+                  取消
+                </Button>
+                <Button
+                  disabled={!isAdmin || bulkSaving || selectedAssetUuids.length < 1 || !bulkKey}
+                  onClick={async () => {
+                    if (!bulkKey) return;
+                    if (selectedAssetUuids.length < 1) return;
+
+                    setBulkSaving(true);
+                    try {
+                      const valueTrimmed = bulkValue.trim();
+                      const value = valueTrimmed.length > 0 ? valueTrimmed : null;
+
+                      const res = await fetch('/api/v1/assets/ledger-fields/bulk-set', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ assetUuids: selectedAssetUuids, key: bulkKey, value }),
+                      });
+
+                      if (!res.ok) {
+                        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                        toast.error(body?.error?.message ?? '批量设置失败');
+                        return;
+                      }
+
+                      setItems((prev) =>
+                        prev.map((it) => {
+                          if (!selectedAssetUuidSet.has(it.assetUuid)) return it;
+                          return { ...it, ledgerFields: { ...it.ledgerFields, [bulkKey]: value } as LedgerFieldsV1 };
+                        }),
                       );
-                    })}
-                  </SelectContent>
-                </Select>
+
+                      toast.success('已批量设置');
+                      setSelectedAssetUuids([]);
+                      setBulkSetOpen(false);
+                    } finally {
+                      setBulkSaving(false);
+                    }
+                  }}
+                >
+                  保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={editMachineNameOpen}
+            onOpenChange={(open) => {
+              setEditMachineNameOpen(open);
+              if (!open) {
+                setEditTarget(null);
+                setEditMachineNameValue('');
+                setEditSaving(false);
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>编辑机器名</DialogTitle>
+                <DialogDescription>机器名优先展示“覆盖值”，采集值仍会持续入库。</DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="machineNameOverride">机器名（覆盖显示）</Label>
+                  <Input
+                    id="machineNameOverride"
+                    value={editMachineNameValue}
+                    placeholder="留空表示不覆盖"
+                    onChange={(e) => setEditMachineNameValue(e.target.value)}
+                  />
+                </div>
+
+                <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                  <div className="text-muted-foreground">采集到的机器名</div>
+                  <div className="mt-1 font-mono">{editTarget?.machineNameCollected ?? '暂无'}</div>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>值</Label>
-                {bulkKey && LEDGER_FIELD_METAS.find((m) => m.key === bulkKey)?.kind === 'date' ? (
-                  <Input type="date" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} />
-                ) : (
-                  <Input value={bulkValue} placeholder="留空表示清空" onChange={(e) => setBulkValue(e.target.value)} />
-                )}
-                <div className="text-xs text-muted-foreground">留空表示清空（等价 value=null）。</div>
-              </div>
-            </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  disabled={editSaving}
+                  onClick={() => {
+                    setEditMachineNameOpen(false);
+                  }}
+                >
+                  取消
+                </Button>
+                <Button
+                  disabled={!editTarget || editSaving}
+                  onClick={async () => {
+                    if (!editTarget) return;
+                    setEditSaving(true);
 
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={bulkSaving}
-                onClick={() => {
-                  setBulkSetOpen(false);
-                }}
-              >
-                取消
-              </Button>
-              <Button
-                disabled={!isAdmin || bulkSaving || selectedAssetUuids.length < 1 || !bulkKey}
-                onClick={async () => {
-                  if (!bulkKey) return;
-                  if (selectedAssetUuids.length < 1) return;
-
-                  setBulkSaving(true);
-                  try {
-                    const valueTrimmed = bulkValue.trim();
-                    const value = valueTrimmed.length > 0 ? valueTrimmed : null;
-
-                    const res = await fetch('/api/v1/assets/ledger-fields/bulk-set', {
-                      method: 'POST',
+                    const nextOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
+                    const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
+                      method: 'PUT',
                       headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ assetUuids: selectedAssetUuids, key: bulkKey, value }),
+                      body: JSON.stringify({ machineNameOverride: nextOverride }),
                     });
 
                     if (!res.ok) {
-                      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-                      toast.error(body?.error?.message ?? '批量设置失败');
+                      setEditSaving(false);
                       return;
                     }
 
                     setItems((prev) =>
                       prev.map((it) => {
-                        if (!selectedAssetUuidSet.has(it.assetUuid)) return it;
-                        return { ...it, ledgerFields: { ...it.ledgerFields, [bulkKey]: value } as LedgerFieldsV1 };
+                        if (it.assetUuid !== editTarget.assetUuid) return it;
+
+                        const machineNameCollected = it.machineNameCollected;
+                        const machineName = nextOverride ?? machineNameCollected;
+                        const machineNameMismatch =
+                          nextOverride !== null &&
+                          machineNameCollected !== null &&
+                          nextOverride !== machineNameCollected;
+
+                        return {
+                          ...it,
+                          machineNameOverride: nextOverride,
+                          machineName,
+                          machineNameMismatch,
+                        };
                       }),
                     );
 
-                    toast.success('已批量设置');
-                    setSelectedAssetUuids([]);
-                    setBulkSetOpen(false);
-                  } finally {
-                    setBulkSaving(false);
-                  }
-                }}
-              >
-                保存
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={editMachineNameOpen}
-          onOpenChange={(open) => {
-            setEditMachineNameOpen(open);
-            if (!open) {
-              setEditTarget(null);
-              setEditMachineNameValue('');
-              setEditSaving(false);
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>编辑机器名</DialogTitle>
-              <DialogDescription>机器名优先展示“覆盖值”，采集值仍会持续入库。</DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="machineNameOverride">机器名（覆盖显示）</Label>
-                <Input
-                  id="machineNameOverride"
-                  value={editMachineNameValue}
-                  placeholder="留空表示不覆盖"
-                  onChange={(e) => setEditMachineNameValue(e.target.value)}
-                />
-              </div>
-
-              <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                <div className="text-muted-foreground">采集到的机器名</div>
-                <div className="mt-1 font-mono">{editTarget?.machineNameCollected ?? '暂无'}</div>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={editSaving}
-                onClick={() => {
-                  setEditMachineNameOpen(false);
-                }}
-              >
-                取消
-              </Button>
-              <Button
-                disabled={!editTarget || editSaving}
-                onClick={async () => {
-                  if (!editTarget) return;
-                  setEditSaving(true);
-
-                  const nextOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
-                  const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
-                    method: 'PUT',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ machineNameOverride: nextOverride }),
-                  });
-
-                  if (!res.ok) {
                     setEditSaving(false);
-                    return;
-                  }
-
-                  setItems((prev) =>
-                    prev.map((it) => {
-                      if (it.assetUuid !== editTarget.assetUuid) return it;
-
-                      const machineNameCollected = it.machineNameCollected;
-                      const machineName = nextOverride ?? machineNameCollected;
-                      const machineNameMismatch =
-                        nextOverride !== null && machineNameCollected !== null && nextOverride !== machineNameCollected;
-
-                      return {
-                        ...it,
-                        machineNameOverride: nextOverride,
-                        machineName,
-                        machineNameMismatch,
-                      };
-                    }),
-                  );
-
-                  setEditSaving(false);
-                  setEditMachineNameOpen(false);
-                }}
-              >
-                保存
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </CardContent>
-    </Card>
+                    setEditMachineNameOpen(false);
+                  }}
+                >
+                  保存
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

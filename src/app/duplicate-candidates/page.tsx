@@ -5,9 +5,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
+import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -123,20 +124,19 @@ export default function DuplicateCandidatesPage() {
   return (
     <>
       <RequireAdminClient />
-      <Card>
-        <CardHeader>
-          <CardTitle>重复中心</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <div className="flex flex-1 items-center gap-2">
+      <div className="space-y-6">
+        <PageHeader title="重复中心" description="detect 生成的重复候选（按状态/类型/置信度筛选）。" />
+
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
               <Select
                 value={statusInput}
                 onValueChange={(value) => {
                   replaceUrlState({ ...urlState, status: value as DuplicateCandidateStatusParam, page: 1 });
                 }}
               >
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full md:w-[150px]">
                   <SelectValue placeholder="状态" />
                 </SelectTrigger>
                 <SelectContent>
@@ -153,7 +153,7 @@ export default function DuplicateCandidatesPage() {
                   replaceUrlState({ ...urlState, assetType, page: 1 });
                 }}
               >
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full md:w-[150px]">
                   <SelectValue placeholder="类型" />
                 </SelectTrigger>
                 <SelectContent>
@@ -170,7 +170,7 @@ export default function DuplicateCandidatesPage() {
                   replaceUrlState({ ...urlState, confidence, page: 1 });
                 }}
               >
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-full md:w-[160px]">
                   <SelectValue placeholder="置信度" />
                 </SelectTrigger>
                 <SelectContent>
@@ -186,7 +186,7 @@ export default function DuplicateCandidatesPage() {
                   replaceUrlState({ ...urlState, page: 1, pageSize: Number(value) });
                 }}
               >
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="w-full md:w-[140px]">
                   <SelectValue placeholder="每页" />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,86 +197,97 @@ export default function DuplicateCandidatesPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          {loading ? (
-            <div className="text-sm text-muted-foreground">加载中…</div>
-          ) : items.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              暂无候选。请先完成一次 detect Run（或等待 worker 生成 duplicate candidates）。
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>置信度</TableHead>
-                    <TableHead>资产 A</TableHead>
-                    <TableHead>资产 B</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>最后观测</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => {
-                    const confidence = item.confidence ?? confidenceLabel(item.score);
-                    return (
-                      <TableRow
-                        key={item.candidateId}
-                        className="cursor-pointer"
-                        onClick={() => router.push(`/duplicate-candidates/${item.candidateId}`)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={confidenceBadgeVariant(confidence)}>{confidence}</Badge>
-                            <span className="text-xs text-muted-foreground">{item.score}</span>
-                          </div>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{item.assetA.displayName ?? '-'}</div>
-                            <div className="font-mono text-xs text-muted-foreground">{item.assetA.assetUuid}</div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{item.assetB.displayName ?? '-'}</div>
-                            <div className="font-mono text-xs text-muted-foreground">{item.assetB.assetUuid}</div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-sm">{candidateStatusLabel(item.status)}</TableCell>
-
-                        <TableCell className="font-mono text-xs">{item.lastObservedAt}</TableCell>
-
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/duplicate-candidates/${item.candidateId}`);
-                            }}
-                          >
-                            查看
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-xs text-muted-foreground">
-                  {pagination
+        <Card>
+          <CardHeader className="flex flex-col gap-3 space-y-0 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">列表</div>
+              <div className="text-xs text-muted-foreground">
+                {loading
+                  ? '加载中…'
+                  : pagination
                     ? `第 ${pagination.page} / ${pagination.totalPages} 页 · 共 ${pagination.total} 条`
-                    : null}
-                </div>
-                <div className="flex items-center gap-2">
+                    : items.length === 0
+                      ? '暂无数据'
+                      : null}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loading ? (
+              <div className="text-sm text-muted-foreground">加载中…</div>
+            ) : items.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                暂无候选。请先完成一次 detect Run（或等待 worker 生成 duplicate candidates）。
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead>置信度</TableHead>
+                      <TableHead>资产 A</TableHead>
+                      <TableHead>资产 B</TableHead>
+                      <TableHead>状态</TableHead>
+                      <TableHead>最后观测</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => {
+                      const confidence = item.confidence ?? confidenceLabel(item.score);
+                      return (
+                        <TableRow
+                          key={item.candidateId}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/duplicate-candidates/${item.candidateId}`)}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={confidenceBadgeVariant(confidence)}>{confidence}</Badge>
+                              <span className="text-xs text-muted-foreground">{item.score}</span>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{item.assetA.displayName ?? '-'}</div>
+                              <div className="font-mono text-xs text-muted-foreground">{item.assetA.assetUuid}</div>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{item.assetB.displayName ?? '-'}</div>
+                              <div className="font-mono text-xs text-muted-foreground">{item.assetB.assetUuid}</div>
+                            </div>
+                          </TableCell>
+
+                          <TableCell className="text-sm">{candidateStatusLabel(item.status)}</TableCell>
+
+                          <TableCell className="font-mono text-xs">{item.lastObservedAt}</TableCell>
+
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/duplicate-candidates/${item.candidateId}`);
+                              }}
+                            >
+                              查看
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
                   <Button
                     size="sm"
                     variant="outline"
@@ -294,11 +305,11 @@ export default function DuplicateCandidatesPage() {
                     下一页
                   </Button>
                 </div>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

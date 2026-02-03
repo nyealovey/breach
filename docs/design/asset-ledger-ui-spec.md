@@ -13,6 +13,63 @@
   - API 规范：`docs/design/asset-ledger-api-spec.md`
   - 错误码规范：`docs/design/asset-ledger-error-codes.md`
 
+## 0. 视觉系统（工业极简）
+
+目标：以“克制 / 硬边 / 轻阴影 / 信息密度可控”为基准，统一全站的颜色、排版、间距与组件观感，避免页面各自拼装导致的风格漂移。
+
+### 0.1 Theme（仅浅色）
+
+- 本仓库 UI 仅支持浅色主题（Light only）。
+- 必须强制 `html { color-scheme: light; }`，避免系统深色导致原生表单控件（select/checkbox）自动变暗，从而与页面浅色 token 割裂。
+- 不在页面/组件内写死 `#fff/#000` 等颜色值；所有颜色必须走 token（Tailwind 的 `bg-background` / `text-foreground` / `border-border` / `text-muted-foreground` 等）。
+
+### 0.2 Design Tokens（CSS Variables）
+
+来源：`src/app/globals.css` 的 `@layer base :root`。
+
+```css
+/* Light only (industrial minimal) */
+--background: 210 20% 98%;
+--foreground: 222 47% 11%;
+--card: 0 0% 100%;
+--card-foreground: 222 47% 11%;
+--popover: 0 0% 100%;
+--popover-foreground: 222 47% 11%;
+--primary: 211 100% 45%;
+--primary-foreground: 0 0% 100%;
+--secondary: 210 16% 93%;
+--secondary-foreground: 222 47% 11%;
+--muted: 210 16% 95%;
+--muted-foreground: 215 20% 40%;
+--accent: 210 16% 95%;
+--accent-foreground: 222 47% 11%;
+--destructive: 0 84% 60%;
+--destructive-foreground: 0 0% 100%;
+--border: 215 20% 88%;
+--input: 215 20% 88%;
+--ring: 211 100% 45%;
+--radius: 0.75rem;
+```
+
+### 0.3 排版（Typography）
+
+- 页面标题：`text-2xl font-semibold`（由 `PageHeader` 统一渲染）
+- 卡片标题：`text-base font-semibold`（默认 `CardTitle` + 必要时补 `text-base`）
+- 正文：`text-sm`
+- 辅助说明：`text-xs text-muted-foreground`
+- 标识符（uuid/runId/sourceId）：`font-mono text-xs`（或更小但保持可读）
+
+### 0.4 组件使用约束（防止风格回退）
+
+- 禁止在页面里复制粘贴表单皮肤：
+  - ❌ `className="h-9 w-full rounded border border-input ..."`（页面内手写）
+  - ✅ 用 `NativeSelect`（原生 select）、`Input`（输入框）、shadcn `Select`（Radix）等统一组件
+- Server Component 的过滤表单：必须用 `NativeSelect`（保持原生 form submit 能力 + 统一样式）。
+- Client 交互筛选（如资产页复杂筛选）：允许 Radix `Select`，但必须遵循同一套 token（不额外写色值）。
+- 页面级结构统一：
+  - 顶部使用 `PageHeader`（标题 / 说明 / 右侧操作区）
+  - 内容区用 Card 承载“筛选 / 表格 / 表单分组”，避免“单一大 Card 包全页”的厚重感
+
 ## 1. 错误展示规范
 
 ### 1.1 错误展示形式

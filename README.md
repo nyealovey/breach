@@ -136,6 +136,7 @@ List of websites that started off with Next.js TypeScript Starter:
 
 - 技术设计（vCenter MVP v1.0）：[`docs/mvp/design/asset-ledger-vcenter-mvp-design.md`](docs/mvp/design/asset-ledger-vcenter-mvp-design.md)
 - 日志规范（宽事件 / 采集域事件）：[`docs/design/asset-ledger-logging-spec.md`](docs/design/asset-ledger-logging-spec.md)
+- UI 规范（交互 + 视觉）：[`docs/design/asset-ledger-ui-spec.md`](docs/design/asset-ledger-ui-spec.md)
 - 错误码规范（Error Codes）：[`docs/design/asset-ledger-error-codes.md`](docs/design/asset-ledger-error-codes.md)
 - 疑似重复规则（dup-rules-v1）：[`docs/design/asset-ledger-dup-rules-v1.md`](docs/design/asset-ledger-dup-rules-v1.md)
 - 概念数据模型（Conceptual Data Model）：[`docs/design/asset-ledger-data-model.md`](docs/design/asset-ledger-data-model.md)

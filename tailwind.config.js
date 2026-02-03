@@ -1,9 +1,22 @@
 /** @type {import('tailwindcss').Config} */
+import defaultTheme from 'tailwindcss/defaultTheme';
+
 export default {
   darkMode: ['class'],
   content: ['./src/app/**/*.{ts,tsx}', './src/components/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          'var(--font-geist-sans)',
+          'ui-sans-serif',
+          'system-ui',
+          '"PingFang SC"',
+          '"Microsoft YaHei"',
+          ...defaultTheme.fontFamily.sans,
+        ],
+        mono: [...defaultTheme.fontFamily.mono],
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',

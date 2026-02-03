@@ -1,9 +1,14 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type { NextConfig } from 'next';
 
-import './src/lib/env/client';
-import './src/lib/env/server';
+import './src/lib/env/client.ts';
+import './src/lib/env/server.ts';
 
-import { redirects } from './redirects';
+import { redirects } from './redirects.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * CSPs that we're not adding (as it can change from project to project):
@@ -50,6 +55,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // Prevent Turbopack from inferring an incorrect repo root when multiple lockfiles exist outside this worktree.
+    root: __dirname,
+  },
   poweredByHeader: false,
   async headers() {
     return [

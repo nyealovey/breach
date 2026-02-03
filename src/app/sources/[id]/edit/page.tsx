@@ -1,14 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
+import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
@@ -225,17 +228,26 @@ export default function EditSourcePage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="space-y-6">
-        <Card className="max-w-xl">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>编辑来源</CardTitle>
-            <Button variant="destructive" size="sm" onClick={onDelete}>
-              删除
-            </Button>
-          </CardHeader>
-          <CardContent>
+      <div className="max-w-2xl space-y-6">
+        <PageHeader
+          title="编辑来源"
+          meta={<span className="font-mono">{params.id}</span>}
+          actions={
+            <>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/sources">返回列表</Link>
+              </Button>
+              <Button variant="destructive" size="sm" onClick={onDelete}>
+                删除
+              </Button>
+            </>
+          }
+        />
+
+        <Card>
+          <CardContent className="pt-6">
             <form className="space-y-4" onSubmit={onSubmit}>
-              <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                 <div>
                   sourceId: <span className="font-mono">{params.id}</span>
                 </div>
@@ -257,9 +269,8 @@ export default function EditSourcePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sourceType">类型</Label>
-                <select
+                <NativeSelect
                   id="sourceType"
-                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                   value={sourceType}
                   onChange={(e) => {
                     setSourceType(e.target.value);
@@ -284,7 +295,7 @@ export default function EditSourcePage() {
                   <option value="hyperv">Hyper-V</option>
                   <option value="aliyun">阿里云</option>
                   <option value="third_party">第三方</option>
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endpoint">Endpoint</Label>
@@ -293,25 +304,24 @@ export default function EditSourcePage() {
               {sourceType === 'vcenter' ? (
                 <div className="space-y-2">
                   <Label htmlFor="preferredVcenterVersion">vCenter 版本范围</Label>
-                  <select
+                  <NativeSelect
                     id="preferredVcenterVersion"
-                    className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                     value={preferredVcenterVersion}
                     onChange={(e) => setPreferredVcenterVersion(e.target.value as typeof preferredVcenterVersion)}
                   >
                     <option value="7.0-8.x">7.0-8.x（默认）</option>
                     <option value="6.5-6.7">6.5-6.7</option>
-                  </select>
+                  </NativeSelect>
                   <div className="text-xs text-muted-foreground">
                     说明：该字段用于选择采集 driver；detect 会给出建议，但不会自动改写配置。
                   </div>
                 </div>
               ) : null}
               {sourceType === 'pve' ? (
-                <div className="space-y-3 rounded border p-3">
+                <div className="space-y-3 rounded-md border bg-background p-3">
                   <div className="text-sm font-medium">PVE 配置</div>
 
-                  <div className="flex items-center justify-between rounded border px-3 py-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                     <div className="text-sm">
                       <div className="font-medium">TLS 校验</div>
                       <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
@@ -331,16 +341,15 @@ export default function EditSourcePage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="pveScope">scope</Label>
-                    <select
+                    <NativeSelect
                       id="pveScope"
-                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                       value={pveScope}
                       onChange={(e) => setPveScope(e.target.value as typeof pveScope)}
                     >
                       <option value="auto">auto（默认）</option>
                       <option value="standalone">standalone</option>
                       <option value="cluster">cluster</option>
-                    </select>
+                    </NativeSelect>
                     <div className="text-xs text-muted-foreground">说明：auto 会在 detect 阶段探测并给出建议。</div>
                   </div>
 
@@ -356,28 +365,26 @@ export default function EditSourcePage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="pveAuthType">auth_type</Label>
-                    <select
+                    <NativeSelect
                       id="pveAuthType"
-                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                       value={pveAuthType}
                       onChange={(e) => setPveAuthType(e.target.value as typeof pveAuthType)}
                     >
                       <option value="api_token">api_token（推荐）</option>
                       <option value="user_password">user_password</option>
-                    </select>
+                    </NativeSelect>
                     <div className="text-xs text-muted-foreground">说明：该字段用于指导凭据结构（credential）。</div>
                   </div>
                 </div>
               ) : null}
               {sourceType === 'hyperv' ? (
-                <div className="space-y-3 rounded border p-3">
+                <div className="space-y-3 rounded-md border bg-background p-3">
                   <div className="text-sm font-medium">Hyper-V 配置（WinRM）</div>
 
                   <div className="space-y-2">
                     <Label htmlFor="hypervAuthMethod">auth_method</Label>
-                    <select
+                    <NativeSelect
                       id="hypervAuthMethod"
-                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                       value={hypervAuthMethod}
                       onChange={(e) => setHypervAuthMethod(e.target.value as typeof hypervAuthMethod)}
                     >
@@ -385,7 +392,7 @@ export default function EditSourcePage() {
                       <option value="kerberos">kerberos（强制）</option>
                       <option value="ntlm">ntlm（legacy）</option>
                       <option value="basic">basic（legacy）</option>
-                    </select>
+                    </NativeSelect>
                     <div className="text-xs text-muted-foreground">
                       说明：默认 WinRM 通常禁用 basic，建议使用 auto/kerberos；如填写了 domain，auto 会优先 Kerberos。
                     </div>
@@ -393,9 +400,8 @@ export default function EditSourcePage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="hypervScheme">scheme</Label>
-                    <select
+                    <NativeSelect
                       id="hypervScheme"
-                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                       value={hypervScheme}
                       onChange={(e) => {
                         const next = e.target.value as typeof hypervScheme;
@@ -406,7 +412,7 @@ export default function EditSourcePage() {
                     >
                       <option value="http">http</option>
                       <option value="https">https</option>
-                    </select>
+                    </NativeSelect>
                   </div>
 
                   <div className="space-y-2">
@@ -420,7 +426,7 @@ export default function EditSourcePage() {
                     <div className="text-xs text-muted-foreground">默认：https=5986；http=5985</div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded border px-3 py-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                     <div className="text-sm">
                       <div className="font-medium">TLS 校验</div>
                       <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
@@ -440,16 +446,15 @@ export default function EditSourcePage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="hypervScope">scope</Label>
-                    <select
+                    <NativeSelect
                       id="hypervScope"
-                      className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
                       value={hypervScope}
                       onChange={(e) => setHypervScope(e.target.value as typeof hypervScope)}
                     >
                       <option value="auto">auto（默认）</option>
                       <option value="standalone">standalone</option>
                       <option value="cluster">cluster</option>
-                    </select>
+                    </NativeSelect>
                     <div className="text-xs text-muted-foreground">说明：auto 会在 detect 阶段探测并给出建议。</div>
                   </div>
 
@@ -466,24 +471,19 @@ export default function EditSourcePage() {
               ) : null}
               <div className="space-y-2">
                 <Label htmlFor="credentialId">选择凭据</Label>
-                <select
-                  id="credentialId"
-                  className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
-                  value={credentialId}
-                  onChange={(e) => setCredentialId(e.target.value)}
-                >
+                <NativeSelect id="credentialId" value={credentialId} onChange={(e) => setCredentialId(e.target.value)}>
                   <option value="">不选择</option>
                   {credentials.map((c) => (
                     <option key={c.credentialId} value={c.credentialId}>
                       {c.name} · {c.credentialId}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
                 {enabled && !credentialId ? (
                   <div className="text-sm text-destructive">未配置凭据，无法参与运行/调度。</div>
                 ) : null}
               </div>
-              <div className="flex items-center justify-between rounded border px-3 py-2">
+              <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                 <div className="text-sm">
                   <div className="font-medium">启用</div>
                   <div className="text-xs text-muted-foreground">启用后会参与调度与手动触发</div>

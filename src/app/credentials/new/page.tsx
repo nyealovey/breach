@@ -1,14 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { RequireAdminClient } from '@/components/auth/require-admin-client';
+import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 
 import type { FormEvent } from 'react';
 
@@ -90,145 +93,157 @@ export default function NewCredentialPage() {
   return (
     <>
       <RequireAdminClient />
-      <Card className="max-w-xl">
-        <CardHeader>
-          <CardTitle>新建凭据</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="name">名称</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="type">类型</Label>
-              <select
-                id="type"
-                className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
-                value={type}
-                onChange={(e) => {
-                  const next = e.target.value as CredentialType;
-                  setType(next);
-                  if (next === 'pve') setPveAuthType('api_token');
-                }}
-              >
-                <option value="vcenter">vCenter</option>
-                <option value="pve">PVE</option>
-                <option value="hyperv">Hyper-V</option>
-                <option value="aliyun">阿里云</option>
-                <option value="third_party">第三方</option>
-              </select>
-            </div>
-
-            {(type === 'vcenter' || type === 'hyperv') && (
-              <>
-                {type === 'hyperv' ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="domain">域（可选）</Label>
-                    <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} />
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <div>说明：当 Source 选择 auto/kerberos 时，采集会优先使用 Kerberos（WinRM 默认）。</div>
-                      <div>domain 可用于 Kerberos realm 推导。</div>
-                      <div>Kerberos 失败时才会以 DOMAIN\username 走 NTLM（legacy）。</div>
-                      <div>如你知道 UPN，建议直接在用户名填写 user@domain（更稳定）。</div>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="space-y-2">
-                  <Label htmlFor="username">用户名</Label>
-                  <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">密码</Label>
-                  <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                </div>
-              </>
-            )}
-
-            {type === 'pve' && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="pveAuthType">认证方式</Label>
-                  <select
-                    id="pveAuthType"
-                    className="h-9 w-full rounded border border-input bg-background px-3 text-sm"
-                    value={pveAuthType}
-                    onChange={(e) => setPveAuthType(e.target.value as typeof pveAuthType)}
-                  >
-                    <option value="api_token">API Token（推荐）</option>
-                    <option value="user_password">用户名/密码</option>
-                  </select>
-                </div>
-
-                {pveAuthType === 'api_token' ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="apiTokenId">api_token_id</Label>
-                      <Input id="apiTokenId" value={apiTokenId} onChange={(e) => setApiTokenId(e.target.value)} />
-                      <div className="text-xs text-muted-foreground">示例：user@pam!tokenid</div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="apiTokenSecret">api_token_secret</Label>
-                      <Input
-                        id="apiTokenSecret"
-                        type="password"
-                        value={apiTokenSecret}
-                        onChange={(e) => setApiTokenSecret(e.target.value)}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="username">用户名</Label>
-                      <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password">密码</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                      />
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-
-            {type === 'aliyun' && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="accessKeyId">accessKeyId</Label>
-                  <Input id="accessKeyId" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="accessKeySecret">accessKeySecret</Label>
-                  <Input
-                    id="accessKeySecret"
-                    type="password"
-                    value={accessKeySecret}
-                    onChange={(e) => setAccessKeySecret(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-
-            {type === 'third_party' && (
-              <div className="space-y-2">
-                <Label htmlFor="token">token</Label>
-                <Input id="token" type="password" value={token} onChange={(e) => setToken(e.target.value)} />
-              </div>
-            )}
-
-            <Button type="submit" disabled={submitting}>
-              {submitting ? '保存中…' : '保存'}
+      <div className="max-w-xl space-y-6">
+        <PageHeader
+          title="新建凭据"
+          description="配置采集凭据（可被多个来源引用）。"
+          actions={
+            <Button asChild size="sm" variant="outline">
+              <Link href="/credentials">返回列表</Link>
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          }
+        />
+
+        <Card>
+          <CardContent className="pt-6">
+            <form className="space-y-4" onSubmit={onSubmit}>
+              <div className="space-y-2">
+                <Label htmlFor="name">名称</Label>
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="type">类型</Label>
+                <NativeSelect
+                  id="type"
+                  value={type}
+                  onChange={(e) => {
+                    const next = e.target.value as CredentialType;
+                    setType(next);
+                    if (next === 'pve') setPveAuthType('api_token');
+                  }}
+                >
+                  <option value="vcenter">vCenter</option>
+                  <option value="pve">PVE</option>
+                  <option value="hyperv">Hyper-V</option>
+                  <option value="aliyun">阿里云</option>
+                  <option value="third_party">第三方</option>
+                </NativeSelect>
+              </div>
+
+              {(type === 'vcenter' || type === 'hyperv') && (
+                <>
+                  {type === 'hyperv' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="domain">域（可选）</Label>
+                      <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} />
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <div>说明：当 Source 选择 auto/kerberos 时，采集会优先使用 Kerberos（WinRM 默认）。</div>
+                        <div>domain 可用于 Kerberos realm 推导。</div>
+                        <div>Kerberos 失败时才会以 DOMAIN\username 走 NTLM（legacy）。</div>
+                        <div>如你知道 UPN，建议直接在用户名填写 user@domain（更稳定）。</div>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="username">用户名</Label>
+                    <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">密码</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {type === 'pve' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="pveAuthType">认证方式</Label>
+                    <NativeSelect
+                      id="pveAuthType"
+                      value={pveAuthType}
+                      onChange={(e) => setPveAuthType(e.target.value as typeof pveAuthType)}
+                    >
+                      <option value="api_token">API Token（推荐）</option>
+                      <option value="user_password">用户名/密码</option>
+                    </NativeSelect>
+                  </div>
+
+                  {pveAuthType === 'api_token' ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="apiTokenId">api_token_id</Label>
+                        <Input id="apiTokenId" value={apiTokenId} onChange={(e) => setApiTokenId(e.target.value)} />
+                        <div className="text-xs text-muted-foreground">示例：user@pam!tokenid</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="apiTokenSecret">api_token_secret</Label>
+                        <Input
+                          id="apiTokenSecret"
+                          type="password"
+                          value={apiTokenSecret}
+                          onChange={(e) => setApiTokenSecret(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="username">用户名</Label>
+                        <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="password">密码</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {type === 'aliyun' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="accessKeyId">accessKeyId</Label>
+                    <Input id="accessKeyId" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="accessKeySecret">accessKeySecret</Label>
+                    <Input
+                      id="accessKeySecret"
+                      type="password"
+                      value={accessKeySecret}
+                      onChange={(e) => setAccessKeySecret(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {type === 'third_party' && (
+                <div className="space-y-2">
+                  <Label htmlFor="token">token</Label>
+                  <Input id="token" type="password" value={token} onChange={(e) => setToken(e.target.value)} />
+                </div>
+              )}
+
+              <Button type="submit" disabled={submitting}>
+                {submitting ? '保存中…' : '保存'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

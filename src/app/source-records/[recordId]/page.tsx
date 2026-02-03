@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
+import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -149,30 +150,27 @@ export default function SourceRecordPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-xl font-semibold">Source Record</div>
-          <div className="font-mono text-xs text-muted-foreground">{recordId}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href={backHref}>返回</Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Source Record"
+        meta={<span className="font-mono">{recordId}</span>}
+        actions={
+          <>
+            <Button size="sm" variant="outline" disabled={loading || payload === undefined} onClick={copy}>
+              复制 JSON
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href={backHref}>返回</Link>
+            </Button>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button asChild size="sm" variant={tab === 'normalized' ? 'default' : 'outline'}>
+        <Button asChild size="sm" variant={tab === 'normalized' ? 'secondary' : 'outline'}>
           <Link href={tabHref('normalized')}>Normalized</Link>
         </Button>
-        <Button asChild size="sm" variant={tab === 'raw' ? 'default' : 'outline'}>
+        <Button asChild size="sm" variant={tab === 'raw' ? 'secondary' : 'outline'}>
           <Link href={tabHref('raw')}>Raw</Link>
-        </Button>
-
-        <div className="flex-1" />
-
-        <Button size="sm" variant="outline" disabled={loading || payload === undefined} onClick={copy}>
-          复制 JSON
         </Button>
       </div>
 
