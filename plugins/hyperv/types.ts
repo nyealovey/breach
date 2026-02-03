@@ -15,6 +15,27 @@ export type HypervConfig = {
   timeout_ms?: number;
 
   /**
+   * Kerberos SPN service class（仅对 auth_method=auto|kerberos 生效）：
+   * - WSMAN：WinRM 常见 SPN（推荐；默认）
+   * - HTTP：部分环境仅注册 HTTP/<host>（curl/requests 默认）
+   * - HOST：机器账户兜底（少数环境可用）
+   */
+  kerberos_service_name?: 'WSMAN' | 'HTTP' | 'HOST';
+
+  /**
+   * Kerberos SPN 兼容模式（默认关闭）：
+   * - false：严格模式，仅尝试一次（service=kerberos_service_name；hostname_override=kerberos_hostname_override）
+   * - true：兼容模式，按顺序尝试多个 service candidates，并在未显式设置 hostname_override 时额外尝试 short hostname
+   */
+  kerberos_spn_fallback?: boolean;
+
+  /**
+   * requests-kerberos 的 kerberos_hostname_override（高级选项）。
+   * 仅当 WinRM URL host 与 Kerberos 需要匹配的 SPN hostname 不一致（例如 CNAME）时使用。
+   */
+  kerberos_hostname_override?: string;
+
+  /**
    * WinRM 认证方式：
    * - auto：有 domain 时优先 Kerberos（默认 WinRM 配置），否则使用 basic
    * - kerberos：强制 Kerberos（依赖 worker 环境具备 Kerberos client/curl negotiate）

@@ -22,7 +22,7 @@ def debug_log(message, data=None):
     print(f"[pywinrm-debug] {json.dumps(log_entry)}", file=sys.stderr)
 
 
-def kinit_with_password(principal, password, timeout=30):
+def kinit_with_password(principal, password, timeout=30, enterprise=False):
     """
     Acquire Kerberos ticket using kinit with password.
     Returns the path to the credential cache file.
@@ -63,10 +63,14 @@ def kinit_with_password(principal, password, timeout=30):
 
             if is_heimdal:
                 # Heimdal (macOS): use --password-file
+                if enterprise:
+                    kinit_args.append("--enterprise")
                 kinit_args.extend(["--password-file=" + password_file, princ])
                 stdin_input = None
             else:
                 # MIT Kerberos: pipe password via stdin
+                if enterprise:
+                    kinit_args.append("-E")
                 kinit_args.append(princ)
                 stdin_input = password
 
@@ -145,7 +149,9 @@ def main():
         "use_https": use_https,
         "username": username,
         "transport": transport,
-        "script_length": len(script)
+        "script_length": len(script),
+        "kerberos_service_candidates": input_data.get("kerberos_service_candidates"),
+        "kerberos_hostname_overrides": input_data.get("kerberos_hostname_overrides"),
     })
 
     if not host:
@@ -163,7 +169,7 @@ def main():
     try:
         # First, acquire Kerberos ticket using kinit
         debug_log("kinit.start", {"username": username})
-        ccache_path, tmp_dir = kinit_with_password(username, password)
+        ccache_path, tmp_dir = kinit_with_password(username, password, enterprise=("@" in username))
 
         debug_log("env.KRB5CCNAME", {"value": os.environ.get("KRB5CCNAME")})
 
@@ -187,6 +193,8 @@ def main():
         target = f"{scheme}://{host}:{port}/wsman"
         debug_log("session.create", {"target": target, "transport": transport})
 
+        from winrm.vendor.requests_kerberos.exceptions import KerberosExchangeError
+
         # IMPORTANT:
         # When using a temporary ccache, Heimdal/MIT can normalize the principal
         # (e.g., realm casing). Passing an explicit principal to requests-kerberos
@@ -196,27 +204,96 @@ def main():
         # by creating our own Protocol with username=None (principal=None).
         from winrm.protocol import Protocol
 
-        protocol = Protocol(
-            target,
-            transport=transport,
-            username=None,
-            password=None,
-            server_cert_validation=cert_validation,
-        )
+        # The TS side decides SPN strategy (service candidates + hostname overrides) and passes them in.
+        # Default should be strict: only one attempt (WSMAN + no hostname override).
+        def uniq_list(values):
+            seen = set()
+            out = []
+            for v in values:
+                key = "__NONE__" if v is None else v
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(v)
+            return out
 
-        # Create a Session wrapper for run_ps convenience and override its protocol.
+        raw_service_candidates = input_data.get("kerberos_service_candidates")
+        if isinstance(raw_service_candidates, list):
+            service_candidates = []
+            for v in raw_service_candidates:
+                if isinstance(v, str) and v.strip():
+                    service_candidates.append(v.strip())
+            if not service_candidates:
+                service_candidates = ["WSMAN"]
+        else:
+            service_candidates = ["WSMAN"]
+
+        raw_hostname_overrides = input_data.get("kerberos_hostname_overrides")
+        if isinstance(raw_hostname_overrides, list):
+            hostname_overrides = []
+            for v in raw_hostname_overrides:
+                if v is None:
+                    hostname_overrides.append(None)
+                elif isinstance(v, str) and v.strip():
+                    hostname_overrides.append(v.strip())
+            if not hostname_overrides:
+                hostname_overrides = [None]
+        else:
+            hostname_overrides = [None]
+
+        service_candidates = uniq_list(service_candidates)
+        hostname_overrides = uniq_list(hostname_overrides)
+
+        last_error = None
+        result = None
+
+        # Create a Session wrapper for run_ps convenience and override its protocol per attempt.
         session = winrm.Session(
             target=target,
             auth=(username, ""),  # Used for kinit only; protocol below uses ccache default principal.
             transport=transport,
             server_cert_validation=cert_validation,
         )
-        session.protocol = protocol
-        debug_log("session.protocol", {"principal": None, "service": getattr(protocol, "service", None)})
 
-        # Run PowerShell script
-        debug_log("script.run", {"script_length": len(script)})
-        result = session.run_ps(script)
+        for service_name in service_candidates:
+            for hostname_override in hostname_overrides:
+                debug_log("session.protocol.try", {
+                    "principal": None,
+                    "service": service_name,
+                    "kerberos_hostname_override": hostname_override,
+                })
+                try:
+                    protocol = Protocol(
+                        target,
+                        transport=transport,
+                        username=None,
+                        password=None,
+                        server_cert_validation=cert_validation,
+                        service=service_name,
+                        kerberos_hostname_override=hostname_override,
+                    )
+                    session.protocol = protocol
+
+                    # Run PowerShell script
+                    debug_log("script.run", {"script_length": len(script)})
+                    result = session.run_ps(script)
+                    last_error = None
+                    break
+                except KerberosExchangeError as e:
+                    last_error = e
+                    debug_log("session.protocol.kerberos_error", {
+                        "service": service_name,
+                        "kerberos_hostname_override": hostname_override,
+                        "error": str(e),
+                    })
+                    continue
+            if result is not None:
+                break
+
+        if last_error is not None:
+            raise last_error
+        if result is None:
+            raise Exception("pywinrm failed: no result returned")
 
         output = {
             "ok": True,

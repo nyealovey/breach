@@ -47,6 +47,9 @@
 推荐配置：
 
 - `auth_method`：`auto`（默认，优先 Kerberos）或 `kerberos`（强制）
+- `kerberos_service_name`：Kerberos SPN service class（默认 `WSMAN`；多数 WinRM 环境为 `WSMAN/<host>`）
+- `kerberos_spn_fallback`：是否启用兼容 fallback（默认 `false`；仅在少数环境排障时再开启）
+- `kerberos_hostname_override`：高级选项（默认不填；仅当 URL host 与 Kerberos SPN hostname 不一致时使用，例如 CNAME）
 - `scheme`：默认建议 `http`
 - `port`：默认 `http=5985`、`https=5986`
 - `tls_verify`：默认 `true`（仅自签名/内网才考虑关闭）
@@ -134,5 +137,25 @@
   - `winrm quickconfig`
   - `winrm get winrm/config/winrs`
   - `winrm get winrm/config/service`
+  - `winrm enumerate winrm/config/listener`
+- 查看事件日志：`Microsoft-Windows-WinRM/Operational`
+
+### 4.4 HTTP 503（Service Unavailable / Bad HTTP response Code 503）
+
+现象（常见于 pywinrm 路径）：
+
+- debug 日志出现：`Bad HTTP response returned from server. Code 503`
+
+常见原因（按优先级）：
+
+- 目标机 WinRM 服务未运行/未就绪（HTTP.sys 仍返回 503）
+- 目标端口被非 WinRM 服务接管（中间件/安全设备/代理/自定义服务），返回 503
+- WinRM 监听存在但服务端组件异常（需结合事件日志确认）
+
+建议动作（不要求由采集侧自动修复）：
+
+- 在目标机本地执行：
+  - `Get-Service WinRM`
+  - `winrm quickconfig`
   - `winrm enumerate winrm/config/listener`
 - 查看事件日志：`Microsoft-Windows-WinRM/Operational`

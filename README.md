@@ -175,6 +175,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_DEBUG`：debug 总开关（默认关闭）。开启后：worker 会回显插件 stderr（用于排查插件启动/崩溃）。
 - `ASSET_LEDGER_VCENTER_DEBUG`：vCenter 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log` / `logs/vcenter-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。
 - `ASSET_LEDGER_HYPERV_DEBUG`：Hyper-V 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录 Kerberos 解析与 kinit（`resolved_host/resolved_addresses/realm/principal`）、以及每次 WinRM 请求的 HTTP status、Kerberos `service_name`（SPN service class）、部分响应 header 摘要（如 `server/content_type/content_length`）、以及 401 时的 `WWW-Authenticate` challenge 列表（仅记录 scheme，不记录 token）。
+  - Kerberos SPN 默认使用 `WSMAN`（strict：仅尝试一次）。如环境只注册 `HTTP/<host>` 或需兼容多 SPN，可在 Hyper-V Source config 设置 `kerberos_service_name / kerberos_spn_fallback / kerberos_hostname_override`（详见 runbook）。
 - `ASSET_LEDGER_ADMIN_PASSWORD`：首次启动用于初始化默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。

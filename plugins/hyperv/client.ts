@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
 import { buildKerberosPrincipalCandidates, buildKinitArgs } from './kerberos';
+import { buildKerberosSpnStrategy } from './kerberos-spn';
+import { buildPywinrmInput } from './pywinrm-input';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -191,6 +193,9 @@ export type HypervWinrmOptions = {
   authMethod: HypervAuthMethod;
   domain?: string;
   rawUsername: string;
+  kerberosServiceName?: string;
+  kerberosSpnFallback?: boolean;
+  kerberosHostnameOverride?: string;
 };
 
 export type HypervWinrmMeta = { runId?: string };
@@ -209,16 +214,22 @@ async function runPowershellPywinrm(
   const host = opts.host;
   const scriptPath = join(__dirname, 'winrm-kerberos.py');
 
-  const input = JSON.stringify({
-    host: opts.host,
-    port: opts.port,
-    use_https: opts.useHttps,
-    username: opts.rawUsername,
-    password: opts.password,
-    script,
-    transport: 'kerberos',
-    server_cert_validation: opts.rejectUnauthorized ? 'validate' : 'ignore',
-  });
+  const input = JSON.stringify(
+    buildPywinrmInput(
+      {
+        host: opts.host,
+        port: opts.port,
+        useHttps: opts.useHttps,
+        rejectUnauthorized: opts.rejectUnauthorized,
+        rawUsername: opts.rawUsername,
+        password: opts.password,
+        kerberosServiceName: opts.kerberosServiceName,
+        kerberosSpnFallback: opts.kerberosSpnFallback,
+        kerberosHostnameOverride: opts.kerberosHostnameOverride,
+      },
+      script,
+    ),
+  );
 
   debugLog('winrm.pywinrm.start', { op, host, port: opts.port }, { runId, host });
 
@@ -824,15 +835,11 @@ async function curlSoapWithServiceNameFallback(
     env: NodeJS.ProcessEnv;
     headerFilePath?: string;
   },
+  serviceCandidates: string[],
   meta?: { runId?: string; host?: string; op?: string },
 ): Promise<{ status: number; bodyText: string; headers: HttpHeaderSummary | null; serviceNameUsed?: string }> {
-  // Different Windows environments can register different SPNs for WinRM:
-  // - WSMAN/<host> is common for WinRM
-  // - HTTP/<host> is curl's default for SPNEGO over HTTP
-  // - HOST/<host> can exist broadly for machine accounts
-  //
-  // When the service principal does not match, servers tend to reply 401.
-  const candidates: Array<string | undefined> = ['WSMAN', undefined, 'HOST'];
+  const candidates = (serviceCandidates ?? []).map((c) => c?.trim()).filter((c): c is string => !!c);
+  if (candidates.length === 0) candidates.push('WSMAN');
 
   let last: { status: number; bodyText: string; headers: HttpHeaderSummary | null; serviceNameUsed?: string } | null =
     null;
@@ -945,6 +952,13 @@ async function runPowershellKerberos(
     const scheme = opts.useHttps ? 'https' : 'http';
     const toUrl = `${scheme}://${resolvedHost}:${opts.port}/wsman`;
 
+    const spnStrategy = buildKerberosSpnStrategy({
+      host: resolvedHost,
+      preferredServiceName: opts.kerberosServiceName,
+      enableFallback: opts.kerberosSpnFallback ?? false,
+      hostnameOverride: opts.kerberosHostnameOverride,
+    });
+
     // 1) Create shell
     const shellCreate = await curlSoapWithServiceNameFallback(
       {
@@ -955,6 +969,7 @@ async function runPowershellKerberos(
         env,
         headerFilePath,
       },
+      spnStrategy.serviceCandidates,
       { runId, host: opts.host, op: `${op}.CreateShell` },
     );
     const serviceNameUsed = shellCreate.serviceNameUsed;

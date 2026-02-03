@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { runPowershellJson, runPowershellWithTimeout } from './client';
+import { normalizeKerberosServiceName } from './kerberos-spn';
 import { normalizeCluster, normalizeHost, normalizeVm } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1, HypervCredential } from './types';
 
@@ -186,6 +187,15 @@ function buildWinrmOptions(request: CollectorRequestV1) {
   const legacyUsername = domain ? `${domain}\\${rawUsername}` : rawUsername;
   const username = authMethod === 'basic' ? rawUsername : legacyUsername;
 
+  const kerberosServiceName = normalizeKerberosServiceName(
+    typeof cfg.kerberos_service_name === 'string' ? cfg.kerberos_service_name : undefined,
+  );
+  const kerberosSpnFallback = typeof cfg.kerberos_spn_fallback === 'boolean' ? cfg.kerberos_spn_fallback : false;
+  const kerberosHostnameOverride =
+    typeof cfg.kerberos_hostname_override === 'string' && cfg.kerberos_hostname_override.trim().length > 0
+      ? cfg.kerberos_hostname_override.trim()
+      : undefined;
+
   return {
     host: endpoint,
     port,
@@ -197,6 +207,9 @@ function buildWinrmOptions(request: CollectorRequestV1) {
     authMethod,
     domain,
     rawUsername,
+    kerberosServiceName,
+    kerberosSpnFallback,
+    kerberosHostnameOverride,
   };
 }
 
