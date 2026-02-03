@@ -107,8 +107,12 @@
    - `ASSET_LEDGER_HYPERV_DEBUG=1`
 2. 复现一次 `healthcheck`
 3. 查看 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`：
-   - 关注 `winrm.curl` 事件里的 `headers.www_authenticate_schemes`（只记录 scheme，不记录 token）
-   - 若 401：对照 `service_name`（SPN service class）与 `stderr_excerpt` 判断是 Kerberos 协商失败还是服务器仅支持 NTLM/Basic
+   - 若走 Kerberos（`auth_method=auto|kerberos`）：优先看 `winrm.pywinrm.*` 事件
+     - `winrm.pywinrm.debug` 的 `python_stderr` 会包含 `[pywinrm-debug]` 行（`kinit.*` / `session.create` / `error`）
+     - 若出现 `authGSSClientInit()` 失败：通常表示凭据缓存（ccache）不可用/不可读，或 principal/realm 归一化不一致；优先使用 UPN（`user@REALM`）+ FQDN endpoint 复现
+   - 仅当 `auth_method=auto` 且发生降级时，才会出现 `winrm.curl` 事件：
+     - 关注 `headers.www_authenticate_schemes`（只记录 scheme，不记录 token）
+     - 若 401：对照 `service_name`（SPN service class）与 `stderr_excerpt` 判断是 Kerberos 协商失败还是服务器仅支持 NTLM/Basic
 
 > 注意：`logs/` 可能包含敏感基础设施信息，已加入 `.gitignore`，请勿提交。
 

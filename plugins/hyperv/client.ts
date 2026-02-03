@@ -4,11 +4,15 @@ import { randomUUID } from 'node:crypto';
 import { lookup, reverse } from 'node:dns/promises';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
 import { buildKerberosPrincipalCandidates, buildKinitArgs } from './kerberos';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 type TimeoutError = Error & { name: 'TimeoutError' };
 
@@ -191,6 +195,99 @@ export type HypervWinrmOptions = {
 
 export type HypervWinrmMeta = { runId?: string };
 
+/**
+ * Run PowerShell via pywinrm (Python) with Kerberos message encryption.
+ * This is required when WinRM server has AllowUnencrypted=false.
+ */
+async function runPowershellPywinrm(
+  opts: HypervWinrmOptions,
+  script: string,
+  op: string,
+  meta?: HypervWinrmMeta,
+): Promise<string> {
+  const runId = meta?.runId;
+  const host = opts.host;
+  const scriptPath = join(__dirname, 'winrm-kerberos.py');
+
+  const input = JSON.stringify({
+    host: opts.host,
+    port: opts.port,
+    use_https: opts.useHttps,
+    username: opts.rawUsername,
+    password: opts.password,
+    script,
+    transport: 'kerberos',
+    server_cert_validation: opts.rejectUnauthorized ? 'validate' : 'ignore',
+  });
+
+  debugLog('winrm.pywinrm.start', { op, host, port: opts.port }, { runId, host });
+
+  // Use uv run to execute with the correct Python environment that has pywinrm installed
+  // Try common uv locations
+  const uvPaths = [
+    process.env.UV_PATH,
+    join(process.env.HOME || '', '.local', 'bin', 'uv'),
+    '/usr/local/bin/uv',
+    'uv',
+  ].filter((p): p is string => typeof p === 'string' && p.length > 0);
+
+  let res: SpawnCaptureResult | null = null;
+  let lastUvError: string | null = null;
+  for (const uvPath of uvPaths) {
+    try {
+      res = await spawnCapture(uvPath, ['run', '--with', 'pywinrm[kerberos]', 'python', scriptPath], input, {
+        timeoutMs: opts.timeoutMs,
+        env: { ...process.env }, // Pass all environment variables to uv
+      });
+      break;
+    } catch (e) {
+      lastUvError = e instanceof Error ? e.message : String(e);
+      continue;
+    }
+  }
+
+  if (!res) {
+    throw new Error(
+      `uv not found or failed to run. Last error: ${lastUvError}. Please install uv: curl -LsSf https://astral.sh/uv/install.sh | sh`,
+    );
+  }
+
+  // Log Python debug output (stderr)
+  if (res.stderr.trim().length > 0) {
+    debugLog('winrm.pywinrm.debug', { op, python_stderr: res.stderr.trim() }, { runId, host });
+  }
+
+  if (res.exitCode !== 0 && res.stdout.trim().length === 0) {
+    debugLog(
+      'winrm.pywinrm.spawn_error',
+      { op, exit_code: res.exitCode, stderr_excerpt: excerpt(res.stderr) },
+      { runId, host },
+    );
+    throw new Error(`pywinrm failed to start: ${excerpt(res.stderr || 'unknown error')}`);
+  }
+
+  let result: { ok: boolean; stdout?: string; stderr?: string; error?: string };
+  try {
+    result = JSON.parse(res.stdout.trim());
+  } catch {
+    debugLog('winrm.pywinrm.parse_error', { op, stdout_excerpt: excerpt(res.stdout) }, { runId, host });
+    throw new Error(`pywinrm returned invalid JSON: ${excerpt(res.stdout)}`);
+  }
+
+  if (!result.ok) {
+    debugLog('winrm.pywinrm.error', { op, error: result.error }, { runId, host });
+    throw new Error(result.error || 'pywinrm failed');
+  }
+
+  debugLog(
+    'winrm.pywinrm.success',
+    { op, stdout_length: result.stdout?.length ?? 0, stderr_length: result.stderr?.length ?? 0 },
+    { runId, host },
+  );
+
+  return result.stdout || result.stderr || '';
+}
+
 export async function runPowershellWithTimeout(
   opts: HypervWinrmOptions,
   script: string,
@@ -208,20 +305,43 @@ export async function runPowershellWithTimeout(
       (opts.authMethod === 'auto' && (opts.rawUsername.includes('@') || opts.username.includes('@')));
 
     if (wantKerberos) {
+      // Try pywinrm first (supports Kerberos message encryption for AllowUnencrypted=false)
       try {
-        text = await withTimeout(runPowershellKerberos(opts, script, op, meta), opts.timeoutMs);
-      } catch (err) {
-        if (opts.authMethod !== 'auto') throw err;
-        debugLog(
-          'winrm.auth.fallback',
-          { op, from: 'kerberos', to: 'legacy', cause: err instanceof Error ? err.message : String(err) },
-          { runId: meta?.runId, host },
-        );
-        // Legacy path: winrm-client auto-selects Basic vs NTLM based on username format.
-        text = await withTimeout(
-          runPowershell(script, host, opts.username, opts.password, opts.port, opts.useHttps, opts.rejectUnauthorized),
-          opts.timeoutMs,
-        );
+        text = await withTimeout(runPowershellPywinrm(opts, script, op, meta), opts.timeoutMs);
+      } catch (pywinrmErr) {
+        const pywinrmErrMsg = pywinrmErr instanceof Error ? pywinrmErr.message : String(pywinrmErr);
+        if (opts.authMethod === 'auto') {
+          debugLog('winrm.pywinrm.fallback', { op, cause: pywinrmErrMsg }, { runId: meta?.runId, host });
+        }
+
+        // In explicit kerberos mode, do not downgrade to curl (curl path does not support message encryption
+        // and can mask the real Kerberos failure reason).
+        if (opts.authMethod === 'kerberos') throw pywinrmErr;
+
+        // Fallback to curl-based Kerberos (works when AllowUnencrypted=true)
+        try {
+          text = await withTimeout(runPowershellKerberos(opts, script, op, meta), opts.timeoutMs);
+        } catch (err) {
+          if (opts.authMethod !== 'auto') throw err;
+          debugLog(
+            'winrm.auth.fallback',
+            { op, from: 'kerberos', to: 'legacy', cause: err instanceof Error ? err.message : String(err) },
+            { runId: meta?.runId, host },
+          );
+          // Legacy path: winrm-client auto-selects Basic vs NTLM based on username format.
+          text = await withTimeout(
+            runPowershell(
+              script,
+              host,
+              opts.username,
+              opts.password,
+              opts.port,
+              opts.useHttps,
+              opts.rejectUnauthorized,
+            ),
+            opts.timeoutMs,
+          );
+        }
       }
     } else {
       // Legacy path: winrm-client auto-selects Basic vs NTLM based on username format.

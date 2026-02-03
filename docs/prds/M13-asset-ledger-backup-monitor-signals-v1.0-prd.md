@@ -50,7 +50,7 @@
 
 ### Core Requirements
 
-1) **信号来源（Signal Source）与库存来源（Inventory Source）语义隔离（强约束）**
+1. **信号来源（Signal Source）与库存来源（Inventory Source）语义隔离（强约束）**
 
 - 系统必须区分两类来源：
   - `inventory`：用于资产盘点与“在/不在”语义（现有 vcenter/pve/hyperv/aliyun 等）
@@ -59,19 +59,19 @@
   - 允许写入信号事实（backup/monitor）
   - 但不得影响 `asset.status`、`asset_source_link.presence_status`、关系 `active/inactive` 等库存相关派生语义
 
-2) **多套 VBR 支持方式（强约束）**
+2. **多套 VBR 支持方式（强约束）**
 
 - 一个 VBR 实例对应一个 `Source`（推荐做法，便于隔离凭据、排障、权限分域）。
 - 多套 VBR 的聚合口径：
   - `backupCovered = 任一 VBR 认为该资产处于备份覆盖`（逻辑 OR）
   - `backupLastSuccessAt = 多套 VBR 中该资产最近一次成功备份时间的最大值（best-effort）`
 
-3) **采集插件化（强约束）**
+3. **采集插件化（强约束）**
 
 - Veeam 与 SolarWinds 必须以插件形式接入（与 vCenter/PVE/Hyper-V 一致），禁止在插件内再“调用其他插件进程”进行编排。
 - 可复用逻辑应以**共享模块 import** 的方式实现（例如 `plugins/_shared/*`），避免多层进程与不可控超时。
 
-4) **资产映射（matching）可解释 + 可治理**
+4. **资产映射（matching）可解释 + 可治理**
 
 - 系统必须提供稳定、可追溯的“外部对象 → 台账资产”映射：
   - 自动匹配（基于 hostname/ip/uuid/serial 等）
@@ -174,7 +174,7 @@ collect 的目标是“采集该系统视角下的对象覆盖清单 + 状态信
 - `normalized.kind = "vm" | "host" | "cluster"`（best-effort；不强制 100% 准确）
 - **信号字段写入 `normalized.attributes.*`**（避免扩展 normalized-v1 schema）
 
-#### 3.1 Veeam 信号字段（attributes.*）
+#### 3.1 Veeam 信号字段（attributes.\*）
 
 最小集合（必须输出）：
 
@@ -199,7 +199,7 @@ collect 的目标是“采集该系统视角下的对象覆盖清单 + 状态信
 
 > 注：本期口径使用“最近一次成功备份时间（last_success）”来分档；若仅有失败/告警但无成功时间，需落入 unknown（避免把“未成功”误判为“超过一周未备份成功”）。
 
-#### 3.2 SolarWinds 信号字段（attributes.*）
+#### 3.2 SolarWinds 信号字段（attributes.\*）
 
 最小集合（必须输出）：
 
