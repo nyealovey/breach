@@ -111,3 +111,24 @@
    - 若 401：对照 `service_name`（SPN service class）与 `stderr_excerpt` 判断是 Kerberos 协商失败还是服务器仅支持 NTLM/Basic
 
 > 注意：`logs/` 可能包含敏感基础设施信息，已加入 `.gitignore`，请勿提交。
+
+### 4.3 HTTP 500（CreateShell failed）
+
+现象：
+
+- debug 日志出现 `CreateShell failed with status 500`（常见于 `hyperv.healthcheck.CreateShell`）
+
+常见原因（按优先级）：
+
+- WinRM/WinRS 远程 shell 被策略关闭或服务端拒绝创建 shell
+- 账号缺少 WinRM/WinRS 远程执行权限（即使 Kerberos 协商成功，也可能在 CreateShell 阶段被拒绝）
+- endpoint/端口并非 WinRM（或被中间设备/代理接管），导致 WSMan SOAP 不兼容
+
+建议动作（不要求由采集侧自动改目标配置）：
+
+- 在目标机本地检查 WinRM/WinRS 配置：
+  - `winrm quickconfig`
+  - `winrm get winrm/config/winrs`
+  - `winrm get winrm/config/service`
+  - `winrm enumerate winrm/config/listener`
+- 查看事件日志：`Microsoft-Windows-WinRM/Operational`

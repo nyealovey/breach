@@ -39,6 +39,8 @@ type HttpHeaderSummary = {
   header_blocks: number;
   www_authenticate_schemes: string[];
   server?: string;
+  content_type?: string;
+  content_length?: number;
 };
 
 function parseHttpHeaderSummary(text: string): HttpHeaderSummary | null {
@@ -76,10 +78,16 @@ function parseHttpHeaderSummary(text: string): HttpHeaderSummary | null {
 
   const server = (last.server ?? []).map((v) => v.trim()).find((v) => v.length > 0);
 
+  const contentType = (last['content-type'] ?? []).map((v) => v.trim()).find((v) => v.length > 0);
+  const contentLengthText = (last['content-length'] ?? []).map((v) => v.trim()).find((v) => v.length > 0);
+  const contentLength = contentLengthText ? Number(contentLengthText) : NaN;
+
   return {
     header_blocks: blocks.length,
     www_authenticate_schemes,
     ...(server ? { server } : {}),
+    ...(contentType ? { content_type: contentType } : {}),
+    ...(Number.isFinite(contentLength) ? { content_length: contentLength } : {}),
   };
 }
 
@@ -445,7 +453,8 @@ function buildSoapHeader(toUrl: string, action: string, shellId?: string) {
     '@xmlns:p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd',
     '@xmlns:rsp': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
     's:Header': {
-      'wsa:To': toUrl,
+      // WinRM expects WS-Addressing headers to be understood.
+      'wsa:To': { '@s:mustUnderstand': 'true', '#': toUrl },
       'wsman:ResourceURI': {
         '@s:mustUnderstand': 'true',
         '#': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
@@ -750,6 +759,17 @@ async function runPowershellKerberos(
   const env: NodeJS.ProcessEnv = { ...process.env, KRB5CCNAME: `FILE:${ccachePath}` };
   const useEnterprise = opts.rawUsername.includes('@');
 
+  // Useful for debugging: confirm we are actually hitting the intended machine (A/AAAA results).
+  let resolvedAddresses: string[] | null = null;
+  if (HYPERV_DEBUG) {
+    try {
+      const addrs = await lookup(resolvedHost, { all: true });
+      resolvedAddresses = addrs.map((a) => a.address).filter((a): a is string => typeof a === 'string' && a.length > 0);
+    } catch {
+      resolvedAddresses = null;
+    }
+  }
+
   // Avoid interactive password prompts: write to a temp file with restrictive perms.
   writeFileSync(passwordFilePath, `${opts.password}\n`, { mode: 0o600 });
 
@@ -758,6 +778,7 @@ async function runPowershellKerberos(
     {
       op,
       resolved_host: resolvedHost,
+      ...(resolvedAddresses ? { resolved_addresses: resolvedAddresses } : {}),
       realm_from_host: resolved.realm,
       principal_candidates: principalCandidates,
       enterprise: useEnterprise,
