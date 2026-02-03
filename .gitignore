@@ -51,3 +51,7 @@ tmp/
 
 # local logs (may contain sensitive debug data)
 logs/
+
+# git worktrees (local-only)
+worktrees/
+.worktrees/
