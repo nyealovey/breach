@@ -31,6 +31,16 @@
 
 当前未配置独立测试框架（暂无 `tests/` 目录）。请将 `bun run type-check`、`bun run lint`、`bun run format:check` 视为必须通过的质量门槛（CI 亦会执行）。
 
+## 测试数据与脱敏要求（必须遵守）
+
+- **禁止**在测试用例、fixture、示例文档、提交信息中写入任何真实环境信息（例如：真实主机名/FQDN、域名、用户名、邮箱、IP、内网 URL、token、密码、工单号、客户标识等）。
+- 测试数据请使用**约定的假数据**：
+  - 域名：`example.com` / `example.net` / `example.org`
+  - 邮箱/UPN：`user@example.com`
+  - 主机名：`host01.example.com`
+  - IP：使用 RFC5737 保留段（如 `192.0.2.10` / `198.51.100.10` / `203.0.113.10`）
+- 提交前请自查：避免把“看似无害但可溯源”的真实信息带入仓库历史（必要时通过 rebase/amend 重写未推送历史）。
+
 ## 提交与 PR 规范
 
 - Commit：采用 Conventional Commits（如 `feat: ...` / `fix: ...` / `chore: ...`），`commit-msg` 阶段会运行 commitlint。
