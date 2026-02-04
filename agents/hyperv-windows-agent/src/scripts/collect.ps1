@@ -102,7 +102,9 @@ $sbInventory = {
               $cn = $drive.ControllerNumber
               $cl = $drive.ControllerLocation
               if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
-                $diskName = "$ct $cn:$cl"
+                # In PowerShell string interpolation, a colon right after $var can be parsed as a scoped variable (e.g. $env:Path).
+                # Use ${} to delimit variable names.
+                $diskName = "${ct} ${cn}:${cl}"
               }
             } catch { $diskName = $null }
 
