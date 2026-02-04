@@ -49,7 +49,8 @@ $sbInventory = {
   $os = $null
   try { $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop | Select-Object -First 1 } catch { $os = $null }
 
-  $host = [pscustomobject]@{
+  # $Host is a built-in read-only variable in PowerShell, so don't overwrite it.
+  $hostInfo = [pscustomobject]@{
     hostname = $hostName
     host_uuid = if ($csp) { $csp.UUID } else { $null }
     serial_number = if ($bios) { $bios.SerialNumber } else { $null }
@@ -73,7 +74,7 @@ $sbInventory = {
     }
   )
 
-  return [pscustomobject]@{ node = $hostName; host = $host; vms = $vms }
+  return [pscustomobject]@{ node = $hostName; host = $hostInfo; vms = $vms }
 }
 
 if ($resolvedScope -eq 'cluster') {
