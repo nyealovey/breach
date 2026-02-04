@@ -39,7 +39,7 @@ describe('CredentialCreateSchema', () => {
     const result = CredentialCreateSchema.safeParse({
       name: 'hv-1',
       type: 'hyperv',
-      payload: { username: 'Administrator', password: 'pass' },
+      payload: { auth: 'winrm', username: 'Administrator', password: 'pass' },
     });
     expect(result.success).toBe(true);
   });
@@ -48,7 +48,25 @@ describe('CredentialCreateSchema', () => {
     const result = CredentialCreateSchema.safeParse({
       name: 'hv-2',
       type: 'hyperv',
-      payload: { domain: 'CORP', username: 'Administrator', password: 'pass' },
+      payload: { auth: 'winrm', domain: 'CORP', username: 'Administrator', password: 'pass' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts hyperv username/password credentials (back-compat legacy payload)', () => {
+    const result = CredentialCreateSchema.safeParse({
+      name: 'hv-legacy',
+      type: 'hyperv',
+      payload: { username: 'Administrator', password: 'pass' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts hyperv agent token credentials', () => {
+    const result = CredentialCreateSchema.safeParse({
+      name: 'hv-agent',
+      type: 'hyperv',
+      payload: { auth: 'agent', token: 'token-123' },
     });
     expect(result.success).toBe(true);
   });

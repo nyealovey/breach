@@ -12,16 +12,24 @@ import type { Prisma } from '@prisma/client';
 const VcenterPreferredVersionSchema = z.enum(['6.5-6.7', '7.0-8.x']);
 const PveAuthTypeSchema = z.enum(['api_token', 'user_password']);
 const PveScopeSchema = z.enum(['auto', 'standalone', 'cluster']);
+const HypervConnectionMethodSchema = z.enum(['winrm', 'agent']);
 
 const SourceConfigSchema = z
   .object({
-    endpoint: z.string().min(1),
+    // Hyper-V agent 模式下不需要 endpoint；其他来源仍要求 endpoint。
+    endpoint: z.string().min(1).optional(),
     preferred_vcenter_version: VcenterPreferredVersionSchema.optional(),
     tls_verify: z.boolean().optional(),
     timeout_ms: z.number().int().positive().optional(),
     scope: PveScopeSchema.optional(),
     max_parallel_nodes: z.number().int().positive().optional(),
     auth_type: PveAuthTypeSchema.optional(),
+
+    // Hyper-V（B 方案）：Windows Agent
+    connection_method: HypervConnectionMethodSchema.optional(),
+    agent_url: z.string().min(1).optional(),
+    agent_tls_verify: z.boolean().optional(),
+    agent_timeout_ms: z.number().int().positive().optional(),
   })
   .passthrough();
 
@@ -168,6 +176,39 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       400,
       { requestId: auth.requestId },
     );
+  }
+
+  // endpoint 校验：除 Hyper-V agent 模式外，endpoint 必填。
+  const endpoint = typeof body.config.endpoint === 'string' ? body.config.endpoint.trim() : '';
+  const connectionMethod =
+    body.sourceType === SourceType.hyperv && body.config.connection_method === 'agent' ? 'agent' : 'winrm';
+  if (body.sourceType !== SourceType.hyperv || connectionMethod === 'winrm') {
+    if (!endpoint) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'endpoint is required',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  } else {
+    const agentUrl = typeof body.config.agent_url === 'string' ? body.config.agent_url.trim() : '';
+    if (!agentUrl) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'agent_url is required when connection_method=agent',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
   }
 
   const source = await prisma.source.update({

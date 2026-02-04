@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { compactId } from '@/lib/ui/compact-id';
 
 type RawResponse = {
   rawPayload: unknown;
@@ -101,9 +102,24 @@ export function RawDialog({ recordId, open, onOpenChange }: Props) {
         ) : (
           <div className="space-y-3">
             <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <div>recordId: {recordId}</div>
-              <div>sourceId: {data.meta.sourceId}</div>
-              <div>runId: {data.meta.runId}</div>
+              <div>
+                recordId:{' '}
+                <span className="font-mono" title={recordId}>
+                  {compactId(recordId)}
+                </span>
+              </div>
+              <div>
+                sourceId:{' '}
+                <span className="font-mono" title={data.meta.sourceId}>
+                  {compactId(data.meta.sourceId)}
+                </span>
+              </div>
+              <div>
+                runId:{' '}
+                <span className="font-mono" title={data.meta.runId}>
+                  {compactId(data.meta.runId)}
+                </span>
+              </div>
               <div>collectedAt: {data.meta.collectedAt}</div>
               <div>
                 hash: {data.meta.hash} · sizeBytes: {data.meta.sizeBytes} · compression: {data.meta.compression}

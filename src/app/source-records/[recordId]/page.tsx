@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { compactId } from '@/lib/ui/compact-id';
 
 type NormalizedResponse = {
   normalizedPayload: unknown;
@@ -152,7 +153,11 @@ export default function SourceRecordPage() {
     <div className="space-y-6">
       <PageHeader
         title="Source Record"
-        meta={<span className="font-mono">{recordId}</span>}
+        meta={
+          <span className="font-mono" title={recordId}>
+            {compactId(recordId)}
+          </span>
+        }
         actions={
           <>
             <Button size="sm" variant="outline" disabled={loading || payload === undefined} onClick={copy}>
@@ -189,9 +194,24 @@ export default function SourceRecordPage() {
             ) : (
               <div className="space-y-3">
                 <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  <div>recordId: {recordId}</div>
-                  <div>sourceId: {raw.meta.sourceId}</div>
-                  <div>runId: {raw.meta.runId}</div>
+                  <div>
+                    recordId:{' '}
+                    <span className="font-mono" title={recordId}>
+                      {compactId(recordId)}
+                    </span>
+                  </div>
+                  <div>
+                    sourceId:{' '}
+                    <span className="font-mono" title={raw.meta.sourceId}>
+                      {compactId(raw.meta.sourceId)}
+                    </span>
+                  </div>
+                  <div>
+                    runId:{' '}
+                    <span className="font-mono" title={raw.meta.runId}>
+                      {compactId(raw.meta.runId)}
+                    </span>
+                  </div>
                   <div>collectedAt: {raw.meta.collectedAt}</div>
                   <div>
                     hash: {raw.meta.hash} · sizeBytes: {raw.meta.sizeBytes} · compression: {raw.meta.compression}
@@ -208,10 +228,30 @@ export default function SourceRecordPage() {
           ) : (
             <div className="space-y-3">
               <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
-                <div>recordId: {normalized.meta.recordId}</div>
-                <div>assetUuid: {normalized.meta.assetUuid}</div>
-                <div>sourceId: {normalized.meta.sourceId}</div>
-                <div>runId: {normalized.meta.runId}</div>
+                <div>
+                  recordId:{' '}
+                  <span className="font-mono" title={normalized.meta.recordId}>
+                    {compactId(normalized.meta.recordId)}
+                  </span>
+                </div>
+                <div>
+                  assetUuid:{' '}
+                  <span className="font-mono" title={normalized.meta.assetUuid}>
+                    {compactId(normalized.meta.assetUuid)}
+                  </span>
+                </div>
+                <div>
+                  sourceId:{' '}
+                  <span className="font-mono" title={normalized.meta.sourceId}>
+                    {compactId(normalized.meta.sourceId)}
+                  </span>
+                </div>
+                <div>
+                  runId:{' '}
+                  <span className="font-mono" title={normalized.meta.runId}>
+                    {compactId(normalized.meta.runId)}
+                  </span>
+                </div>
                 <div>collectedAt: {normalized.meta.collectedAt}</div>
                 <div>
                   external: {normalized.meta.externalKind} · {normalized.meta.externalId}

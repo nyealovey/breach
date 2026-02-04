@@ -32,7 +32,7 @@
       "@/public/*": ["./public/*"]
     }
   },
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules", "coverage"],
   "include": [
     ".eslintrc.mjs",
     "next-env.d.ts",

@@ -19,6 +19,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { compactId } from '@/lib/ui/compact-id';
 
 type ScheduleGroup = {
   groupId: string;
@@ -200,7 +201,9 @@ export default function ScheduleGroupsPage() {
                     <TableRow key={group.groupId}>
                       <TableCell>
                         <div className="font-medium">{group.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{group.groupId}</div>
+                        <div className="font-mono text-xs text-muted-foreground" title={group.groupId}>
+                          {compactId(group.groupId)}
+                        </div>
                       </TableCell>
                       <TableCell>{group.enabled ? '启用' : '停用'}</TableCell>
                       <TableCell className="font-mono text-xs">{group.timezone}</TableCell>

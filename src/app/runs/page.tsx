@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { parsePagination } from '@/lib/http/pagination';
 import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
 import { getPrimaryRunIssue } from '@/lib/runs/run-issues';
+import { compactId } from '@/lib/ui/compact-id';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -142,7 +143,9 @@ export default async function RunsPage({ searchParams }: RunsPageProps) {
                   const primaryMeta = primaryIssue ? getRunErrorUiMeta(primaryIssue.code) : null;
                   return (
                     <TableRow key={run.id}>
-                      <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                      <TableCell className="font-mono text-xs" title={run.id}>
+                        {compactId(run.id)}
+                      </TableCell>
                       <TableCell>{run.source?.name ?? run.sourceId}</TableCell>
                       <TableCell className="font-mono text-xs">{run.mode}</TableCell>
                       <TableCell className="font-mono text-xs">{run.triggerType}</TableCell>

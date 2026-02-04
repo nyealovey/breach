@@ -23,9 +23,11 @@ export default function NewCredentialPage() {
   const [type, setType] = useState<CredentialType>('vcenter');
 
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [hypervAuth, setHypervAuth] = useState<'winrm' | 'agent'>('winrm');
   const [domain, setDomain] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [hypervAgentToken, setHypervAgentToken] = useState('');
   const [apiTokenId, setApiTokenId] = useState('');
   const [apiTokenSecret, setApiTokenSecret] = useState('');
   const [accessKeyId, setAccessKeyId] = useState('');
@@ -42,9 +44,26 @@ export default function NewCredentialPage() {
         ? { auth_type: 'api_token', api_token_id: apiTokenId, api_token_secret: apiTokenSecret }
         : { auth_type: 'user_password', username, password };
     }
-    if (type === 'hyperv') return { ...(domain.trim() ? { domain: domain.trim() } : {}), username, password };
+    if (type === 'hyperv') {
+      return hypervAuth === 'agent'
+        ? { auth: 'agent', token: hypervAgentToken }
+        : { auth: 'winrm', ...(domain.trim() ? { domain: domain.trim() } : {}), username, password };
+    }
     return { username, password };
-  }, [accessKeyId, accessKeySecret, apiTokenId, apiTokenSecret, domain, password, pveAuthType, token, type, username]);
+  }, [
+    accessKeyId,
+    accessKeySecret,
+    apiTokenId,
+    apiTokenSecret,
+    domain,
+    hypervAgentToken,
+    hypervAuth,
+    password,
+    pveAuthType,
+    token,
+    type,
+    username,
+  ]);
 
   const validate = () => {
     if (!name.trim()) return '请输入名称';
@@ -57,7 +76,12 @@ export default function NewCredentialPage() {
       if (pveAuthType === 'user_password' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
       return null;
     }
-    if ((type === 'vcenter' || type === 'hyperv') && (!username.trim() || !password.trim())) return '请填写用户名/密码';
+    if (type === 'hyperv') {
+      if (hypervAuth === 'agent' && !hypervAgentToken.trim()) return '请填写 agent token';
+      if (hypervAuth === 'winrm' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
+      return null;
+    }
+    if (type === 'vcenter' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
     return null;
   };
 
@@ -121,6 +145,7 @@ export default function NewCredentialPage() {
                     const next = e.target.value as CredentialType;
                     setType(next);
                     if (next === 'pve') setPveAuthType('api_token');
+                    if (next === 'hyperv') setHypervAuth('winrm');
                   }}
                 >
                   <option value="vcenter">vCenter</option>
@@ -135,29 +160,60 @@ export default function NewCredentialPage() {
                 <>
                   {type === 'hyperv' ? (
                     <div className="space-y-2">
-                      <Label htmlFor="domain">域（可选）</Label>
-                      <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} />
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <div>说明：当 Source 选择 auto/kerberos 时，采集会优先使用 Kerberos（WinRM 默认）。</div>
-                        <div>domain 可用于 Kerberos realm 推导。</div>
-                        <div>Kerberos 失败时才会以 DOMAIN\username 走 NTLM（legacy）。</div>
-                        <div>如你知道 UPN，建议直接在用户名填写 user@domain（更稳定）。</div>
+                      <Label htmlFor="hypervAuth">凭据类型</Label>
+                      <NativeSelect
+                        id="hypervAuth"
+                        value={hypervAuth}
+                        onChange={(e) => setHypervAuth(e.target.value as typeof hypervAuth)}
+                      >
+                        <option value="winrm">WinRM（username/password）</option>
+                        <option value="agent">Agent（Bearer token）</option>
+                      </NativeSelect>
+                      <div className="text-xs text-muted-foreground">
+                        说明：域内推荐使用 Agent + gMSA；token 将通过 Authorization: Bearer 发送给 Windows Agent。
                       </div>
                     </div>
                   ) : null}
-                  <div className="space-y-2">
-                    <Label htmlFor="username">用户名</Label>
-                    <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">密码</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
+
+                  {type === 'hyperv' && hypervAuth === 'agent' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="hypervAgentToken">token</Label>
+                      <Input
+                        id="hypervAgentToken"
+                        type="password"
+                        value={hypervAgentToken}
+                        onChange={(e) => setHypervAgentToken(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {type === 'hyperv' ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="domain">域（可选）</Label>
+                          <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} />
+                          <div className="space-y-1 text-xs text-muted-foreground">
+                            <div>说明：当 Source 选择 auto/kerberos 时，采集会优先使用 Kerberos（WinRM 默认）。</div>
+                            <div>domain 可用于 Kerberos realm 推导。</div>
+                            <div>Kerberos 失败时才会以 DOMAIN\username 走 NTLM（legacy）。</div>
+                            <div>如你知道 UPN，建议直接在用户名填写 user@domain（更稳定）。</div>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="space-y-2">
+                        <Label htmlFor="username">用户名</Label>
+                        <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="password">密码</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 

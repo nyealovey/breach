@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 
+import { HypervAgentClientError, postAgentJson } from './agent-client';
 import { runPowershellJson, runPowershellWithTimeout } from './client';
+import { buildClusterInventory, buildStandaloneInventory } from './inventory';
 import { normalizeKerberosServiceName } from './kerberos-spn';
-import { normalizeCluster, normalizeHost, normalizeVm } from './normalize';
-import type { CollectorError, CollectorRequestV1, CollectorResponseV1, HypervCredential } from './types';
+import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
   return {
@@ -52,12 +53,47 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
-function toWinrmUsername(cred: HypervCredential): string {
-  const username = (cred.username ?? '').trim();
-  const domain = typeof cred.domain === 'string' ? cred.domain.trim() : '';
-  if (!domain) return username;
-  // legacy（winrm-client）使用 "DOMAIN\\user" 触发 NTLM
-  return `${domain}\\${username}`;
+function getConnectionMethod(request: CollectorRequestV1): 'winrm' | 'agent' {
+  const method = request.source.config?.connection_method;
+  return method === 'agent' ? 'agent' : 'winrm';
+}
+
+function buildAgentOptions(request: CollectorRequestV1) {
+  const cfg = request.source.config;
+  if (cfg.connection_method !== 'agent') throw new Error('invalid config: connection_method must be agent');
+
+  const baseUrl = cfg.agent_url.trim();
+  if (!baseUrl) throw new Error('invalid config: missing agent_url');
+
+  const tlsVerify = cfg.agent_tls_verify ?? true;
+  const timeoutMs = clampPositiveInt(cfg.agent_timeout_ms, 60_000);
+
+  const cred = request.source.credential;
+  if (cred.auth !== 'agent') throw new Error('invalid config: missing agent token');
+  const token = cred.token.trim();
+  if (!token) throw new Error('invalid config: missing agent token');
+
+  return {
+    baseUrl,
+    token,
+    tlsVerify: !!tlsVerify,
+    timeoutMs,
+    requestId: getRunId(request),
+  };
+}
+
+function buildAgentRequestBody(request: CollectorRequestV1) {
+  const cfg = request.source.config ?? ({} as any);
+  const maxParallelNodes = clampPositiveInt(cfg.max_parallel_nodes, 5);
+  const scope = cfg.scope ?? 'auto';
+  return {
+    source_id: request.source.source_id,
+    run_id: request.request.run_id,
+    mode: request.request.mode,
+    now: request.request.now,
+    scope,
+    max_parallel_nodes: maxParallelNodes,
+  };
 }
 
 function toHypervError(err: unknown, stage: string): CollectorError {
@@ -153,9 +189,16 @@ function toHypervError(err: unknown, stage: string): CollectorError {
   };
 }
 
+function toHypervAgentError(err: unknown, stage: string): CollectorError {
+  if (err instanceof HypervAgentClientError) return err.collectorError;
+  return toHypervError(err, stage);
+}
+
 function buildWinrmOptions(request: CollectorRequestV1) {
-  const cfg = request.source.config ?? ({} as any);
-  const endpoint = (cfg.endpoint ?? '').trim();
+  const cfg = request.source.config;
+  if (cfg.connection_method === 'agent') throw new Error('invalid config: missing endpoint');
+
+  const endpoint = cfg.endpoint.trim();
   if (!endpoint) throw new Error('missing endpoint');
 
   const scheme = (cfg.scheme === 'http' || cfg.scheme === 'https' ? cfg.scheme : 'http') as 'http' | 'https';
@@ -169,9 +212,11 @@ function buildWinrmOptions(request: CollectorRequestV1) {
   const tlsVerify = cfg.tls_verify ?? true;
   const timeoutMs = clampPositiveInt(cfg.timeout_ms, 60_000);
 
-  const cred = request.source.credential as HypervCredential;
-  const rawUsername = (cred.username ?? '').trim();
-  const password = (cred.password ?? '').trim();
+  const cred = request.source.credential;
+  if (cred.auth === 'agent') throw new Error('invalid config: missing username');
+
+  const rawUsername = cred.username.trim();
+  const password = cred.password.trim();
   if (!rawUsername) throw new Error('missing username');
   if (!password) throw new Error('missing password');
 
@@ -187,10 +232,8 @@ function buildWinrmOptions(request: CollectorRequestV1) {
   const legacyUsername = domain ? `${domain}\\${rawUsername}` : rawUsername;
   const username = authMethod === 'basic' ? rawUsername : legacyUsername;
 
-  const kerberosServiceName = normalizeKerberosServiceName(
-    typeof cfg.kerberos_service_name === 'string' ? cfg.kerberos_service_name : undefined,
-  );
-  const kerberosSpnFallback = typeof cfg.kerberos_spn_fallback === 'boolean' ? cfg.kerberos_spn_fallback : false;
+  const kerberosServiceName = normalizeKerberosServiceName(cfg.kerberos_service_name);
+  const kerberosSpnFallback = cfg.kerberos_spn_fallback ?? false;
   const kerberosHostnameOverride =
     typeof cfg.kerberos_hostname_override === 'string' && cfg.kerberos_hostname_override.trim().length > 0
       ? cfg.kerberos_hostname_override.trim()
@@ -309,6 +352,65 @@ $recommendedScope = if ($isCluster) { 'cluster' } else { 'standalone' }
     };
   } catch (err) {
     return { response: makeResponse({ errors: [toHypervError(err, 'detect')] }), exitCode: 1 };
+  }
+}
+
+async function healthcheckAgent(
+  request: CollectorRequestV1,
+): Promise<{ response: CollectorResponseV1; exitCode: number }> {
+  try {
+    const opts = buildAgentOptions(request);
+    const body = buildAgentRequestBody(request);
+    await postAgentJson<unknown>(opts, '/v1/hyperv/healthcheck', body, 'hyperv.healthcheck.agent');
+    return { response: makeResponse({ errors: [] }), exitCode: 0 };
+  } catch (err) {
+    return { response: makeResponse({ errors: [toHypervAgentError(err, 'healthcheck.agent')] }), exitCode: 1 };
+  }
+}
+
+async function detectAgent(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
+  try {
+    const opts = buildAgentOptions(request);
+    const body = buildAgentRequestBody(request);
+    const detectResult = await postAgentJson<unknown>(opts, '/v1/hyperv/detect', body, 'hyperv.detect.agent');
+    return {
+      response: makeResponse({
+        detect: detectResult,
+        assets: [],
+        relations: [],
+        stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
+        errors: [],
+      }),
+      exitCode: 0,
+    };
+  } catch (err) {
+    return { response: makeResponse({ errors: [toHypervAgentError(err, 'detect.agent')] }), exitCode: 1 };
+  }
+}
+
+async function collectAgent(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
+  try {
+    const opts = buildAgentOptions(request);
+    const body = buildAgentRequestBody(request);
+    const raw = await postAgentJson<unknown>(opts, '/v1/hyperv/collect', body, 'hyperv.collect.agent');
+
+    const scope = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as any).scope : null;
+    const built =
+      scope === 'cluster' || (raw && typeof raw === 'object' && !Array.isArray(raw) && 'cluster_name' in raw)
+        ? buildClusterInventory(raw)
+        : buildStandaloneInventory(raw);
+
+    return {
+      response: makeResponse({
+        assets: built.assets,
+        relations: built.relations,
+        stats: built.stats,
+        errors: built.errors,
+      }),
+      exitCode: built.exitCode,
+    };
+  } catch (err) {
+    return { response: makeResponse({ errors: [toHypervAgentError(err, 'collect.agent')] }), exitCode: 1 };
   }
 }
 
@@ -452,55 +554,16 @@ try {
 [pscustomobject]@{ host = $host; vms = $vms } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
-  const payload = await runPowershellJson<{ host: any; vms: any[] }>(opts, script, 'hyperv.collect', { runId });
-
-  const hostAsset = normalizeHost(payload.host);
-  const vmAssets = (Array.isArray(payload.vms) ? payload.vms : []).map((vm) => normalizeVm(vm));
-
-  const assets = [hostAsset, ...vmAssets];
-  const relations = vmAssets.flatMap((vm) => [
-    {
-      type: 'runs_on' as const,
-      from: { external_kind: 'vm' as const, external_id: vm.external_id },
-      to: { external_kind: 'host' as const, external_id: hostAsset.external_id },
-      raw_payload: { type: 'runs_on', vm_external_id: vm.external_id, host_external_id: hostAsset.external_id },
-    },
-    {
-      type: 'hosts_vm' as const,
-      from: { external_kind: 'host' as const, external_id: hostAsset.external_id },
-      to: { external_kind: 'vm' as const, external_id: vm.external_id },
-      raw_payload: { type: 'hosts_vm', vm_external_id: vm.external_id, host_external_id: hostAsset.external_id },
-    },
-  ]);
-
-  if (relations.length === 0) {
-    return {
-      response: makeResponse({
-        assets,
-        relations,
-        stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
-        errors: [
-          {
-            code: 'INVENTORY_RELATIONS_EMPTY',
-            category: 'parse',
-            message: 'relations is empty',
-            retryable: false,
-            redacted_context: { mode: 'collect', assets: assets.length, vms: vmAssets.length },
-          },
-        ],
-      }),
-      exitCode: 1,
-    };
-  }
-
+  const payload = await runPowershellJson<unknown>(opts, script, 'hyperv.collect', { runId });
+  const built = buildStandaloneInventory(payload);
   return {
     response: makeResponse({
-      assets,
-      relations,
-      stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings: [] },
-      errors: [],
+      assets: built.assets,
+      relations: built.relations,
+      stats: built.stats,
+      errors: built.errors,
     }),
-    exitCode: 0,
+    exitCode: built.exitCode,
   };
 }
 
@@ -539,14 +602,8 @@ async function collectCluster(
     return { response: makeResponse({ errors: [error] }), exitCode: 1 };
   }
 
-  const clusterAsset = normalizeCluster({ name: discovery.cluster_name });
-
   // Best-effort: map VM Name -> OwnerNode from cluster groups.
   const ownerRows = await listClusterVmOwners(baseOpts, { runId });
-  const ownerByName = new Map<string, string>();
-  for (const row of ownerRows) {
-    if (row.owner_node) ownerByName.set(row.name, row.owner_node);
-  }
 
   const nodeScript = `
 $ErrorActionPreference = 'Stop'
@@ -587,7 +644,7 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
 [pscustomobject]@{ host = $host; vms = $vms } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
-  let nodeResults: Array<{ node: string; hostAsset: ReturnType<typeof normalizeHost>; vmEntries: any[] }> = [];
+  let nodeResults: Array<{ node: string; host: any; vms: any[] }> = [];
   try {
     nodeResults = await mapLimit(discovery.nodes, maxParallelNodes, async (node) => {
       const nodeOpts = buildWinrmOptionsForHost(baseOpts, node);
@@ -599,9 +656,8 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
           { runId },
         );
 
-        const hostAsset = normalizeHost(payload.host);
-        const vmEntries = Array.isArray(payload.vms) ? payload.vms : [];
-        return { node, hostAsset, vmEntries };
+        const vms = Array.isArray(payload.vms) ? payload.vms : [];
+        return { node, host: payload.host, vms };
       } catch (err) {
         throw new ClusterNodeCollectError(node, err);
       }
@@ -625,104 +681,20 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
     return { response: makeResponse({ errors: [toHypervError(err, 'collect.cluster')] }), exitCode: 1 };
   }
 
-  const hostAssets = nodeResults.map((r) => r.hostAsset);
-
-  // Build a key->hostExternalId mapping for best-effort VM owner mapping.
-  const hostIdByNode = new Map<string, string>();
-  for (const r of nodeResults) {
-    hostIdByNode.set(r.node, r.hostAsset.external_id);
-    const hn =
-      r.hostAsset.normalized.identity?.hostname && r.hostAsset.normalized.identity.hostname.trim().length > 0
-        ? r.hostAsset.normalized.identity.hostname.trim()
-        : null;
-    if (hn) hostIdByNode.set(hn, r.hostAsset.external_id);
-  }
-
-  // Flatten VM entries with their observed node; then dedupe by vm_id (prefer owner node when available).
-  const vmCandidates = nodeResults.flatMap((r) =>
-    (Array.isArray(r.vmEntries) ? r.vmEntries : []).map((vm) => ({ node: r.node, vm })),
-  );
-  const picked = new Map<string, { node: string; vm: any }>();
-  for (const c of vmCandidates) {
-    const vmId = c && c.vm && typeof c.vm.vm_id === 'string' ? c.vm.vm_id : '';
-    if (!vmId) continue;
-
-    const vmName = typeof c.vm.name === 'string' ? c.vm.name : '';
-    const preferredNode = vmName && ownerByName.has(vmName) ? ownerByName.get(vmName)! : null;
-
-    if (!picked.has(vmId)) {
-      picked.set(vmId, c);
-      continue;
-    }
-    if (preferredNode && c.node === preferredNode) {
-      picked.set(vmId, c);
-    }
-  }
-
-  const vmAssets = Array.from(picked.values()).map((c) => normalizeVm(c.vm));
-
-  const memberOfRelations = hostAssets.map((host) => ({
-    type: 'member_of' as const,
-    from: { external_kind: 'host' as const, external_id: host.external_id },
-    to: { external_kind: 'cluster' as const, external_id: clusterAsset.external_id },
-    raw_payload: { type: 'member_of', host_external_id: host.external_id, cluster: clusterAsset.external_id },
-  }));
-
-  const runsOnRelations = Array.from(picked.values())
-    .map((c) => {
-      const vmId = typeof c.vm?.vm_id === 'string' ? c.vm.vm_id : null;
-      if (!vmId) return null;
-      const vmName = typeof c.vm?.name === 'string' ? c.vm.name : null;
-      const ownerNode = vmName && ownerByName.has(vmName) ? ownerByName.get(vmName)! : c.node;
-      const hostExternalId = hostIdByNode.get(ownerNode) ?? hostIdByNode.get(c.node) ?? null;
-      if (!hostExternalId) return null;
-      return {
-        type: 'runs_on' as const,
-        from: { external_kind: 'vm' as const, external_id: vmId },
-        to: { external_kind: 'host' as const, external_id: hostExternalId },
-        raw_payload: { type: 'runs_on', vm_external_id: vmId, owner_node: ownerNode },
-      };
-    })
-    .filter((r): r is NonNullable<typeof r> => !!r);
-
-  const hostsVmRelations = runsOnRelations.map((r) => ({
-    type: 'hosts_vm' as const,
-    from: { external_kind: 'host' as const, external_id: r.to.external_id },
-    to: { external_kind: 'vm' as const, external_id: r.from.external_id },
-    raw_payload: { type: 'hosts_vm', vm_external_id: r.from.external_id, host_external_id: r.to.external_id },
-  }));
-
-  const assets = [clusterAsset, ...hostAssets, ...vmAssets];
-  const relations = [...memberOfRelations, ...runsOnRelations, ...hostsVmRelations];
-
-  if (relations.length === 0) {
-    return {
-      response: makeResponse({
-        assets,
-        relations,
-        stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
-        errors: [
-          {
-            code: 'INVENTORY_RELATIONS_EMPTY',
-            category: 'parse',
-            message: 'relations is empty',
-            retryable: false,
-            redacted_context: { mode: 'collect', assets: assets.length, vms: vmAssets.length },
-          },
-        ],
-      }),
-      exitCode: 1,
-    };
-  }
-
+  const built = buildClusterInventory({
+    scope: 'cluster',
+    cluster_name: discovery.cluster_name,
+    nodes: nodeResults,
+    owner_rows: ownerRows,
+  });
   return {
     response: makeResponse({
-      assets,
-      relations,
-      stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings: [] },
-      errors: [],
+      assets: built.assets,
+      relations: built.relations,
+      stats: built.stats,
+      errors: built.errors,
     }),
-    exitCode: 0,
+    exitCode: built.exitCode,
   };
 }
 
@@ -777,21 +749,41 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  if (!request.source.config?.endpoint) {
-    const response = makeResponse({
-      errors: [{ code: 'HYPERV_CONFIG_INVALID', category: 'config', message: 'missing endpoint', retryable: false }],
-    });
-    process.stdout.write(`${JSON.stringify(response)}\n`);
-    return 1;
+  const connectionMethod = getConnectionMethod(request);
+  const cfg = request.source.config as any;
+  if (connectionMethod === 'agent') {
+    const agentUrl = typeof cfg.agent_url === 'string' ? cfg.agent_url.trim() : '';
+    if (!agentUrl) {
+      const response = makeResponse({
+        errors: [{ code: 'HYPERV_CONFIG_INVALID', category: 'config', message: 'missing agent_url', retryable: false }],
+      });
+      process.stdout.write(`${JSON.stringify(response)}\n`);
+      return 1;
+    }
+  } else {
+    const endpoint = typeof cfg.endpoint === 'string' ? cfg.endpoint.trim() : '';
+    if (!endpoint) {
+      const response = makeResponse({
+        errors: [{ code: 'HYPERV_CONFIG_INVALID', category: 'config', message: 'missing endpoint', retryable: false }],
+      });
+      process.stdout.write(`${JSON.stringify(response)}\n`);
+      return 1;
+    }
   }
 
   const mode = request.request?.mode;
   const result =
     mode === 'collect'
-      ? await collect(request)
+      ? connectionMethod === 'agent'
+        ? await collectAgent(request)
+        : await collect(request)
       : mode === 'detect'
-        ? await detect(request)
-        : await healthcheck(request);
+        ? connectionMethod === 'agent'
+          ? await detectAgent(request)
+          : await detect(request)
+        : connectionMethod === 'agent'
+          ? await healthcheckAgent(request)
+          : await healthcheck(request);
 
   process.stdout.write(`${JSON.stringify(result.response)}\n`);
   return result.exitCode;

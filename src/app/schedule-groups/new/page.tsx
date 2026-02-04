@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -145,7 +146,9 @@ export default function NewScheduleGroupPage() {
                           />
                           <div className="min-w-0 space-y-0.5">
                             <div className="font-medium leading-none">{s.name}</div>
-                            <div className="font-mono text-xs text-muted-foreground">{s.sourceId}</div>
+                            <div className="font-mono text-xs text-muted-foreground" title={s.sourceId}>
+                              {compactId(s.sourceId)}
+                            </div>
                             {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
                           </div>
                         </label>

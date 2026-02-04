@@ -2,8 +2,8 @@ import type { NormalizedAsset, Relation } from './normalize';
 
 export type CollectorMode = 'healthcheck' | 'detect' | 'collect';
 
-export type HypervConfig = {
-  // v1 固定为 winrm；预留未来扩展 agent 等方式
+export type HypervWinrmConfig = {
+  // 默认：winrm（保持兼容；旧配置可不填 connection_method）
   connection_method?: 'winrm';
 
   // 主机名/IP 或群集名（在 scheme/port 下拼接成 WinRM endpoint）
@@ -48,12 +48,34 @@ export type HypervConfig = {
   max_parallel_nodes?: number;
 };
 
-export type HypervCredential = {
+export type HypervAgentConfig = {
+  connection_method: 'agent';
+  agent_url: string;
+  agent_tls_verify?: boolean;
+  agent_timeout_ms?: number;
+  scope?: 'auto' | 'standalone' | 'cluster';
+  max_parallel_nodes?: number;
+
+  // 兼容：旧 UI/配置可能仍带 endpoint，但 agent 路径不使用它。
+  endpoint?: string;
+};
+
+export type HypervConfig = HypervWinrmConfig | HypervAgentConfig;
+
+export type HypervWinrmCredential = {
+  auth?: 'winrm';
   // 可选：用于构造 DOMAIN\\user（触发 NTLM auth）
   domain?: string;
   username: string;
   password: string;
 };
+
+export type HypervAgentCredential = {
+  auth: 'agent';
+  token: string;
+};
+
+export type HypervCredential = HypervWinrmCredential | HypervAgentCredential;
 
 export type CollectorRequestV1 = {
   schema_version: 'collector-request-v1';

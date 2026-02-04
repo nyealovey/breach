@@ -29,6 +29,7 @@ import {
   confidenceBadgeVariant,
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
@@ -367,7 +368,11 @@ export default function DuplicateCandidateDetailPage() {
       <div className="space-y-6">
         <PageHeader
           title="候选详情"
-          meta={<span className="font-mono">{candidateId}</span>}
+          meta={
+            <span className="font-mono" title={candidateId}>
+              {compactId(candidateId)}
+            </span>
+          }
           actions={
             <>
               <Button asChild size="sm" variant="outline">
@@ -453,7 +458,9 @@ export default function DuplicateCandidateDetailPage() {
                           )}
                         </div>
                       ) : null}
-                      <div className="font-mono text-xs text-muted-foreground">{data.assetA.assetUuid}</div>
+                      <div className="font-mono text-xs text-muted-foreground" title={data.assetA.assetUuid}>
+                        {compactId(data.assetA.assetUuid)}
+                      </div>
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetA.lastSeenAt ?? '-'}</div>
                       <div>
                         <Button asChild size="sm" variant="outline">
@@ -492,7 +499,9 @@ export default function DuplicateCandidateDetailPage() {
                           )}
                         </div>
                       ) : null}
-                      <div className="font-mono text-xs text-muted-foreground">{data.assetB.assetUuid}</div>
+                      <div className="font-mono text-xs text-muted-foreground" title={data.assetB.assetUuid}>
+                        {compactId(data.assetB.assetUuid)}
+                      </div>
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetB.lastSeenAt ?? '-'}</div>
                       <div>
                         <Button asChild size="sm" variant="outline">
@@ -627,7 +636,9 @@ export default function DuplicateCandidateDetailPage() {
                             <TableCell>
                               <div className="space-y-1">
                                 <div className="text-sm">{l.sourceName}</div>
-                                <div className="font-mono text-xs text-muted-foreground">{l.sourceId}</div>
+                                <div className="font-mono text-xs text-muted-foreground" title={l.sourceId}>
+                                  {compactId(l.sourceId)}
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell className="font-mono text-xs">
@@ -641,7 +652,9 @@ export default function DuplicateCandidateDetailPage() {
                             <TableCell className="font-mono text-xs">
                               <div>{l.lastSeenAt}</div>
                               {l.lastSeenRunId ? (
-                                <div className="text-muted-foreground">run: {l.lastSeenRunId}</div>
+                                <div className="text-muted-foreground" title={l.lastSeenRunId}>
+                                  run: {compactId(l.lastSeenRunId)}
+                                </div>
                               ) : null}
                             </TableCell>
                           </TableRow>
@@ -675,7 +688,9 @@ export default function DuplicateCandidateDetailPage() {
                             <TableCell>
                               <div className="space-y-1">
                                 <div className="text-sm">{l.sourceName}</div>
-                                <div className="font-mono text-xs text-muted-foreground">{l.sourceId}</div>
+                                <div className="font-mono text-xs text-muted-foreground" title={l.sourceId}>
+                                  {compactId(l.sourceId)}
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell className="font-mono text-xs">
@@ -689,7 +704,9 @@ export default function DuplicateCandidateDetailPage() {
                             <TableCell className="font-mono text-xs">
                               <div>{l.lastSeenAt}</div>
                               {l.lastSeenRunId ? (
-                                <div className="text-muted-foreground">run: {l.lastSeenRunId}</div>
+                                <div className="text-muted-foreground" title={l.lastSeenRunId}>
+                                  run: {compactId(l.lastSeenRunId)}
+                                </div>
                               ) : null}
                             </TableCell>
                           </TableRow>

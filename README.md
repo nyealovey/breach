@@ -107,8 +107,8 @@ List of websites that started off with Next.js TypeScript Starter:
 运行指南：
 
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
-- Hyper-V（WinRM）采集验收清单：[`docs/runbooks/hyperv-collector-checklist.md`](docs/runbooks/hyperv-collector-checklist.md)
-- Hyper-V（WinRM）认证说明：默认 `auth_method=auto` 优先 Kerberos（HTTP/5985）；Kerberos 首选 `pywinrm`（支持 AllowUnencrypted=false 的消息加密），依赖 `uv` + `kinit`；`auth_method=auto` 下 Kerberos 失败会降级到 `curl --negotiate`/legacy；`auth_method=kerberos` 不降级；`endpoint` 建议使用 hostname/FQDN（或 IP 具备 PTR 反解）以匹配 Kerberos SPN。
+- Hyper-V（WinRM / Agent）采集验收清单：[`docs/runbooks/hyperv-collector-checklist.md`](docs/runbooks/hyperv-collector-checklist.md)
+- Hyper-V 采集说明：域内且要求“只开 HTTP 但必须信息加密”时，优先使用 `connection_method=agent`（Windows Agent + gMSA 在域内完成 Kerberos/Negotiate 的消息级加密）；`connection_method=winrm`（legacy）仍保留。WinRM 模式默认 `auth_method=auto` 优先 Kerberos（HTTP/5985）；Kerberos 首选 `pywinrm`（支持 AllowUnencrypted=false 的消息加密），依赖 `uv` + `kinit`；`auth_method=auto` 下 Kerberos 失败会降级到 `curl --negotiate`/legacy；`auth_method=kerberos` 不降级；`endpoint` 建议使用 hostname/FQDN（或 IP 具备 PTR 反解）以匹配 Kerberos SPN。
 - 调度组页面的「运行」按钮支持选择 `mode=healthcheck|detect|collect`：排障优先 `healthcheck/detect`，确认无误后再 `collect`。
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
 - 认证/Session：优先调用 `POST /api/session` 获取 session token；若返回 JSON-RPC 错误或该接口不存在，则自动 fallback 到 `POST /rest/com/vmware/cis/session`（常见于 6.5/6.7 环境）。vCenter REST 资源接口优先使用 `/api/vcenter/*`；若遇到 404/405（接口不存在或 GET 不支持）则自动 fallback 到 `/rest/vcenter/*`；VM 按 Host 过滤（`listVMsByHost`）在部分 6.5/6.7 环境会自动从 `hosts=` fallback 到 `filter.hosts=`。
@@ -165,7 +165,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `/duplicate-candidates`：重复中心（admin-only）：候选列表/详情、命中原因（dup-rules-v1）、关键字段对比；VM 详情/合并页会展示宿主机（runs_on_host）；关键字段对比将“双方都缺失”标记为“缺失”；支持 Ignore（永久）与合并确认（`primary_wins`，入口：候选详情“进入 Merge” → `/duplicate-candidates/:candidateId/merge`）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
 
-备注：Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
+备注：UI 中内部 ID（如 Run ID / Source ID 等）默认以缩略形式展示（前 8 + 后 7，中间省略号），鼠标悬浮可查看完整值。Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
 
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）
 

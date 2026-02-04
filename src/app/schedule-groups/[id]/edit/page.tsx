@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -131,7 +132,11 @@ export default function EditScheduleGroupPage() {
     <div className="max-w-2xl space-y-6">
       <PageHeader
         title="编辑调度组"
-        meta={<span className="font-mono">{params.id}</span>}
+        meta={
+          <span className="font-mono" title={params.id}>
+            {compactId(params.id)}
+          </span>
+        }
         actions={
           <>
             <Button asChild size="sm" variant="outline">
@@ -198,7 +203,9 @@ export default function EditScheduleGroupPage() {
                         />
                         <div className="min-w-0 space-y-0.5">
                           <div className="font-medium leading-none">{s.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground">{s.sourceId}</div>
+                          <div className="font-mono text-xs text-muted-foreground" title={s.sourceId}>
+                            {compactId(s.sourceId)}
+                          </div>
                           {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
                         </div>
                       </label>

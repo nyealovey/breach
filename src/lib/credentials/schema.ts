@@ -3,13 +3,22 @@ import { z } from 'zod/v4';
 import { SourceType } from '@prisma/client';
 
 const VcenterPayload = z.object({ username: z.string().min(1), password: z.string().min(1) }).strict();
-const HypervPayload = z
+const HypervWinrmPayloadV2 = z
   .object({
+    auth: z.literal('winrm'),
     domain: z.string().min(1).optional(),
     username: z.string().min(1),
     password: z.string().min(1),
   })
   .strict();
+const HypervAgentPayloadV2 = z.object({ auth: z.literal('agent'), token: z.string().min(1) }).strict();
+// Back-compat: 旧版 Hyper-V credential 只有 domain/username/password。
+const HypervWinrmPayloadLegacy = z
+  .object({ domain: z.string().min(1).optional(), username: z.string().min(1), password: z.string().min(1) })
+  .strict()
+  .transform((v) => ({ auth: 'winrm' as const, ...v }));
+
+const HypervPayload = z.union([HypervWinrmPayloadV2, HypervAgentPayloadV2, HypervWinrmPayloadLegacy]);
 const PveApiTokenPayload = z.object({
   auth_type: z.literal('api_token'),
   api_token_id: z.string().min(1),

@@ -20,6 +20,7 @@ import {
   confidenceBadgeVariant,
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type {
   DuplicateCandidateAssetTypeParam,
@@ -254,14 +255,18 @@ export default function DuplicateCandidatesPage() {
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">{item.assetA.displayName ?? '-'}</div>
-                              <div className="font-mono text-xs text-muted-foreground">{item.assetA.assetUuid}</div>
+                              <div className="font-mono text-xs text-muted-foreground" title={item.assetA.assetUuid}>
+                                {compactId(item.assetA.assetUuid)}
+                              </div>
                             </div>
                           </TableCell>
 
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">{item.assetB.displayName ?? '-'}</div>
-                              <div className="font-mono text-xs text-muted-foreground">{item.assetB.assetUuid}</div>
+                              <div className="font-mono text-xs text-muted-foreground" title={item.assetB.assetUuid}>
+                                {compactId(item.assetB.assetUuid)}
+                              </div>
                             </div>
                           </TableCell>
 

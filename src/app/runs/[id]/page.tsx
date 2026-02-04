@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/u
 import { RunIssuesPanel } from '@/components/runs/run-issues-panel';
 import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
 import { getPrimaryRunIssue, sanitizeRedactedContext } from '@/lib/runs/run-issues';
+import { compactId } from '@/lib/ui/compact-id';
 
 type RunDetail = {
   runId: string;
@@ -76,7 +77,11 @@ export default function RunDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title="Run 详情"
-        meta={<span className="font-mono">{run.runId}</span>}
+        meta={
+          <span className="font-mono" title={run.runId}>
+            {compactId(run.runId)}
+          </span>
+        }
         description={`${run.sourceName ?? run.sourceId} · ${run.mode} · ${run.triggerType} · ${run.status}`}
         actions={
           <Button asChild size="sm" variant="outline">
@@ -96,11 +101,19 @@ export default function RunDetailPage() {
                 <TableBody>
                   <TableRow>
                     <TableHead>Run ID</TableHead>
-                    <TableCell className="font-mono text-xs">{run.runId}</TableCell>
+                    <TableCell className="font-mono text-xs" title={run.runId}>
+                      {compactId(run.runId)}
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>来源</TableHead>
-                    <TableCell>{run.sourceName ?? run.sourceId}</TableCell>
+                    <TableCell>
+                      {run.sourceName ?? (
+                        <span className="font-mono text-xs" title={run.sourceId}>
+                          {compactId(run.sourceId)}
+                        </span>
+                      )}
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>模式</TableHead>

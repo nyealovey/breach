@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -29,6 +30,10 @@ export default function NewSourcePage() {
   const [pveScope, setPveScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [hypervConnectionMethod, setHypervConnectionMethod] = useState<'winrm' | 'agent'>('winrm');
+  const [hypervAgentUrl, setHypervAgentUrl] = useState('');
+  const [hypervAgentTlsVerify, setHypervAgentTlsVerify] = useState(true);
+  const [hypervAgentTimeoutMs, setHypervAgentTimeoutMs] = useState(60_000);
   const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('http');
   const [hypervPort, setHypervPort] = useState(5985);
   const [hypervTlsVerify, setHypervTlsVerify] = useState(true);
@@ -61,6 +66,11 @@ export default function NewSourcePage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+
+    if (sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && !hypervAgentUrl.trim()) {
+      toast.error('请填写 agent_url');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/v1/sources', {
@@ -71,7 +81,7 @@ export default function NewSourcePage() {
           sourceType,
           enabled,
           config: {
-            endpoint,
+            ...(sourceType === 'hyperv' && hypervConnectionMethod === 'agent' ? {} : { endpoint }),
             ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
             ...(sourceType === 'pve'
               ? {
@@ -83,16 +93,25 @@ export default function NewSourcePage() {
                 }
               : {}),
             ...(sourceType === 'hyperv'
-              ? {
-                  connection_method: 'winrm',
-                  auth_method: hypervAuthMethod,
-                  scheme: hypervScheme,
-                  port: hypervPort,
-                  tls_verify: hypervTlsVerify,
-                  timeout_ms: hypervTimeoutMs,
-                  scope: hypervScope,
-                  max_parallel_nodes: hypervMaxParallelNodes,
-                }
+              ? hypervConnectionMethod === 'agent'
+                ? {
+                    connection_method: 'agent',
+                    agent_url: hypervAgentUrl.trim(),
+                    agent_tls_verify: hypervAgentTlsVerify,
+                    agent_timeout_ms: hypervAgentTimeoutMs,
+                    scope: hypervScope,
+                    max_parallel_nodes: hypervMaxParallelNodes,
+                  }
+                : {
+                    connection_method: 'winrm',
+                    auth_method: hypervAuthMethod,
+                    scheme: hypervScheme,
+                    port: hypervPort,
+                    tls_verify: hypervTlsVerify,
+                    timeout_ms: hypervTimeoutMs,
+                    scope: hypervScope,
+                    max_parallel_nodes: hypervMaxParallelNodes,
+                  }
               : {}),
           },
           credentialId: credentialId ? credentialId : null,
@@ -145,6 +164,10 @@ export default function NewSourcePage() {
                     setPveScope('auto');
                     setPveMaxParallelNodes(5);
                     setPveAuthType('api_token');
+                    setHypervConnectionMethod('winrm');
+                    setHypervAgentUrl('');
+                    setHypervAgentTlsVerify(true);
+                    setHypervAgentTimeoutMs(60_000);
                     setHypervScheme('http');
                     setHypervPort(5985);
                     setHypervTlsVerify(true);
@@ -161,10 +184,12 @@ export default function NewSourcePage() {
                   <option value="third_party">第三方</option>
                 </NativeSelect>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="endpoint">Endpoint</Label>
-                <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-              </div>
+              {sourceType === 'hyperv' && hypervConnectionMethod === 'agent' ? null : (
+                <div className="space-y-2">
+                  <Label htmlFor="endpoint">Endpoint</Label>
+                  <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+                </div>
+              )}
               {sourceType === 'vcenter' ? (
                 <div className="space-y-2">
                   <Label htmlFor="preferredVcenterVersion">vCenter 版本范围</Label>
@@ -243,71 +268,123 @@ export default function NewSourcePage() {
               ) : null}
               {sourceType === 'hyperv' ? (
                 <div className="space-y-3 rounded-md border bg-background p-3">
-                  <div className="text-sm font-medium">Hyper-V 配置（WinRM）</div>
+                  <div className="text-sm font-medium">Hyper-V 配置</div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="hypervAuthMethod">auth_method</Label>
+                    <Label htmlFor="hypervConnectionMethod">connection_method</Label>
                     <NativeSelect
-                      id="hypervAuthMethod"
-                      value={hypervAuthMethod}
-                      onChange={(e) => setHypervAuthMethod(e.target.value as typeof hypervAuthMethod)}
+                      id="hypervConnectionMethod"
+                      value={hypervConnectionMethod}
+                      onChange={(e) => setHypervConnectionMethod(e.target.value as typeof hypervConnectionMethod)}
                     >
-                      <option value="auto">auto（默认：优先 Kerberos）</option>
-                      <option value="kerberos">kerberos（强制）</option>
-                      <option value="ntlm">ntlm（legacy）</option>
-                      <option value="basic">basic（legacy）</option>
+                      <option value="agent">agent（推荐：域内 gMSA）</option>
+                      <option value="winrm">winrm（legacy）</option>
                     </NativeSelect>
                     <div className="text-xs text-muted-foreground">
-                      说明：默认 WinRM 通常禁用 basic，建议使用 auto/kerberos；如填写了 domain，auto 会优先 Kerberos。
+                      说明：agent 模式下由 Windows Agent 在域内完成 Kerberos/Negotiate（HTTP 仍可消息级加密）。
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="hypervScheme">scheme</Label>
-                    <NativeSelect
-                      id="hypervScheme"
-                      value={hypervScheme}
-                      onChange={(e) => {
-                        const next = e.target.value as typeof hypervScheme;
-                        setHypervScheme(next);
-                        // Keep a sensible default when user hasn't changed port yet.
-                        if (hypervPort === 5986 && next === 'http') setHypervPort(5985);
-                        if (hypervPort === 5985 && next === 'https') setHypervPort(5986);
-                      }}
-                    >
-                      <option value="http">http</option>
-                      <option value="https">https</option>
-                    </NativeSelect>
-                  </div>
+                  {hypervConnectionMethod === 'agent' ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervAgentUrl">agent_url</Label>
+                        <Input
+                          id="hypervAgentUrl"
+                          value={hypervAgentUrl}
+                          onChange={(e) => setHypervAgentUrl(e.target.value)}
+                        />
+                        <div className="text-xs text-muted-foreground">示例：http://hyperv-agent01:8787</div>
+                      </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="hypervPort">port</Label>
-                    <Input
-                      id="hypervPort"
-                      type="number"
-                      value={String(hypervPort)}
-                      onChange={(e) => setHypervPort(Number(e.target.value))}
-                    />
-                    <div className="text-xs text-muted-foreground">默认：https=5986；http=5985</div>
-                  </div>
+                      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                        <div className="text-sm">
+                          <div className="font-medium">TLS 校验</div>
+                          <div className="text-xs text-muted-foreground">
+                            仅 https 生效；关闭仅用于自签名/内网环境（有安全风险）
+                          </div>
+                        </div>
+                        <Switch checked={hypervAgentTlsVerify} onCheckedChange={setHypervAgentTlsVerify} />
+                      </div>
 
-                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-                    <div className="text-sm">
-                      <div className="font-medium">TLS 校验</div>
-                      <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
-                    </div>
-                    <Switch checked={hypervTlsVerify} onCheckedChange={setHypervTlsVerify} />
-                  </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervAgentTimeoutMs">agent_timeout_ms</Label>
+                        <Input
+                          id="hypervAgentTimeoutMs"
+                          type="number"
+                          value={String(hypervAgentTimeoutMs)}
+                          onChange={(e) => setHypervAgentTimeoutMs(Number(e.target.value))}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervAuthMethod">auth_method</Label>
+                        <NativeSelect
+                          id="hypervAuthMethod"
+                          value={hypervAuthMethod}
+                          onChange={(e) => setHypervAuthMethod(e.target.value as typeof hypervAuthMethod)}
+                        >
+                          <option value="auto">auto（默认：优先 Kerberos）</option>
+                          <option value="kerberos">kerberos（强制）</option>
+                          <option value="ntlm">ntlm（legacy）</option>
+                          <option value="basic">basic（legacy）</option>
+                        </NativeSelect>
+                        <div className="text-xs text-muted-foreground">
+                          说明：默认 WinRM 通常禁用 basic，建议使用 auto/kerberos；如填写了 domain，auto 会优先
+                          Kerberos。
+                        </div>
+                      </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="hypervTimeoutMs">timeout_ms</Label>
-                    <Input
-                      id="hypervTimeoutMs"
-                      type="number"
-                      value={String(hypervTimeoutMs)}
-                      onChange={(e) => setHypervTimeoutMs(Number(e.target.value))}
-                    />
-                  </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervScheme">scheme</Label>
+                        <NativeSelect
+                          id="hypervScheme"
+                          value={hypervScheme}
+                          onChange={(e) => {
+                            const next = e.target.value as typeof hypervScheme;
+                            setHypervScheme(next);
+                            // Keep a sensible default when user hasn't changed port yet.
+                            if (hypervPort === 5986 && next === 'http') setHypervPort(5985);
+                            if (hypervPort === 5985 && next === 'https') setHypervPort(5986);
+                          }}
+                        >
+                          <option value="http">http</option>
+                          <option value="https">https</option>
+                        </NativeSelect>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervPort">port</Label>
+                        <Input
+                          id="hypervPort"
+                          type="number"
+                          value={String(hypervPort)}
+                          onChange={(e) => setHypervPort(Number(e.target.value))}
+                        />
+                        <div className="text-xs text-muted-foreground">默认：https=5986；http=5985</div>
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                        <div className="text-sm">
+                          <div className="font-medium">TLS 校验</div>
+                          <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
+                        </div>
+                        <Switch checked={hypervTlsVerify} onCheckedChange={setHypervTlsVerify} />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="hypervTimeoutMs">timeout_ms</Label>
+                        <Input
+                          id="hypervTimeoutMs"
+                          type="number"
+                          value={String(hypervTimeoutMs)}
+                          onChange={(e) => setHypervTimeoutMs(Number(e.target.value))}
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div className="space-y-2">
                     <Label htmlFor="hypervScope">scope</Label>
@@ -340,7 +417,7 @@ export default function NewSourcePage() {
                   <option value="">不选择</option>
                   {credentials.map((c) => (
                     <option key={c.credentialId} value={c.credentialId}>
-                      {c.name} · {c.credentialId}
+                      {c.name} · {compactId(c.credentialId)}
                     </option>
                   ))}
                 </NativeSelect>

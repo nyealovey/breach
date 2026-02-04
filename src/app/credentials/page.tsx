@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { compactId } from '@/lib/ui/compact-id';
 
 type CredentialItem = {
   credentialId: string;
@@ -109,7 +110,9 @@ export default function CredentialsPage() {
                     <TableRow key={item.credentialId}>
                       <TableCell>
                         <div className="font-medium">{item.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{item.credentialId}</div>
+                        <div className="font-mono text-xs text-muted-foreground" title={item.credentialId}>
+                          {compactId(item.credentialId)}
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{item.type}</TableCell>
                       <TableCell className="font-mono text-xs">{item.usageCount}</TableCell>

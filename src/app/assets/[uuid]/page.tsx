@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
+import { compactId } from '@/lib/ui/compact-id';
 
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
 import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
@@ -429,8 +430,18 @@ export default function AssetDetailPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={asset.displayName ?? asset.assetUuid}
-        meta={<span className="font-mono">{asset.assetUuid}</span>}
+        title={
+          asset.displayName ?? (
+            <span className="font-mono" title={asset.assetUuid}>
+              {compactId(asset.assetUuid)}
+            </span>
+          )
+        }
+        meta={
+          <span className="font-mono" title={asset.assetUuid}>
+            {compactId(asset.assetUuid)}
+          </span>
+        }
         actions={
           <Button asChild size="sm" variant="outline">
             <Link href="/assets">返回列表</Link>
@@ -455,7 +466,14 @@ export default function AssetDetailPage() {
               <div className="rounded-md border bg-muted/20 p-3">
                 <div className="text-xs text-muted-foreground">Latest Snapshot</div>
                 <div className="mt-1 font-mono text-xs">
-                  {asset.latestSnapshot ? `${asset.latestSnapshot.runId} · ${asset.latestSnapshot.createdAt}` : '暂无'}
+                  {asset.latestSnapshot ? (
+                    <>
+                      <span title={asset.latestSnapshot.runId}>{compactId(asset.latestSnapshot.runId)}</span> ·{' '}
+                      {asset.latestSnapshot.createdAt}
+                    </>
+                  ) : (
+                    '暂无'
+                  )}
                 </div>
               </div>
 
@@ -994,8 +1012,16 @@ export default function AssetDetailPage() {
                     <Badge variant="secondary">{formatAssetType(asset.assetType)}</Badge>
                     <Badge variant={asset.status === 'in_service' ? 'default' : 'secondary'}>{asset.status}</Badge>
                   </div>
-                  <div className="mt-2 text-sm font-medium">{asset.displayName ?? asset.assetUuid}</div>
-                  <div className="mt-1 font-mono text-xs text-muted-foreground">{asset.assetUuid}</div>
+                  <div className="mt-2 text-sm font-medium">
+                    {asset.displayName ?? (
+                      <span className="font-mono" title={asset.assetUuid}>
+                        {compactId(asset.assetUuid)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-muted-foreground" title={asset.assetUuid}>
+                    {compactId(asset.assetUuid)}
+                  </div>
                 </div>
 
                 {asset.assetType === 'vm' ? (
@@ -1011,7 +1037,12 @@ export default function AssetDetailPage() {
                         ) : null}
                       </div>
                       <div className="mt-2 text-sm font-medium">{chainHost?.displayName ?? '-'}</div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">{chainHost?.assetUuid ?? '-'}</div>
+                      <div
+                        className="mt-1 font-mono text-xs text-muted-foreground"
+                        title={chainHost?.assetUuid ?? undefined}
+                      >
+                        {chainHost?.assetUuid ? compactId(chainHost.assetUuid) : '-'}
+                      </div>
                     </div>
 
                     <div className="flex items-center text-muted-foreground">→</div>
@@ -1027,8 +1058,11 @@ export default function AssetDetailPage() {
                       <div className="mt-2 text-sm font-medium">
                         {chainLoading ? '加载中…' : (chainCluster?.displayName ?? '-')}
                       </div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">
-                        {chainCluster?.assetUuid ?? '-'}
+                      <div
+                        className="mt-1 font-mono text-xs text-muted-foreground"
+                        title={chainCluster?.assetUuid ?? undefined}
+                      >
+                        {chainCluster?.assetUuid ? compactId(chainCluster.assetUuid) : '-'}
                       </div>
                     </div>
                   </>
@@ -1045,8 +1079,11 @@ export default function AssetDetailPage() {
                         ) : null}
                       </div>
                       <div className="mt-2 text-sm font-medium">{directCluster?.displayName ?? '-'}</div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">
-                        {directCluster?.assetUuid ?? '-'}
+                      <div
+                        className="mt-1 font-mono text-xs text-muted-foreground"
+                        title={directCluster?.assetUuid ?? undefined}
+                      >
+                        {directCluster?.assetUuid ? compactId(directCluster.assetUuid) : '-'}
                       </div>
                     </div>
                   </>
@@ -1073,10 +1110,18 @@ export default function AssetDetailPage() {
                           <TableRow key={r.relationId}>
                             <TableCell>{r.relationType}</TableCell>
                             <TableCell>
-                              <div className="text-sm">{r.toDisplayName ?? r.toAssetUuid}</div>
+                              <div className="text-sm">
+                                {r.toDisplayName ?? (
+                                  <span className="font-mono" title={r.toAssetUuid}>
+                                    {compactId(r.toAssetUuid)}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">
                                 {r.toAssetType ? `${formatAssetType(r.toAssetType)} · ` : null}
-                                {r.toAssetUuid}
+                                <span className="font-mono" title={r.toAssetUuid}>
+                                  {compactId(r.toAssetUuid)}
+                                </span>
                               </div>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">{r.lastSeenAt}</TableCell>
@@ -1117,12 +1162,16 @@ export default function AssetDetailPage() {
                     {sourceRecords.map((r) => (
                       <TableRow key={`${r.recordId}_${r.collectedAt}`}>
                         <TableCell className="text-xs text-muted-foreground">{r.collectedAt}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.sourceId}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground" title={r.sourceId}>
+                          <span className="font-mono">{compactId(r.sourceId)}</span>
+                        </TableCell>
                         <TableCell>
                           <div className="text-sm">{r.externalId}</div>
                           <div className="text-xs text-muted-foreground">{r.externalKind}</div>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.runId}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground" title={r.runId}>
+                          <span className="font-mono">{compactId(r.runId)}</span>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button asChild size="sm" variant="outline">

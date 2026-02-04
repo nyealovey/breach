@@ -1,0 +1,10 @@
+{
+  "name": "@breach/hyperv-windows-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "build": "bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe"
+  }
+}

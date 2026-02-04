@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { compactId } from '@/lib/ui/compact-id';
 
 export default async function ExportsPage() {
   const session = await getServerSession();
@@ -57,7 +58,9 @@ export default async function ExportsPage() {
               <TableBody>
                 {exports.map((exp) => (
                   <TableRow key={exp.id}>
-                    <TableCell className="font-mono text-xs">{exp.id}</TableCell>
+                    <TableCell className="font-mono text-xs" title={exp.id}>
+                      {compactId(exp.id)}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={

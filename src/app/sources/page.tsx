@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { compactId } from '@/lib/ui/compact-id';
 
 type SourceItem = {
   sourceId: string;
@@ -89,7 +90,9 @@ export default function SourcesPage() {
                     <TableRow key={item.sourceId}>
                       <TableCell>
                         <div className="font-medium">{item.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{item.sourceId}</div>
+                        <div className="font-mono text-xs text-muted-foreground" title={item.sourceId}>
+                          {compactId(item.sourceId)}
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{item.sourceType}</TableCell>
                       <TableCell>{item.enabled ? '启用' : '停用'}</TableCell>

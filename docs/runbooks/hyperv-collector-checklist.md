@@ -1,18 +1,54 @@
-# Hyper-V 采集验收清单（WinRM）
+# Hyper-V 采集验收清单（WinRM / Agent）
 
 > 适用范围：M4（Hyper-V 采集 v1.0）  
 > 对齐 PRD：`docs/prds/M4-asset-ledger-hyperv-collector-v1.0-prd.md`
 
 ## 1. 前置条件（必须满足，否则采集将失败）
 
-### 1.1 WinRM / 网络
+### 1.0 选择采集方式（connection_method）
+
+- `connection_method=winrm`：Linux worker 直连 WinRM（旧方案；兼容保留）
+- `connection_method=agent`：Linux 插件仅调用 Windows Agent，由 Agent（入域 + gMSA）在域内完成 Kerberos/Negotiate（推荐）
+
+### 1.1 Agent / 网络（connection_method=agent）
+
+- 在入域 Windows 上部署 Hyper-V Agent（建议直接部署在 Hyper-V 节点上）
+- core/worker 能访问 `agent_url`（端口放行、仅内网；ping 通不代表端口可用）
+- Agent 以 gMSA 运行（推荐）：无需保存密码即可获得域身份与 Kerberos 票据
+
+#### 1.1.1 gMSA 落地步骤（推荐）
+
+> 目标：让 Agent 以 **域身份**运行，但 **不需要保存密码**，从而在域内自然获取 Kerberos 票据。
+
+AD 侧（域管执行）：
+
+1. 创建 gMSA（示例：`breachHypervAgent$`）
+2. 绑定允许使用该 gMSA 的机器（建议就是部署 Agent 的那几台 Hyper-V 节点）
+
+Windows 侧（部署 Agent 的机器）：
+
+1. 安装并验证 gMSA（需要 RSAT/AD 模块）：
+   - `Install-ADServiceAccount breachHypervAgent`
+   - `Test-ADServiceAccount breachHypervAgent`
+2. 安装/配置 Agent 为 Windows Service，且满足：
+   - Service 的 Log On Account = `DOMAIN\\breachHypervAgent$`
+   - 配置 `HYPERV_AGENT_TOKEN` / `HYPERV_AGENT_BIND` / `HYPERV_AGENT_PORT` 等环境变量
+3. 权限（最小化授权）：
+   - Hyper-V 只读枚举权限（等价 Hyper-V Administrators 或更细粒度授权）
+   - Failover Cluster 读取权限（能执行 `Get-Cluster*`）
+4. 网络：
+   - core/worker 能访问 Agent 监听的 `agent_url`（仅内网放行）
+
+> Agent 构建/启动方式与 API 契约：见 `agents/hyperv-windows-agent/README.md`。
+
+### 1.2 WinRM / 网络（connection_method=winrm）
 
 - WinRM 已启用（示例：`winrm quickconfig`）
 - 防火墙允许 WinRM 端口（HTTP `5985` / HTTPS `5986`）
 - 采集侧可直连目标端口（**ping 通不代表 WinRM 端口可用**）
 - 若使用 HTTPS 且 `tls_verify=true`：证书必须有效且链路可被采集侧信任
 
-### 1.2 Kerberos（推荐，默认路径）
+### 1.3 Kerberos（WinRM 模式推荐，默认路径）
 
 本项目默认 `auth_method=auto`，会优先走 Kerberos/Negotiate（不要求改服务器默认 WinRM 配置；WinRM 默认通常禁用 Basic）。
 
@@ -23,7 +59,7 @@
   - `kinit`（Kerberos client）
   - 支持 `--negotiate` 的 `curl`（带 GSSAPI/SPNEGO）
 
-### 1.3 账号权限
+### 1.4 账号权限（WinRM/Agent 通用）
 
 - 账号具备 Hyper-V 只读枚举权限（例如 Hyper-V Administrators 组或等价只读权限）
 - 群集场景还需具备 Failover Cluster 读取权限（能执行 `Get-Cluster` / `Get-ClusterNode` / `Get-ClusterGroup`）
@@ -32,19 +68,35 @@
 
 ### 2.1 Credential（hyperv）
 
-- 必填：`username` / `password`
-- 可选：`domain`
-  - 当 Source 选择 `auto/kerberos` 时：`domain` 可用于 Kerberos realm 推导
-  - 当 Source 选择 `ntlm/basic`（legacy）或 `auto` 降级时：会以 `DOMAIN\username` 形式走 NTLM（legacy）
-- 建议：如已知 UPN，直接在 `username` 填写 `user@upnSuffix`（多域环境更稳定）
+- Agent（connection_method=agent）：
+  - 必填：`{ auth: 'agent', token }`
+- WinRM（connection_method=winrm）：
+  - 必填：`{ auth: 'winrm', username, password }`
+  - 可选：`domain`
+    - 当 Source 选择 `auto/kerberos` 时：`domain` 可用于 Kerberos realm 推导
+    - 当 Source 选择 `ntlm/basic`（legacy）或 `auto` 降级时：会以 `DOMAIN\username` 形式走 NTLM（legacy）
+  - 建议：如已知 UPN，直接在 `username` 填写 `user@upnSuffix`（多域环境更稳定）
 
 ### 2.2 Source（hyperv）
 
-最小必填：
+最小必填（Agent）：
 
+- `connection_method`：`agent`
+- `agent_url`：例如 `http://hyperv-agent01:8787`
+
+推荐配置（Agent）：
+
+- `agent_tls_verify`：默认 `true`（仅 https 生效；自签名/内网才考虑关闭）
+- `agent_timeout_ms`：默认 `60000`（群集/慢环境可适当调大）
+- `scope`：`auto|standalone|cluster`（默认 `auto`；生产建议显式填写以减少误判）
+- `max_parallel_nodes`：默认 `5`（群集并发上限；由 Agent 在域内并发调用节点）
+
+最小必填（WinRM / legacy）：
+
+- `connection_method`：`winrm`（或不填，默认 winrm）
 - `endpoint`：建议填写 **任一节点** hostname/FQDN（也可尝试群集名，但若 WinRM 不在群集名上监听会连接失败）
 
-推荐配置：
+推荐配置（WinRM / legacy）：
 
 - `auth_method`：`auto`（默认，优先 Kerberos）或 `kerberos`（强制）
 - `kerberos_service_name`：Kerberos SPN service class（默认 `WSMAN`；多数 WinRM 环境为 `WSMAN/<host>`）
@@ -98,6 +150,13 @@
 - cluster：至少包含 `Host -> Cluster`（member_of）；`VM -> Host` 尽力输出（best-effort）
 
 ## 4. 常见失败与排障（不要求改服务器设置）
+
+### 4.0 Agent 常见失败（connection_method=agent）
+
+- `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 是否在对应 IP 上监听（`HYPERV_AGENT_BIND`）
+- `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 侧 `HYPERV_AGENT_TOKEN` 一致
+- `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
+- `HYPERV_AGENT_PS_ERROR`：PowerShell 执行失败；优先查看 `errors[].redacted_context` 的 `stderr_excerpt/exit_code`，并在 Agent 机器上手工运行 `scripts/*.ps1` 复现
 
 ### 4.1 超时（timeout）
 
