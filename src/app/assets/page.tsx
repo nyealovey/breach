@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -213,6 +213,7 @@ export default function AssetsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const skipNextUrlSyncRef = useRef(false);
 
   const [items, setItems] = useState<AssetListItem[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -310,6 +311,9 @@ export default function AssetsPage() {
   }, [assetTypeInput, visibleColumns]);
 
   useEffect(() => {
+    // When URL changes (e.g. external navigation/back/forward), update local state from URL.
+    // Also skip the next "state -> URL" sync to avoid oscillation while state catches up.
+    skipNextUrlSyncRef.current = true;
     const parsed = parseAssetListUrlState(new URLSearchParams(searchParams.toString()));
     setQInput(parsed.q ?? '');
     setAssetTypeInput(parsed.assetType ?? 'all');
@@ -328,6 +332,11 @@ export default function AssetsPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (skipNextUrlSyncRef.current) {
+      skipNextUrlSyncRef.current = false;
+      return;
+    }
+
     const current = searchParams.toString();
 
     const nextParams = buildAssetListUrlSearchParams({
