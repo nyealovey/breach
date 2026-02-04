@@ -176,6 +176,7 @@ Windows 侧（部署 Agent 的机器）：
 - `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致
 - `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
 - `HYPERV_AGENT_PS_ERROR`：PowerShell 执行失败；优先查看 `errors[].redacted_context` 的 `stderr_excerpt/exit_code`，并在 Agent 机器上手工运行 `scripts/*.ps1` 复现
+  - 若 stderr 包含 `Variable reference is not valid. ':' was not followed by a valid variable name character.`：常见原因是 PowerShell 字符串插值里 `$var:` 会被解析成“作用域变量”（例如 `$env:Path`）。请升级 Agent 到最新版本（已用 `${cn}:${cl}` 修复磁盘名格式化），或在 `agents/hyperv-windows-agent/src/scripts/collect.ps1` 将 `"$cn:$cl"` 改为 `"${cn}:${cl}"`。
 - Agent 启动后没有日志/端口未监听：常见原因是 `log.dir` 无写权限（例如安装在 `Program Files`）；优先按 `agents/hyperv-windows-agent/README.md` 调整 `log.dir`（推荐写到 `%ProgramData%`）
 
 ### 4.1 超时（timeout）
