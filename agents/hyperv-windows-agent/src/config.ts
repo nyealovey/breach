@@ -19,6 +19,7 @@ export type HypervAgentConfig = {
 export type LoadedHypervAgentConfig = {
   baseDir: string;
   configPath: string;
+  configDir: string;
   scriptsDir: string;
   config: HypervAgentConfig;
 };
@@ -91,13 +92,55 @@ function resolveConfigPath(baseDir: string, value: string): string {
   return path.isAbsolute(value) ? value : path.join(baseDir, value);
 }
 
-export function loadConfig(args: { argv: string[]; importMetaUrl: string }): LoadedHypervAgentConfig {
+function unique(items: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const i of items) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    out.push(i);
+  }
+  return out;
+}
+
+function buildConfigCandidates(baseDir: string, cwd: string, configArg: string | null): string[] {
+  if (configArg) {
+    if (path.isAbsolute(configArg)) return [configArg];
+    // Prefer CLI-expected behavior: relative paths are resolved relative to CWD.
+    return unique([path.join(cwd, configArg), resolveConfigPath(baseDir, configArg)]);
+  }
+  const filename = 'hyperv-agent.config.json';
+  return unique([path.join(baseDir, filename), path.join(cwd, filename)]);
+}
+
+export function loadConfig(args: { argv: string[]; importMetaUrl: string; cwd?: string }): LoadedHypervAgentConfig {
   const importMetaUrl = isValidFileUrl(args.importMetaUrl) ? args.importMetaUrl : detectImportMetaUrlFallback();
   const baseDir = detectBaseDir(importMetaUrl);
   const configArg = parseConfigPathFromArgv(args.argv);
-  const configPath = resolveConfigPath(baseDir, configArg ?? 'hyperv-agent.config.json');
+  const cwd = args.cwd ?? process.cwd();
 
-  const rawText = readFileSync(configPath, 'utf8');
+  const candidates = buildConfigCandidates(baseDir, cwd, configArg);
+
+  let configPath: string | null = null;
+  let rawText: string | null = null;
+  let lastErr: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      rawText = readFileSync(candidate, 'utf8');
+      configPath = candidate;
+      break;
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+  }
+
+  if (!configPath || rawText === null) {
+    const hint = candidates.join(', ');
+    const details = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    throw new Error(`config file not found/readable (tried: ${hint}): ${details}`);
+  }
+
   const raw = JSON.parse(rawText) as unknown;
   if (!isRecord(raw)) throw new Error('config must be a JSON object');
 
@@ -132,6 +175,7 @@ export function loadConfig(args: { argv: string[]; importMetaUrl: string }): Loa
   return {
     baseDir,
     configPath,
+    configDir: path.dirname(configPath),
     scriptsDir: path.join(baseDir, 'scripts'),
     config,
   };

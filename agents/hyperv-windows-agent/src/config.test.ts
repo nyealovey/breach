@@ -23,6 +23,7 @@ describe('hyperv windows agent config', () => {
 
     expect(loaded.baseDir).toBe(dir);
     expect(loaded.configPath).toBe(path.join(dir, 'hyperv-agent.config.json'));
+    expect(loaded.configDir).toBe(dir);
     expect(loaded.config.token).toBe('t');
     expect(loaded.config.bind).toBe('127.0.0.1');
     expect(loaded.config.port).toBe(8787);
@@ -33,18 +34,21 @@ describe('hyperv windows agent config', () => {
     expect(loaded.scriptsDir).toBe(path.join(dir, 'scripts'));
   });
 
-  it('supports --config override (relative to baseDir)', () => {
-    const dir = makeTempDir('hyperv-agent-config-');
-    writeFileSync(path.join(dir, 'custom.json'), JSON.stringify({ token: 'x', port: 9999 }), 'utf8');
+  it('supports --config override (relative to CWD; fallback to baseDir)', () => {
+    const baseDir = makeTempDir('hyperv-agent-config-base-');
+    const cwd = makeTempDir('hyperv-agent-config-cwd-');
+    writeFileSync(path.join(baseDir, 'custom.json'), JSON.stringify({ token: 'base', port: 9999 }), 'utf8');
+    writeFileSync(path.join(cwd, 'custom.json'), JSON.stringify({ token: 'cwd', port: 8888 }), 'utf8');
 
     const loaded = loadConfig({
       argv: ['hyperv-windows-agent.exe', '--config', 'custom.json'],
-      importMetaUrl: pathToFileURL(path.join(dir, 'server.ts')).toString(),
+      importMetaUrl: pathToFileURL(path.join(baseDir, 'server.ts')).toString(),
+      cwd,
     });
 
-    expect(loaded.configPath).toBe(path.join(dir, 'custom.json'));
-    expect(loaded.config.token).toBe('x');
-    expect(loaded.config.port).toBe(9999);
+    expect(loaded.configPath).toBe(path.join(cwd, 'custom.json'));
+    expect(loaded.config.token).toBe('cwd');
+    expect(loaded.config.port).toBe(8888);
   });
 
   it('throws when token is missing', () => {

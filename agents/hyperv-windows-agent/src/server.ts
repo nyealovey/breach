@@ -15,7 +15,7 @@ try {
 }
 
 const psTimeoutMs = loaded.config.ps_timeout_ms;
-const { logger, logDir } = createLogger({ baseDir: loaded.baseDir, config: loaded.config.log });
+const { logger, logDir } = createLogger({ baseDir: loaded.configDir, config: loaded.config.log });
 
 function scriptPath(name: string): string {
   return path.join(loaded.scriptsDir, name);
@@ -64,5 +64,5 @@ logger.info({
 
 console.log(`[hyperv-agent] config: ${loaded.configPath}`);
 console.log(`[hyperv-agent] scripts: ${loaded.scriptsDir}`);
-console.log(`[hyperv-agent] logs: ${logDir}`);
+console.log(`[hyperv-agent] logs: ${logDir || '(disabled)'}`);
 console.log(`[hyperv-agent] listening on http://${loaded.config.bind}:${loaded.config.port}`);

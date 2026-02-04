@@ -1,4 +1,5 @@
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { HypervAgentLogLevel } from './config';
@@ -58,20 +59,54 @@ function cleanupOldLogs(logDir: string, retainDays: number, nowMs: number) {
   }
 }
 
+function defaultFallbackLogDir(): string {
+  if (process.platform === 'win32') {
+    // Prefer ProgramData for services. It's stable across working directories and usually writable.
+    const programData =
+      process.env.PROGRAMDATA && process.env.PROGRAMDATA.trim() ? process.env.PROGRAMDATA : 'C:\\ProgramData';
+    return path.join(programData, 'breach', 'hyperv-agent', 'logs');
+  }
+  return path.join(tmpdir(), 'breach', 'hyperv-agent', 'logs');
+}
+
+function ensureDir(dir: string): boolean {
+  try {
+    mkdirSync(dir, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createLogger(args: { baseDir: string; config: LoggerConfig; now?: () => Date }): {
   logger: HypervAgentLogger;
   logDir: string;
 } {
   const now = args.now ?? (() => new Date());
-  const logDir = path.isAbsolute(args.config.dir) ? args.config.dir : path.join(args.baseDir, args.config.dir);
+  const desiredLogDir = path.isAbsolute(args.config.dir) ? args.config.dir : path.join(args.baseDir, args.config.dir);
+  let logDir = desiredLogDir;
 
-  mkdirSync(logDir, { recursive: true });
+  if (!ensureDir(logDir)) {
+    const fallback = defaultFallbackLogDir();
+    if (ensureDir(fallback)) {
+      // Avoid crashing the agent due to log directory ACLs (common when installed under Program Files).
+      console.error(`[hyperv-agent] log dir not writable: ${desiredLogDir}`);
+      console.error(`[hyperv-agent] falling back to: ${fallback}`);
+      logDir = fallback;
+    } else {
+      console.error(`[hyperv-agent] log dir not writable and fallback failed: ${desiredLogDir}`);
+      console.error('[hyperv-agent] file logging disabled');
+      logDir = '';
+    }
+  }
+
   cleanupOldLogs(logDir, args.config.retain_days, now().getTime());
 
   const minRank = levelRank(args.config.level);
 
   function write(level: HypervAgentLogLevel, event: Record<string, unknown>) {
     if (levelRank(level) < minRank) return;
+    if (!logDir) return;
 
     const ts = new Date().toISOString();
     const payload = { ts, level, service: 'hyperv-windows-agent', ...event };

@@ -15,6 +15,7 @@
 - 在入域 Windows 上部署 Hyper-V Agent（建议直接部署在 Hyper-V 节点上）
 - core/worker 能访问 `agent_url`（端口放行、仅内网；ping 通不代表端口可用）
 - Agent 以 gMSA 运行（推荐）：无需保存密码即可获得域身份与 Kerberos 票据
+- 也支持普通域账号运行（可选）：由 Windows Service 保存密码，但需自行处理密码到期/轮换
 
 #### 1.1.1 gMSA 落地步骤（推荐）
 
@@ -40,6 +41,15 @@ Windows 侧（部署 Agent 的机器）：
    - core/worker 能访问 Agent 监听的 `agent_url`（仅内网放行）
 
 > Agent 构建/启动方式与 API 契约：见 `agents/hyperv-windows-agent/README.md`。
+
+#### 1.1.2 普通域账号运行（可选）
+
+如果你不想上 gMSA，也可以先用普通域账号跑通链路（本质：让采集在 Windows 域内完成 SSPI 协商，避免 Linux 侧 Kerberos 环境复杂度）：
+
+1. 将 Agent 安装为 Windows Service
+2. Service 的 Log On Account = `DOMAIN\\someUser`（普通域用户）
+3. 赋予该账号 Hyper-V / Failover Cluster 只读枚举权限（同 1.1.1）
+4. 关注密码到期与轮换：避免服务因密码过期突然停止
 
 ### 1.2 WinRM / 网络（connection_method=winrm）
 
@@ -154,9 +164,11 @@ Windows 侧（部署 Agent 的机器）：
 ### 4.0 Agent 常见失败（connection_method=agent）
 
 - `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 配置里的 `bind/port` 是否对外监听
+- 若你在另一台机器（core/worker 或 Postman）访问 Agent：确保 `bind=0.0.0.0`（或绑定到具体网卡 IP），并放行 Windows 防火墙端口；`bind=127.0.0.1` 仅本机可访问
 - `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致
 - `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
 - `HYPERV_AGENT_PS_ERROR`：PowerShell 执行失败；优先查看 `errors[].redacted_context` 的 `stderr_excerpt/exit_code`，并在 Agent 机器上手工运行 `scripts/*.ps1` 复现
+- Agent 启动后没有日志/端口未监听：常见原因是 `log.dir` 无写权限（例如安装在 `Program Files`）；优先按 `agents/hyperv-windows-agent/README.md` 调整 `log.dir`（推荐写到 `%ProgramData%`）
 
 ### 4.1 超时（timeout）
 

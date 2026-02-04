@@ -70,4 +70,27 @@ describe('hyperv windows agent logger', () => {
       rmSync(oldFile, { force: true });
     }
   });
+
+  it('falls back when log dir is not writable/creatable (does not crash)', () => {
+    const baseDir = makeTempDir('hyperv-agent-logger-');
+    const badLogsPath = path.join(baseDir, 'logs');
+    // Create a file where a directory is expected, forcing mkdirSync to fail.
+    writeFileSync(badLogsPath, 'not-a-dir', 'utf8');
+
+    const now = () => new Date(2026, 1, 4, 12, 0, 0); // local time: 2026-02-04
+    const { logger, logDir } = createLogger({
+      baseDir,
+      config: { dir: 'logs', level: 'info', retain_days: 14 },
+      now,
+    });
+
+    // Ensure it didn't use the broken path and can still write logs somewhere.
+    expect(logDir).not.toBe(badLogsPath);
+    expect(logDir).toBeTruthy();
+    logger.info({ request_id: 'r2', path: '/v1/hyperv/detect', outcome: 'success' });
+
+    const file = path.join(logDir, `hyperv-agent-${formatLocalDate(now())}.jsonl`);
+    const text = readFileSync(file, 'utf8').trim();
+    expect(text.length).toBeGreaterThan(0);
+  });
 });
