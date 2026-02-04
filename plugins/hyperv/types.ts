@@ -50,14 +50,13 @@ export type HypervWinrmConfig = {
 
 export type HypervAgentConfig = {
   connection_method: 'agent';
+  // 目标主机名/IP 或 Failover Cluster 名称（agent 会按此目标采集；agent_url 仅是认证入口）
+  endpoint: string;
   agent_url: string;
   agent_tls_verify?: boolean;
   agent_timeout_ms?: number;
   scope?: 'auto' | 'standalone' | 'cluster';
   max_parallel_nodes?: number;
-
-  // 兼容：旧 UI/配置可能仍带 endpoint，但 agent 路径不使用它。
-  endpoint?: string;
 };
 
 export type HypervConfig = HypervWinrmConfig | HypervAgentConfig;

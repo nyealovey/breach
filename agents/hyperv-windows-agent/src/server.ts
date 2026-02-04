@@ -24,18 +24,29 @@ function scriptPath(name: string): string {
 const deps = {
   run: async (mode: 'healthcheck' | 'detect' | 'collect', input: any) => {
     if (mode === 'healthcheck') {
-      return runPowerShellJsonFile({ scriptPath: scriptPath('healthcheck.ps1'), timeoutMs: psTimeoutMs });
+      return runPowerShellJsonFile({
+        scriptPath: scriptPath('healthcheck.ps1'),
+        scriptArgs: ['-Endpoint', String(input.endpoint)],
+        timeoutMs: psTimeoutMs,
+      });
     }
     if (mode === 'detect') {
       return runPowerShellJsonFile({
         scriptPath: scriptPath('detect.ps1'),
-        scriptArgs: ['-ConfiguredScope', String(input.scope ?? 'auto')],
+        scriptArgs: ['-Endpoint', String(input.endpoint), '-ConfiguredScope', String(input.scope ?? 'auto')],
         timeoutMs: psTimeoutMs,
       });
     }
     return runPowerShellJsonFile({
       scriptPath: scriptPath('collect.ps1'),
-      scriptArgs: ['-Scope', String(input.scope ?? 'auto'), '-MaxParallelNodes', String(input.max_parallel_nodes ?? 5)],
+      scriptArgs: [
+        '-Endpoint',
+        String(input.endpoint),
+        '-Scope',
+        String(input.scope ?? 'auto'),
+        '-MaxParallelNodes',
+        String(input.max_parallel_nodes ?? 5),
+      ],
       timeoutMs: psTimeoutMs,
     });
   },

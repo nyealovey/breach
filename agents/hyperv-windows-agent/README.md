@@ -99,12 +99,15 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 
 请求体（最小集合）：
 
+> `endpoint` 用于指定采集目标（Hyper-V 主机名/IP 或 Failover Cluster 名称）；Agent 本身只负责在域内完成认证与执行采集。
+
 ```json
 {
   \"source_id\": \"string\",
   \"run_id\": \"string\",
   \"mode\": \"healthcheck|detect|collect\",
   \"now\": \"ISO-8601\",
+  \"endpoint\": \"host01.example.com\",
   \"scope\": \"auto|standalone|cluster\",
   \"max_parallel_nodes\": 5
 }
@@ -133,6 +136,7 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
   "run_id": "run-1",
   "mode": "healthcheck",
   "now": "2026-02-04T00:00:00Z",
+  "endpoint": "host01.example.com",
   "scope": "auto",
   "max_parallel_nodes": 5
 }

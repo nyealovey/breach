@@ -84,6 +84,8 @@ function buildAgentOptions(request: CollectorRequestV1) {
 
 function buildAgentRequestBody(request: CollectorRequestV1) {
   const cfg = request.source.config ?? ({} as any);
+  const endpoint = typeof cfg.endpoint === 'string' ? cfg.endpoint.trim() : '';
+  if (!endpoint) throw new Error('invalid config: missing endpoint');
   const maxParallelNodes = clampPositiveInt(cfg.max_parallel_nodes, 5);
   const scope = cfg.scope ?? 'auto';
   return {
@@ -91,6 +93,7 @@ function buildAgentRequestBody(request: CollectorRequestV1) {
     run_id: request.request.run_id,
     mode: request.request.mode,
     now: request.request.now,
+    endpoint,
     scope,
     max_parallel_nodes: maxParallelNodes,
   };

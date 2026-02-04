@@ -10,6 +10,7 @@ export type HypervAgentRequest = {
   run_id: string;
   mode: HypervAgentMode;
   now: string;
+  endpoint: string;
   scope: HypervAgentScope;
   max_parallel_nodes: number;
 };
@@ -74,6 +75,7 @@ function parseRequestBody(
   const source_id = nonEmptyString(raw.source_id);
   const run_id = nonEmptyString(raw.run_id);
   const now = nonEmptyString(raw.now);
+  const endpoint = nonEmptyString(raw.endpoint);
   const scope = asScope(raw.scope);
   const max_parallel_nodes =
     typeof raw.max_parallel_nodes === 'number' &&
@@ -83,7 +85,7 @@ function parseRequestBody(
       ? raw.max_parallel_nodes
       : 5;
 
-  if (!source_id || !run_id || !now || !scope) {
+  if (!source_id || !run_id || !now || !endpoint || !scope) {
     return {
       ok: false,
       error: {
@@ -95,6 +97,7 @@ function parseRequestBody(
             ...(source_id ? {} : { missing: 'source_id' }),
             ...(run_id ? {} : { missing: 'run_id' }),
             ...(now ? {} : { missing: 'now' }),
+            ...(endpoint ? {} : { missing: 'endpoint' }),
             ...(scope ? {} : { missing: 'scope' }),
           },
         },
@@ -115,6 +118,7 @@ function parseRequestBody(
       run_id,
       mode: routeMode,
       now,
+      endpoint,
       scope,
       max_parallel_nodes,
     },

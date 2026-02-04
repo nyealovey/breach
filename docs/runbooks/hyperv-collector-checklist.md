@@ -92,6 +92,7 @@ Windows 侧（部署 Agent 的机器）：
 最小必填（Agent）：
 
 - `connection_method`：`agent`
+- `endpoint`：目标 Hyper-V 主机名/IP 或 Failover Cluster 名称（Agent 将按此目标采集）
 - `agent_url`：例如 `http://hyperv-agent01:8787`
 
 推荐配置（Agent）：
@@ -163,6 +164,7 @@ Windows 侧（部署 Agent 的机器）：
 
 ### 4.0 Agent 常见失败（connection_method=agent）
 
+- `HYPERV_CONFIG_INVALID`：agent 模式缺少 `endpoint`（目标主机/集群）或配置字段不完整；优先在 Source 配置里补齐并保存
 - `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 配置里的 `bind/port` 是否对外监听
 - 若你在另一台机器（core/worker 或 Postman）访问 Agent：确保 `bind=0.0.0.0`（或绑定到具体网卡 IP），并放行 Windows 防火墙端口；`bind=127.0.0.1` 仅本机可访问
 - `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致

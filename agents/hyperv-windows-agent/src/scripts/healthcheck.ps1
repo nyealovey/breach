@@ -1,14 +1,39 @@
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$Endpoint
+)
+
 $ErrorActionPreference = 'Stop'
 
-$canList = $false
-try {
-  if (Get-Command Get-VM -ErrorAction Stop) { $canList = $true }
-} catch { $canList = $false }
+function Try-GetCluster([string]$Name) {
+  try {
+    if (Get-Command Get-Cluster -ErrorAction Stop) {
+      return Get-Cluster -Name $Name -ErrorAction Stop
+    }
+  } catch { return $null }
+  return $null
+}
 
-$isCluster = $false
-try {
-  if (Get-Command Get-Cluster -ErrorAction Stop) { $null = Get-Cluster -ErrorAction Stop; $isCluster = $true }
-} catch { $isCluster = $false }
+$cluster = Try-GetCluster $Endpoint
+$isCluster = [bool]$cluster
 
-[pscustomobject]@{ ok = $true; can_list_vms = $canList; is_cluster = $isCluster } | ConvertTo-Json -Compress
+$targetHost = $Endpoint
+if ($isCluster) {
+  $first = Get-ClusterNode -Cluster $cluster -ErrorAction Stop | Select-Object -First 1
+  if ($first -and $first.Name) { $targetHost = $first.Name }
+}
 
+$canList = Invoke-Command -ComputerName $targetHost -ScriptBlock {
+  $ErrorActionPreference = 'Stop'
+  $can = $false
+  try {
+    if (Get-Command Get-VM -ErrorAction Stop) { $can = $true }
+  } catch { $can = $false }
+  return $can
+} -ErrorAction Stop
+
+[pscustomobject]@{
+  ok = $true
+  can_list_vms = [bool]$canList
+  is_cluster = $isCluster
+} | ConvertTo-Json -Compress

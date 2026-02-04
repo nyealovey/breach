@@ -67,6 +67,10 @@ export default function NewSourcePage() {
     e.preventDefault();
     if (submitting) return;
 
+    if (sourceType === 'hyperv' && !endpoint.trim()) {
+      toast.error('请填写 endpoint');
+      return;
+    }
     if (sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && !hypervAgentUrl.trim()) {
       toast.error('请填写 agent_url');
       return;
@@ -81,7 +85,7 @@ export default function NewSourcePage() {
           sourceType,
           enabled,
           config: {
-            ...(sourceType === 'hyperv' && hypervConnectionMethod === 'agent' ? {} : { endpoint }),
+            endpoint: endpoint.trim(),
             ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
             ...(sourceType === 'pve'
               ? {
@@ -184,12 +188,10 @@ export default function NewSourcePage() {
                   <option value="third_party">第三方</option>
                 </NativeSelect>
               </div>
-              {sourceType === 'hyperv' && hypervConnectionMethod === 'agent' ? null : (
-                <div className="space-y-2">
-                  <Label htmlFor="endpoint">Endpoint</Label>
-                  <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="endpoint">Endpoint</Label>
+                <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+              </div>
               {sourceType === 'vcenter' ? (
                 <div className="space-y-2">
                   <Label htmlFor="preferredVcenterVersion">vCenter 版本范围</Label>

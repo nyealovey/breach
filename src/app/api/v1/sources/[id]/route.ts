@@ -16,8 +16,8 @@ const HypervConnectionMethodSchema = z.enum(['winrm', 'agent']);
 
 const SourceConfigSchema = z
   .object({
-    // Hyper-V agent 模式下不需要 endpoint；其他来源仍要求 endpoint。
-    endpoint: z.string().min(1).optional(),
+    // 所有来源都需要 endpoint（Hyper-V agent 模式下代表目标主机/集群；agent_url 仅表示认证入口）。
+    endpoint: z.string().optional(),
     preferred_vcenter_version: VcenterPreferredVersionSchema.optional(),
     tls_verify: z.boolean().optional(),
     timeout_ms: z.number().int().positive().optional(),
@@ -178,24 +178,21 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
-  // endpoint 校验：除 Hyper-V agent 模式外，endpoint 必填。
   const endpoint = typeof body.config.endpoint === 'string' ? body.config.endpoint.trim() : '';
-  const connectionMethod =
-    body.sourceType === SourceType.hyperv && body.config.connection_method === 'agent' ? 'agent' : 'winrm';
-  if (body.sourceType !== SourceType.hyperv || connectionMethod === 'winrm') {
-    if (!endpoint) {
-      return fail(
-        {
-          code: ErrorCode.CONFIG_INVALID_REQUEST,
-          category: 'config',
-          message: 'endpoint is required',
-          retryable: false,
-        },
-        400,
-        { requestId: auth.requestId },
-      );
-    }
-  } else {
+  if (!endpoint) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'endpoint is required',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+
+  if (body.sourceType === SourceType.hyperv && body.config.connection_method === 'agent') {
     const agentUrl = typeof body.config.agent_url === 'string' ? body.config.agent_url.trim() : '';
     if (!agentUrl) {
       return fail(
