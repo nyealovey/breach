@@ -45,6 +45,7 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 
 - Agent 会在运行目录的 `scripts/` 下查找 PowerShell 脚本。编译后请将 `src/scripts/` 复制到 `dist/scripts/`（与 exe 同级目录）。
 - 本地日志默认写入 `logs/`（相对运行目录），按天切分为 `logs/hyperv-agent-YYYY-MM-DD.jsonl`；请确保服务账号对该目录有写权限。
+- 启动时会先写入一条 `event=agent.start`，便于你用 `Get-Content -Wait` tail 日志观察后续请求。
 
 ## 3. API
 

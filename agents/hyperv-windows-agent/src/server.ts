@@ -53,6 +53,15 @@ bun.serve({
   fetch: createHandler({ token: loaded.config.token, deps, logger }),
 });
 
+// Emit a startup line so operators can tail the log file even before the first request arrives.
+logger.info({
+  event: 'agent.start',
+  config_path: loaded.configPath,
+  scripts_dir: loaded.scriptsDir,
+  bind: loaded.config.bind,
+  port: loaded.config.port,
+});
+
 console.log(`[hyperv-agent] config: ${loaded.configPath}`);
 console.log(`[hyperv-agent] scripts: ${loaded.scriptsDir}`);
 console.log(`[hyperv-agent] logs: ${logDir}`);
