@@ -49,6 +49,22 @@ $sbInventory = {
   $os = $null
   try { $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop | Select-Object -First 1 } catch { $os = $null }
 
+  $diskTotalBytes = $null
+  try {
+    $sum = [int64]0
+    $seen = $false
+    $drives = Get-CimInstance -ClassName Win32_DiskDrive -ErrorAction Stop
+    foreach ($d in $drives) {
+      $size = $null
+      try { $size = [int64]$d.Size } catch { $size = $null }
+      if ($null -ne $size -and $size -gt 0) {
+        $sum += $size
+        $seen = $true
+      }
+    }
+    if ($seen) { $diskTotalBytes = $sum }
+  } catch { $diskTotalBytes = $null }
+
   # $Host is a built-in read-only variable in PowerShell, so don't overwrite it.
   $hostInfo = [pscustomobject]@{
     hostname = $hostName
@@ -60,16 +76,52 @@ $sbInventory = {
     os_version = if ($os) { $os.Version } else { $null }
     cpu_count = if ($cs) { $cs.NumberOfLogicalProcessors } else { $null }
     memory_bytes = if ($cs) { [int64]$cs.TotalPhysicalMemory } else { $null }
+    disk_total_bytes = $diskTotalBytes
   }
 
   $vms = @(
     Get-VM -ErrorAction Stop | ForEach-Object {
+      $vmDisks = @()
+      try {
+        if (Get-Command Get-VMHardDiskDrive -ErrorAction SilentlyContinue) {
+          $drives = Get-VMHardDiskDrive -VMId $_.VMId -ErrorAction Stop
+          foreach ($drive in $drives) {
+            if ([string]::IsNullOrWhiteSpace([string]$drive.Path)) { continue }
+            $sizeBytes = $null
+            try {
+              if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
+                $vhd = Get-VHD -Path $drive.Path -ErrorAction Stop
+                $sizeBytes = [int64]$vhd.Size
+              }
+            } catch { $sizeBytes = $null }
+            if ($null -eq $sizeBytes -or $sizeBytes -lt 0) { continue }
+
+            $diskName = $null
+            try {
+              $ct = if ($drive.ControllerType) { $drive.ControllerType.ToString() } else { $null }
+              $cn = $drive.ControllerNumber
+              $cl = $drive.ControllerLocation
+              if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
+                $diskName = "$ct $cn:$cl"
+              }
+            } catch { $diskName = $null }
+
+            if ($diskName) {
+              $vmDisks += [pscustomobject]@{ name = $diskName; size_bytes = $sizeBytes }
+            } else {
+              $vmDisks += [pscustomobject]@{ size_bytes = $sizeBytes }
+            }
+          }
+        }
+      } catch { $vmDisks = @() }
+
       [pscustomobject]@{
         vm_id = [string]$_.VMId
         name = $_.Name
         state = $_.State.ToString()
         cpu_count = $_.ProcessorCount
         memory_bytes = [int64]$_.MemoryStartup
+        disks = $vmDisks
       }
     }
   )

@@ -17,6 +17,7 @@ type NormalizedV1 = {
   hardware?: {
     cpu_count?: number;
     memory_bytes?: number;
+    disks?: Array<{ name?: string; size_bytes?: number; type?: 'thin' | 'thick' | 'eagerZeroedThick' }>;
   };
   os?: {
     name?: string;
@@ -117,6 +118,7 @@ export function normalizeVm(raw: {
   machine_uuid?: string | null;
   ip_addresses?: string[] | null;
   mac_addresses?: string[] | null;
+  disks?: Array<{ name?: string | null; size_bytes?: number | null }> | null;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.cpu_count ?? undefined);
   const memoryBytes = toFiniteNumber(raw.memory_bytes ?? undefined);
@@ -127,6 +129,20 @@ export function normalizeVm(raw: {
     : [];
   const macAddresses = Array.isArray(raw.mac_addresses)
     ? raw.mac_addresses.map((v) => (typeof v === 'string' ? v.trim() : '')).filter((v) => v.length > 0)
+    : [];
+
+  const disks = Array.isArray(raw.disks)
+    ? raw.disks
+        .map((d) => {
+          if (!d || typeof d !== 'object') return null;
+          const name = typeof d.name === 'string' && d.name.trim().length > 0 ? d.name.trim() : undefined;
+          const sizeRaw = (d as Record<string, unknown>).size_bytes;
+          const sizeBytes =
+            typeof sizeRaw === 'number' && Number.isFinite(sizeRaw) && sizeRaw >= 0 ? Math.trunc(sizeRaw) : undefined;
+          if (sizeBytes === undefined) return null;
+          return { ...(name ? { name } : {}), size_bytes: sizeBytes };
+        })
+        .filter((d): d is NonNullable<typeof d> => !!d)
     : [];
 
   return {
@@ -141,8 +157,10 @@ export function normalizeVm(raw: {
         ...(raw.machine_uuid ? { machine_uuid: raw.machine_uuid } : {}),
       },
       ...(cpuCount !== undefined || memoryBytes !== undefined
-        ? { hardware: { cpu_count: cpuCount, memory_bytes: memoryBytes } }
-        : {}),
+        ? { hardware: { cpu_count: cpuCount, memory_bytes: memoryBytes, ...(disks.length > 0 ? { disks } : {}) } }
+        : disks.length > 0
+          ? { hardware: { disks } }
+          : {}),
       ...(powerState ? { runtime: { power_state: powerState } } : {}),
       ...(ipAddresses.length > 0 || macAddresses.length > 0
         ? { network: { ip_addresses: ipAddresses, mac_addresses: macAddresses } }

@@ -162,6 +162,9 @@ Windows 侧（部署 Agent 的机器）：
 - `relations.length > 0`
 - standalone：至少包含 `VM -> Host`（runs_on）
 - cluster：至少包含 `Host -> Cluster`（member_of）；`VM -> Host` 尽力输出（best-effort）
+- 磁盘字段（best-effort）：
+  - VM：`hardware.disks[].size_bytes`（UI 的“总分配磁盘”会对该数组求和；口径为 Hyper-V VHD/VHDX 的 provisioned size）
+  - Host：`attributes.disk_total_bytes`（口径为 Windows `Win32_DiskDrive.Size` 求和；与 vCenter/ESXi 的“本地盘总容量”口径不同，属于 best-effort）
 
 ## 4. 常见失败与排障（不要求改服务器设置）
 
