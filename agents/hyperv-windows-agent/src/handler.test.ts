@@ -15,6 +15,21 @@ describe('hyperv windows agent handler', () => {
     return { logger, events };
   }
 
+  it('serves /health without auth', async () => {
+    const { logger, events } = makeLogger();
+    const handler = createHandler({ token: 't', deps: { run: async () => ({}) }, logger });
+    const res = await handler(new Request('http://localhost/health', { method: 'GET' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.ok).toBe(true);
+    expect(body.data.service).toBe('hyperv-windows-agent');
+    expect(typeof body.data.ts).toBe('string');
+    expect(events).toHaveLength(1);
+    expect(events[0].status_code).toBe(200);
+    expect(events[0].outcome).toBe('success');
+  });
+
   it('rejects unauthorized requests', async () => {
     const { logger, events } = makeLogger();
     const handler = createHandler({ token: 't', deps: { run: async () => ({}) }, logger });

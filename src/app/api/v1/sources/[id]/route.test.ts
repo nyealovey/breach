@@ -10,6 +10,7 @@ vi.mock('@/lib/db/prisma', () => ({
     source: { findFirst: vi.fn(), update: vi.fn() },
     scheduleGroup: { findUnique: vi.fn() },
     credential: { findUnique: vi.fn() },
+    agent: { findUnique: vi.fn() },
   },
 }));
 
@@ -71,7 +72,7 @@ describe('PUT /api/v1/sources/:id', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as any;
     expect(body.error.code).toBe('CONFIG_INVALID_REQUEST');
-    expect(body.error.message).toBe('agent_url is required when connection_method=agent');
+    expect(body.error.message).toBe('agentId or agent_url is required when connection_method=agent');
   });
 
   it('updates hyperv agent source when endpoint + agent_url are present', async () => {

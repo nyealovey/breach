@@ -25,6 +25,7 @@ type SourceDetail = {
   scheduleGroupId: string | null;
   scheduleGroupName: string | null;
   credential: { credentialId: string; name: string; type: string } | null;
+  agent: { agentId: string; name: string; agentType: string } | null;
   config?: {
     endpoint?: string;
     connection_method?: 'winrm' | 'agent';
@@ -43,6 +44,15 @@ type SourceDetail = {
   };
 };
 type CredentialItem = { credentialId: string; name: string; type: string };
+type AgentItem = {
+  agentId: string;
+  name: string;
+  agentType: string;
+  endpoint: string;
+  enabled: boolean;
+  tlsVerify: boolean;
+  timeoutMs: number;
+};
 
 export default function EditSourcePage() {
   const params = useParams<{ id: string }>();
@@ -59,9 +69,11 @@ export default function EditSourcePage() {
   const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
   const [hypervConnectionMethod, setHypervConnectionMethod] = useState<'winrm' | 'agent'>('winrm');
-  const [hypervAgentUrl, setHypervAgentUrl] = useState('');
-  const [hypervAgentTlsVerify, setHypervAgentTlsVerify] = useState(true);
-  const [hypervAgentTimeoutMs, setHypervAgentTimeoutMs] = useState(60_000);
+  const [hypervAgentId, setHypervAgentId] = useState('');
+  const [hypervAgents, setHypervAgents] = useState<AgentItem[]>([]);
+  const [hypervLegacyAgentUrl, setHypervLegacyAgentUrl] = useState('');
+  const [hypervLegacyAgentTlsVerify, setHypervLegacyAgentTlsVerify] = useState(true);
+  const [hypervLegacyAgentTimeoutMs, setHypervLegacyAgentTimeoutMs] = useState(60_000);
   const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('http');
   const [hypervPort, setHypervPort] = useState(5985);
   const [hypervTlsVerify, setHypervTlsVerify] = useState(true);
@@ -108,9 +120,10 @@ export default function EditSourcePage() {
             const connectionMethod = source.config?.connection_method === 'agent' ? 'agent' : 'winrm';
             setHypervConnectionMethod(connectionMethod);
             if (connectionMethod === 'agent') {
-              setHypervAgentUrl(source.config?.agent_url ?? '');
-              setHypervAgentTlsVerify(source.config?.agent_tls_verify ?? true);
-              setHypervAgentTimeoutMs(
+              setHypervAgentId(source.agent?.agentId ?? '');
+              setHypervLegacyAgentUrl(source.config?.agent_url ?? '');
+              setHypervLegacyAgentTlsVerify(source.config?.agent_tls_verify ?? true);
+              setHypervLegacyAgentTimeoutMs(
                 typeof source.config?.agent_timeout_ms === 'number' && Number.isFinite(source.config.agent_timeout_ms)
                   ? source.config.agent_timeout_ms
                   : 60_000,
@@ -173,6 +186,34 @@ export default function EditSourcePage() {
     };
   }, [sourceType]);
 
+  useEffect(() => {
+    if (sourceType !== 'hyperv' || hypervConnectionMethod !== 'agent') {
+      setHypervAgents([]);
+      return;
+    }
+
+    let active = true;
+    const loadAgents = async () => {
+      const res = await fetch('/api/v1/agents?agentType=hyperv&pageSize=100');
+      if (!res.ok) {
+        if (active) setHypervAgents([]);
+        return;
+      }
+      const body = (await res.json()) as { data: AgentItem[] };
+      if (!active) return;
+      const next = body.data ?? [];
+      setHypervAgents(next);
+      if (!hypervAgentId && next.filter((a) => a.enabled).length === 1) {
+        const onlyEnabled = next.find((a) => a.enabled);
+        if (onlyEnabled) setHypervAgentId(onlyEnabled.agentId);
+      }
+    };
+    void loadAgents();
+    return () => {
+      active = false;
+    };
+  }, [hypervConnectionMethod, hypervAgentId, sourceType]);
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -181,8 +222,13 @@ export default function EditSourcePage() {
       toast.error('请填写 endpoint');
       return;
     }
-    if (sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && !hypervAgentUrl.trim()) {
-      toast.error('请填写 agent_url');
+    if (
+      sourceType === 'hyperv' &&
+      hypervConnectionMethod === 'agent' &&
+      !hypervAgentId &&
+      !hypervLegacyAgentUrl.trim()
+    ) {
+      toast.error('请选择代理');
       return;
     }
     setSubmitting(true);
@@ -194,6 +240,8 @@ export default function EditSourcePage() {
           name,
           sourceType,
           enabled,
+          agentId:
+            sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && hypervAgentId ? hypervAgentId : null,
           config: {
             endpoint: endpoint.trim(),
             ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
@@ -210,9 +258,13 @@ export default function EditSourcePage() {
               ? hypervConnectionMethod === 'agent'
                 ? {
                     connection_method: 'agent',
-                    agent_url: hypervAgentUrl.trim(),
-                    agent_tls_verify: hypervAgentTlsVerify,
-                    agent_timeout_ms: hypervAgentTimeoutMs,
+                    ...(hypervAgentId
+                      ? {}
+                      : {
+                          agent_url: hypervLegacyAgentUrl.trim(),
+                          agent_tls_verify: hypervLegacyAgentTlsVerify,
+                          agent_timeout_ms: hypervLegacyAgentTimeoutMs,
+                        }),
                     scope: hypervScope,
                     max_parallel_nodes: hypervMaxParallelNodes,
                   }
@@ -340,9 +392,11 @@ export default function EditSourcePage() {
                     setPveMaxParallelNodes(5);
                     setPveAuthType('api_token');
                     setHypervConnectionMethod('winrm');
-                    setHypervAgentUrl('');
-                    setHypervAgentTlsVerify(true);
-                    setHypervAgentTimeoutMs(60_000);
+                    setHypervAgentId('');
+                    setHypervAgents([]);
+                    setHypervLegacyAgentUrl('');
+                    setHypervLegacyAgentTlsVerify(true);
+                    setHypervLegacyAgentTimeoutMs(60_000);
                     setHypervScheme('http');
                     setHypervPort(5985);
                     setHypervTlsVerify(true);
@@ -461,34 +515,37 @@ export default function EditSourcePage() {
                   {hypervConnectionMethod === 'agent' ? (
                     <>
                       <div className="space-y-2">
-                        <Label htmlFor="hypervAgentUrl">agent_url</Label>
-                        <Input
-                          id="hypervAgentUrl"
-                          value={hypervAgentUrl}
-                          onChange={(e) => setHypervAgentUrl(e.target.value)}
-                        />
-                        <div className="text-xs text-muted-foreground">示例：http://hyperv-agent01:8787</div>
-                      </div>
-
-                      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-                        <div className="text-sm">
-                          <div className="font-medium">TLS 校验</div>
-                          <div className="text-xs text-muted-foreground">
-                            仅 https 生效；关闭仅用于自签名/内网环境（有安全风险）
-                          </div>
+                        <Label htmlFor="hypervAgentId">代理</Label>
+                        <NativeSelect
+                          id="hypervAgentId"
+                          value={hypervAgentId}
+                          onChange={(e) => setHypervAgentId(e.target.value)}
+                        >
+                          <option value="">请选择代理</option>
+                          {hypervAgents.map((a) => (
+                            <option key={a.agentId} value={a.agentId} disabled={!a.enabled}>
+                              {a.enabled ? '' : '【停用】'}
+                              {a.name} · {a.endpoint}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                        <div className="text-xs text-muted-foreground">
+                          说明：代理用于解决域内认证；endpoint 仍填写目标 Hyper-V 主机/集群。
+                          <span className="ml-2">
+                            <Link className="underline" href="/agents">
+                              管理代理
+                            </Link>
+                          </span>
                         </div>
-                        <Switch checked={hypervAgentTlsVerify} onCheckedChange={setHypervAgentTlsVerify} />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="hypervAgentTimeoutMs">agent_timeout_ms</Label>
-                        <Input
-                          id="hypervAgentTimeoutMs"
-                          type="number"
-                          value={String(hypervAgentTimeoutMs)}
-                          onChange={(e) => setHypervAgentTimeoutMs(Number(e.target.value))}
-                        />
-                      </div>
+                      {!hypervAgentId && hypervLegacyAgentUrl.trim() ? (
+                        <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                          当前来源仍在使用 legacy agent_url：
+                          <span className="ml-1 font-mono">{hypervLegacyAgentUrl}</span>
+                          。建议在配置中心创建代理并选择，以便统一管理。
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>

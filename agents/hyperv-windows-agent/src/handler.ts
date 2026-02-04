@@ -137,6 +137,15 @@ export function createHandler(config: { token: string; deps: HypervAgentDeps; lo
       path,
     };
 
+    if (req.method === 'GET' && path === '/health') {
+      const res = json(200, { ok: true, data: { service: 'hyperv-windows-agent', ts: new Date().toISOString() } });
+      wideEvent.status_code = 200;
+      wideEvent.outcome = 'success';
+      wideEvent.duration_ms = Date.now() - start;
+      config.logger?.info(wideEvent);
+      return res;
+    }
+
     if (req.method !== 'POST') {
       const res = json(405, { ok: false, error: { code: 'AGENT_INVALID_REQUEST', message: 'method not allowed' } });
       wideEvent.status_code = 405;

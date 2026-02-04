@@ -252,12 +252,106 @@ async function processRun(run: Run): Promise<ProcessResult> {
     }
   }
 
+  const configObj =
+    source.config && typeof source.config === 'object' ? (source.config as Record<string, unknown>) : {};
+  const resolvedConfig: Record<string, unknown> = { ...configObj };
+
+  if (source.sourceType === 'hyperv' && resolvedConfig.connection_method === 'agent') {
+    if (source.agentId) {
+      const agent = await prisma.agent.findUnique({ where: { id: source.agentId } });
+      if (!agent) {
+        const error: AppError = {
+          code: ErrorCode.CONFIG_AGENT_NOT_FOUND,
+          category: 'config',
+          message: 'agent not found',
+          retryable: false,
+          redacted_context: { agentId: source.agentId },
+        };
+        await prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: 'Failed',
+            finishedAt: new Date(),
+            errorSummary: 'agent not found',
+            errors: [error],
+          },
+        });
+        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+      }
+
+      if (!agent.enabled) {
+        const error: AppError = {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'agent is disabled',
+          retryable: false,
+          redacted_context: { agentId: agent.id },
+        };
+        await prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: 'Failed',
+            finishedAt: new Date(),
+            errorSummary: 'agent is disabled',
+            errors: [error],
+          },
+        });
+        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+      }
+
+      if (agent.agentType !== 'hyperv') {
+        const error: AppError = {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'agent type mismatch',
+          retryable: false,
+          redacted_context: { agentId: agent.id, agentType: agent.agentType },
+        };
+        await prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: 'Failed',
+            finishedAt: new Date(),
+            errorSummary: 'agent type mismatch',
+            errors: [error],
+          },
+        });
+        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+      }
+
+      // Keep plugins backward-compatible: inject the resolved agent URL + runtime settings.
+      resolvedConfig.agent_url = agent.endpoint;
+      resolvedConfig.agent_tls_verify = agent.tlsVerify;
+      resolvedConfig.agent_timeout_ms = agent.timeoutMs;
+    } else {
+      const agentUrl = typeof resolvedConfig.agent_url === 'string' ? resolvedConfig.agent_url.trim() : '';
+      if (!agentUrl) {
+        const error: AppError = {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'agentId or agent_url is required when connection_method=agent',
+          retryable: false,
+        };
+        await prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: 'Failed',
+            finishedAt: new Date(),
+            errorSummary: 'agent missing',
+            errors: [error],
+          },
+        });
+        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
+      }
+    }
+  }
+
   const pluginInput = {
     schema_version: 'collector-request-v1',
     source: {
       source_id: source.id,
       source_type: source.sourceType,
-      config: source.config ?? {},
+      config: resolvedConfig,
       credential,
     },
     request: {

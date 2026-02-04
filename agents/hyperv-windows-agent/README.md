@@ -82,17 +82,19 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 2. 若确实没有监听，可能是端口被系统/组件保留（excluded port range）：
    - `netsh int ipv4 show excludedportrange protocol=tcp | findstr 8787`
    - `netsh int ipv6 show excludedportrange protocol=tcp | findstr 8787`
-   - 若命中保留范围：请换一个端口（例如 28787），并同步更新 `agent_url`。
+   - 若命中保留范围：请换一个端口（例如 28787），并同步更新“代理 endpoint”（配置中心 → 代理；或兼容旧 `config.agent_url`）。
 
 ## 3. API
 
 鉴权：
 
-- Header：`Authorization: Bearer <token>`
+- `GET /health` 无需鉴权（用于连通性检测；配置中心 → 代理 的“检测”按钮会调用它）
+- 其他路由：Header `Authorization: Bearer <token>`
 - 可选 Header：`X-Request-Id: <string>`（用于日志关联）
 
 路由：
 
+- `GET /health`
 - `POST /v1/hyperv/healthcheck`
 - `POST /v1/hyperv/detect`
 - `POST /v1/hyperv/collect`
@@ -119,6 +121,11 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 - 失败：`{ \"ok\": false, \"error\": { \"code\": \"AGENT_*\", \"message\": \"...\", \"context\": { ... } } }`
 
 ### 3.1 Postman / curl 快速测试
+
+连通性自检（无需 token）：
+
+- `curl http://127.0.0.1:8787/health`
+- 期望：`200` 且返回 `{ ok: true, data: ... }`
 
 以 `healthcheck` 为例（Postman 同理）：
 

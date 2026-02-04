@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { getOrCreateRequestId } from '@/lib/http/request-id';
 import { fail, ok } from '@/lib/http/response';
-import { SourceType } from '@prisma/client';
+import { AgentType, SourceType } from '@prisma/client';
 
 import type { Prisma } from '@prisma/client';
 
@@ -38,6 +38,7 @@ const SourceUpdateSchema = z.object({
   sourceType: z.nativeEnum(SourceType),
   enabled: z.boolean().optional(),
   scheduleGroupId: z.string().min(1).nullable().optional(),
+  agentId: z.string().min(1).nullable().optional(),
   config: SourceConfigSchema,
   credentialId: z.string().min(1).nullable().optional(),
 });
@@ -52,6 +53,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     include: {
       scheduleGroup: { select: { name: true } },
       credential: { select: { id: true, name: true, type: true } },
+      agent: { select: { id: true, name: true, agentType: true } },
     },
   });
   if (!source) {
@@ -72,6 +74,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       scheduleGroupName: source.scheduleGroup?.name ?? null,
       credential: source.credential
         ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+        : null,
+      agent: source.agent
+        ? { agentId: source.agent.id, name: source.agent.name, agentType: source.agent.agentType }
         : null,
       config: source.config,
       createdAt: source.createdAt.toISOString(),
@@ -165,6 +170,17 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
+  const agentId = body.agentId === undefined ? existing.agentId : body.agentId;
+  const agent =
+    agentId !== null && agentId !== undefined ? await prisma.agent.findUnique({ where: { id: agentId } }) : null;
+  if (agentId !== null && agentId !== undefined && !agent) {
+    return fail(
+      { code: ErrorCode.CONFIG_AGENT_NOT_FOUND, category: 'config', message: 'Agent not found', retryable: false },
+      404,
+      { requestId: auth.requestId },
+    );
+  }
+
   if (body.sourceType === SourceType.vcenter && !body.config.preferred_vcenter_version) {
     return fail(
       {
@@ -193,19 +209,59 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   }
 
   if (body.sourceType === SourceType.hyperv && body.config.connection_method === 'agent') {
-    const agentUrl = typeof body.config.agent_url === 'string' ? body.config.agent_url.trim() : '';
-    if (!agentUrl) {
-      return fail(
-        {
-          code: ErrorCode.CONFIG_INVALID_REQUEST,
-          category: 'config',
-          message: 'agent_url is required when connection_method=agent',
-          retryable: false,
-        },
-        400,
-        { requestId: auth.requestId },
-      );
+    // New path: bind to an Agent record (recommended).
+    if (agent) {
+      if (agent.agentType !== AgentType.hyperv) {
+        return fail(
+          {
+            code: ErrorCode.CONFIG_INVALID_REQUEST,
+            category: 'config',
+            message: 'Agent type mismatch',
+            retryable: false,
+          },
+          400,
+          { requestId: auth.requestId },
+        );
+      }
+      if (!agent.enabled) {
+        return fail(
+          {
+            code: ErrorCode.CONFIG_INVALID_REQUEST,
+            category: 'config',
+            message: 'Agent is disabled',
+            retryable: false,
+          },
+          400,
+          { requestId: auth.requestId },
+        );
+      }
+    } else {
+      // Legacy path: allow storing agent_url directly in config.
+      const agentUrl = typeof body.config.agent_url === 'string' ? body.config.agent_url.trim() : '';
+      if (!agentUrl) {
+        return fail(
+          {
+            code: ErrorCode.CONFIG_INVALID_REQUEST,
+            category: 'config',
+            message: 'agentId or agent_url is required when connection_method=agent',
+            retryable: false,
+          },
+          400,
+          { requestId: auth.requestId },
+        );
+      }
     }
+  } else if (agentId !== null && agentId !== undefined) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'agentId is only allowed when sourceType=hyperv and connection_method=agent',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
   }
 
   const source = await prisma.source.update({
@@ -215,11 +271,15 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       sourceType: body.sourceType,
       enabled: body.enabled ?? true,
       scheduleGroupId: scheduleGroupId ?? null,
+      agentId: agentId ?? null,
       // `request.json()` guarantees JSON-compatible types; Zod passthrough uses `unknown` for values.
       config: body.config as unknown as Prisma.InputJsonValue,
       credentialId: credentialId ?? null,
     },
-    include: { credential: { select: { id: true, name: true, type: true } } },
+    include: {
+      credential: { select: { id: true, name: true, type: true } },
+      agent: { select: { id: true, name: true, agentType: true } },
+    },
   });
 
   return ok(
@@ -231,6 +291,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       scheduleGroupId: source.scheduleGroupId,
       credential: source.credential
         ? { credentialId: source.credential.id, name: source.credential.name, type: source.credential.type }
+        : null,
+      agent: source.agent
+        ? { agentId: source.agent.id, name: source.agent.name, agentType: source.agent.agentType }
         : null,
       config: source.config,
       createdAt: source.createdAt.toISOString(),

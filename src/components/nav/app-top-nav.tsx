@@ -18,6 +18,7 @@ type NavLink = { href: string; label: string };
 const CONFIG_CENTER_LINKS: NavLink[] = [
   { href: '/sources', label: '来源' },
   { href: '/credentials', label: '凭据' },
+  { href: '/agents', label: '代理' },
 ];
 
 function activeNavButtonClass(active: boolean) {

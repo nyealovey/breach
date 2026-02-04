@@ -15,6 +15,11 @@ enum SourceType {
   third_party
 }
 
+enum AgentType {
+  hyperv
+  veeam
+}
+
 enum RunTriggerType {
   schedule
   manual
@@ -132,6 +137,9 @@ model Source {
   scheduleGroupId String?
   scheduleGroup   ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
 
+  agentId String?
+  agent   Agent? @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
   // Non-sensitive config (JSON). Credentials should be encrypted/kept elsewhere.
   config               Json?
   credentialCiphertext String?
@@ -150,7 +158,25 @@ model Source {
 
   @@index([enabled])
   @@index([scheduleGroupId])
+  @@index([agentId])
   @@index([credentialId])
+}
+
+model Agent {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  agentType AgentType
+  endpoint  String
+  enabled   Boolean   @default(true)
+  tlsVerify Boolean   @default(true)
+  timeoutMs Int       @default(60000)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  sources Source[]
+
+  @@index([enabled])
+  @@index([agentType])
 }
 
 model Run {

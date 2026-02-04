@@ -13,7 +13,7 @@
 ### 1.1 Agent / 网络（connection_method=agent）
 
 - 在入域 Windows 上部署 Hyper-V Agent（建议直接部署在 Hyper-V 节点上）
-- core/worker 能访问 `agent_url`（端口放行、仅内网；ping 通不代表端口可用）
+- core/worker 能访问 **代理 endpoint**（端口放行、仅内网；ping 通不代表端口可用；可在「配置中心 → 代理」里点“检测”验证）
 - Agent 以 gMSA 运行（推荐）：无需保存密码即可获得域身份与 Kerberos 票据
 - 也支持普通域账号运行（可选）：由 Windows Service 保存密码，但需自行处理密码到期/轮换
 
@@ -38,7 +38,7 @@ Windows 侧（部署 Agent 的机器）：
    - Hyper-V 只读枚举权限（等价 Hyper-V Administrators 或更细粒度授权）
    - Failover Cluster 读取权限（能执行 `Get-Cluster*`）
 4. 网络：
-   - core/worker 能访问 Agent 监听的 `agent_url`（仅内网放行）
+   - core/worker 能访问 Agent 监听的 **代理 endpoint**（仅内网放行）
 
 > Agent 构建/启动方式与 API 契约：见 `agents/hyperv-windows-agent/README.md`。
 
@@ -93,14 +93,17 @@ Windows 侧（部署 Agent 的机器）：
 
 - `connection_method`：`agent`
 - `endpoint`：目标 Hyper-V 主机名/IP 或 Failover Cluster 名称（Agent 将按此目标采集）
-- `agent_url`：例如 `http://hyperv-agent01:8787`
+- `agent`：在「配置中心 → 代理」创建 `agentType=hyperv` 的代理，并在来源选择 `connection_method=agent` 时通过下拉框选择（系统内部以 `agentId` 绑定；兼容旧 `agent_url`）
 
 推荐配置（Agent）：
 
-- `agent_tls_verify`：默认 `true`（仅 https 生效；自签名/内网才考虑关闭）
-- `agent_timeout_ms`：默认 `60000`（群集/慢环境可适当调大）
-- `scope`：`auto|standalone|cluster`（默认 `auto`；生产建议显式填写以减少误判）
-- `max_parallel_nodes`：默认 `5`（群集并发上限；由 Agent 在域内并发调用节点）
+- 代理（配置中心 → 代理）：
+  - `endpoint`：例如 `http://hyperv-agent01:8787`
+  - `tlsVerify`：默认 `true`（仅 https 生效；自签名/内网才考虑关闭）
+  - `timeoutMs`：默认 `60000`（群集/慢环境可适当调大）
+- 来源（Source）：
+  - `scope`：`auto|standalone|cluster`（默认 `auto`；生产建议显式填写以减少误判）
+  - `max_parallel_nodes`：默认 `5`（群集并发上限；由 Agent 在域内并发调用节点）
 
 最小必填（WinRM / legacy）：
 
@@ -165,7 +168,7 @@ Windows 侧（部署 Agent 的机器）：
 ### 4.0 Agent 常见失败（connection_method=agent）
 
 - `HYPERV_CONFIG_INVALID`：agent 模式缺少 `endpoint`（目标主机/集群）或配置字段不完整；优先在 Source 配置里补齐并保存
-- `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 配置里的 `bind/port` 是否对外监听
+- `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查「配置中心 → 代理」中的 `endpoint`、端口放行、Agent 配置里的 `bind/port` 是否对外监听
 - 若你在另一台机器（core/worker 或 Postman）访问 Agent：确保 `bind=0.0.0.0`（或绑定到具体网卡 IP），并放行 Windows 防火墙端口；`bind=127.0.0.1` 仅本机可访问
 - `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致
 - `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
