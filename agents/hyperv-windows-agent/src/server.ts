@@ -47,22 +47,35 @@ if (!bun?.serve) {
   process.exit(1);
 }
 
-bun.serve({
-  hostname: loaded.config.bind,
-  port: loaded.config.port,
-  fetch: createHandler({ token: loaded.config.token, deps, logger }),
-});
-
-// Emit a startup line so operators can tail the log file even before the first request arrives.
-logger.info({
-  event: 'agent.start',
+const startup = {
   config_path: loaded.configPath,
   scripts_dir: loaded.scriptsDir,
   bind: loaded.config.bind,
   port: loaded.config.port,
-});
+  logs_dir: logDir || '(disabled)',
+};
 
-console.log(`[hyperv-agent] config: ${loaded.configPath}`);
-console.log(`[hyperv-agent] scripts: ${loaded.scriptsDir}`);
-console.log(`[hyperv-agent] logs: ${logDir || '(disabled)'}`);
+// Print critical runtime info BEFORE listening, so even a listen failure can be debugged.
+console.log(`[hyperv-agent] config: ${startup.config_path}`);
+console.log(`[hyperv-agent] scripts: ${startup.scripts_dir}`);
+console.log(`[hyperv-agent] logs: ${startup.logs_dir}`);
+console.log(`[hyperv-agent] bind: ${startup.bind}`);
+console.log(`[hyperv-agent] port: ${startup.port}`);
+
+// Emit a startup line so operators can tail the log file even before the first request arrives.
+logger.info({ event: 'agent.start', ...startup });
+
+try {
+  bun.serve({
+    hostname: loaded.config.bind,
+    port: loaded.config.port,
+    fetch: createHandler({ token: loaded.config.token, deps, logger }),
+  });
+} catch (err) {
+  const cause = err instanceof Error ? err.message : String(err);
+  console.error(`[hyperv-agent] listen failed: ${cause}`);
+  logger.error({ event: 'agent.listen_failed', ...startup, cause });
+  process.exit(1);
+}
+
 console.log(`[hyperv-agent] listening on http://${loaded.config.bind}:${loaded.config.port}`);
