@@ -74,6 +74,16 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 - 本机连通：`curl http://127.0.0.1:8787/v1/hyperv/healthcheck ...`
 - 跨机连通：`Test-NetConnection <agent_host> -Port 8787`
 
+如果启动报 `EADDRINUSE`（提示端口占用，但你“看起来”没占用）：
+
+1. 先确认到底是谁在监听：
+   - `netstat -ano | findstr :8787`
+   - `Get-NetTCPConnection -LocalPort 8787 -State Listen | Format-Table -AutoSize`
+2. 若确实没有监听，可能是端口被系统/组件保留（excluded port range）：
+   - `netsh int ipv4 show excludedportrange protocol=tcp | findstr 8787`
+   - `netsh int ipv6 show excludedportrange protocol=tcp | findstr 8787`
+   - 若命中保留范围：请换一个端口（例如 28787），并同步更新 `agent_url`。
+
 ## 3. API
 
 鉴权：
