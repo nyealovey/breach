@@ -37,10 +37,15 @@ export default async function RootLayout({
               <AppTopNav isAdmin={isAdmin} />
             ) : (
               <div className="flex h-14 items-center gap-3 px-4">
-                <Link className="shrink-0 text-sm font-semibold" href="/">
+                <Link className="shrink-0 text-sm font-semibold" href="/login">
                   资产台账
                 </Link>
-                <div className="ml-auto shrink-0 text-xs text-muted-foreground">未登录</div>
+                <div className="ml-auto flex shrink-0 items-center gap-3 text-xs">
+                  <span className="text-muted-foreground">未登录</span>
+                  <Link className="text-primary underline-offset-4 hover:underline" href="/login">
+                    登录
+                  </Link>
+                </div>
               </div>
             )}
           </header>

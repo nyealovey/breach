@@ -20,6 +20,7 @@
     "build:analyze": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build && next experimental-analyze",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:bootstrap-admin": "bun src/bin/bootstrap-admin.ts",
     "db:seed:dev": "bun src/bin/dev-seed.ts",
     "db:setup": "bun run db:migrate && bun run db:seed:dev",
     "db:studio": "prisma studio",

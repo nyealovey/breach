@@ -56,9 +56,10 @@ ln -sf .env.local .env
 推荐最小配置（用于本地完整闭环）：
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/breach?schema=public"
+# 如果你按上面 Docker 命令把容器 5432 映射到本机 54329，则这里用 54329；如果你用本机 Postgres 默认端口则用 5432
+DATABASE_URL="postgresql://postgres:postgres@localhost:54329/breach?schema=public"
 
-# 第一次启动时用于自动创建默认管理员（username=admin）
+# 首次登录（调用登录接口 / 访问 /login）时用于自动创建默认管理员（username=admin）
 ASSET_LEDGER_ADMIN_PASSWORD="请设置一个你本地用的密码"
 
 # 用于 Source 凭据加/解密（建议本地也固定设置；否则重启后可能无法解密已存的凭据）
@@ -94,6 +95,13 @@ bun run db:migrate
 
 - `bun run db:migrate` 是幂等的：同一份库已是最新时可以重复执行，它会只应用缺失迁移。
 - 如果你换了 `DATABASE_URL`、重建了容器、或新增了迁移，也需要再执行一次。
+- `db:migrate` 只负责“建表/迁移”，不会插入 `admin` 用户；默认管理员会在你**首次登录**时自动 bootstrap（或手动执行 `bun run db:bootstrap-admin`）。
+
+（可选）提前创建默认管理员（只创建 `admin`，不生成其他种子数据）：
+
+```bash
+bun run db:bootstrap-admin
+```
 
 （推荐）初始化一套开发种子数据（无真实采集时用于调试 UI / 批量编辑等）：
 
@@ -131,7 +139,7 @@ bun run scheduler
 然后打开：
 
 - `http://localhost:3000`
-- 使用 `.env.local` 的 `ASSET_LEDGER_ADMIN_PASSWORD` 登录（username 固定为 `admin`）
+- 使用 `.env.local` 的 `ASSET_LEDGER_ADMIN_PASSWORD` 登录（username 固定为 `admin`；首次登录会自动创建该账号）
 
 ### 插件执行注意事项
 

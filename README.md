@@ -154,6 +154,7 @@ List of websites that started off with Next.js TypeScript Starter:
 页面入口：
 
 - 导航：顶部主导航（一级）；「配置中心」为一级菜单，二级菜单包含「来源」「凭据」。
+- 未登录访问页面：默认跳转到 `/login`。
 
 - `/login`：登录（admin/user；登录成功默认跳转 `/assets`）
 - `/runs`：采集 Run 列表与详情（admin/user；失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
@@ -176,7 +177,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_VCENTER_DEBUG`：vCenter 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log` / `logs/vcenter-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。
 - `ASSET_LEDGER_HYPERV_DEBUG`：Hyper-V 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录 Kerberos 解析与 kinit（`resolved_host/resolved_addresses/realm/principal`）、以及每次 WinRM 请求的 HTTP status、Kerberos `service_name`（SPN service class）、部分响应 header 摘要（如 `server/content_type/content_length`）、以及 401 时的 `WWW-Authenticate` challenge 列表（仅记录 scheme，不记录 token）。
   - Kerberos SPN 默认使用 `WSMAN`（strict：仅尝试一次）。如环境只注册 `HTTP/<host>` 或需兼容多 SPN，可在 Hyper-V Source config 设置 `kerberos_service_name / kerberos_spn_fallback / kerberos_hostname_override`（详见 runbook）。
-- `ASSET_LEDGER_ADMIN_PASSWORD`：首次启动用于初始化默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取；生产环境必须设置。
+- `ASSET_LEDGER_ADMIN_PASSWORD`：用于 bootstrap 默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取（例如首次登录时）；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。
 - `BCRYPT_LOG_ROUNDS`：bcrypt 成本（默认 12；值越大越安全但越慢）。
@@ -204,6 +205,7 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 
 - `bun run db:generate`：生成 Prisma Client
 - `bun run db:migrate`：本地创建/更新数据库表（开发环境）
+- `bun run db:bootstrap-admin`：提前创建默认管理员（只创建 `admin`，不生成其他种子数据）
 - `bun run db:seed:dev`：生成一套本地开发用的“模拟数据”（凭据/来源/调度组/Run/资产/快照/关系/SourceRecord；幂等，不覆盖你手工改过的数据）
 - `bun run db:setup`：一键初始化（`db:migrate` + `db:seed:dev`）
 - `bun run scheduler`：启动调度器（按“调度组固定时间”创建 Run；错过触发点不补跑）
