@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHandler } from './handler';
+import type { HypervAgentLogger } from './logger';
 import { PowerShellExecError, PowerShellParseError } from './powershell';
 
 describe('hyperv windows agent handler', () => {
+  function makeLogger(): { logger: HypervAgentLogger; events: any[] } {
+    const events: any[] = [];
+    const logger: HypervAgentLogger = {
+      debug: (e) => events.push({ level: 'debug', ...e }),
+      info: (e) => events.push({ level: 'info', ...e }),
+      error: (e) => events.push({ level: 'error', ...e }),
+    };
+    return { logger, events };
+  }
+
   it('rejects unauthorized requests', async () => {
-    const handler = createHandler({ token: 't', deps: { run: async () => ({}) } });
+    const { logger, events } = makeLogger();
+    const handler = createHandler({ token: 't', deps: { run: async () => ({}) }, logger });
     const res = await handler(
       new Request('http://localhost/v1/hyperv/healthcheck', {
         method: 'POST',
@@ -25,10 +37,14 @@ describe('hyperv windows agent handler', () => {
     const body = (await res.json()) as any;
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe('AGENT_PERMISSION_DENIED');
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('auth_failed');
+    expect(events[0].status_code).toBe(401);
   });
 
   it('returns ok envelope on success', async () => {
-    const handler = createHandler({ token: 't', deps: { run: async () => ({ hello: 'world' }) } });
+    const { logger, events } = makeLogger();
+    const handler = createHandler({ token: 't', deps: { run: async () => ({ hello: 'world' }) }, logger });
     const res = await handler(
       new Request('http://localhost/v1/hyperv/detect', {
         method: 'POST',
@@ -48,9 +64,14 @@ describe('hyperv windows agent handler', () => {
     const body = (await res.json()) as any;
     expect(body.ok).toBe(true);
     expect(body.data.hello).toBe('world');
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('success');
+    expect(events[0].status_code).toBe(200);
+    expect(JSON.stringify(events[0])).not.toContain('Bearer');
   });
 
   it('maps Access is denied to AGENT_PERMISSION_DENIED (403)', async () => {
+    const { logger, events } = makeLogger();
     const handler = createHandler({
       token: 't',
       deps: {
@@ -62,6 +83,7 @@ describe('hyperv windows agent handler', () => {
           });
         },
       },
+      logger,
     });
 
     const res = await handler(
@@ -83,9 +105,13 @@ describe('hyperv windows agent handler', () => {
     const body = (await res.json()) as any;
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe('AGENT_PERMISSION_DENIED');
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('permission_denied');
+    expect(events[0].status_code).toBe(403);
   });
 
   it('maps parse errors to AGENT_PS_ERROR', async () => {
+    const { logger, events } = makeLogger();
     const handler = createHandler({
       token: 't',
       deps: {
@@ -96,6 +122,7 @@ describe('hyperv windows agent handler', () => {
           });
         },
       },
+      logger,
     });
 
     const res = await handler(
@@ -117,5 +144,8 @@ describe('hyperv windows agent handler', () => {
     const body = (await res.json()) as any;
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe('AGENT_PS_ERROR');
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('error');
+    expect(events[0].status_code).toBe(500);
   });
 });

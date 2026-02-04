@@ -32,7 +32,7 @@ Windows 侧（部署 Agent 的机器）：
    - `Test-ADServiceAccount breachHypervAgent`
 2. 安装/配置 Agent 为 Windows Service，且满足：
    - Service 的 Log On Account = `DOMAIN\\breachHypervAgent$`
-   - 配置 `HYPERV_AGENT_TOKEN` / `HYPERV_AGENT_BIND` / `HYPERV_AGENT_PORT` 等环境变量
+   - 配置 Agent 配置文件 `hyperv-agent.config.json`（含 `token/bind/port/ps_timeout_ms/log`；与 exe 同目录或通过 `--config <path>` 指定）
 3. 权限（最小化授权）：
    - Hyper-V 只读枚举权限（等价 Hyper-V Administrators 或更细粒度授权）
    - Failover Cluster 读取权限（能执行 `Get-Cluster*`）
@@ -153,8 +153,8 @@ Windows 侧（部署 Agent 的机器）：
 
 ### 4.0 Agent 常见失败（connection_method=agent）
 
-- `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 是否在对应 IP 上监听（`HYPERV_AGENT_BIND`）
-- `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 侧 `HYPERV_AGENT_TOKEN` 一致
+- `HYPERV_AGENT_UNREACHABLE`：agent 不可达/超时；检查 `agent_url`、端口放行、Agent 配置里的 `bind/port` 是否对外监听
+- `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致
 - `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
 - `HYPERV_AGENT_PS_ERROR`：PowerShell 执行失败；优先查看 `errors[].redacted_context` 的 `stderr_excerpt/exit_code`，并在 Agent 机器上手工运行 `scripts/*.ps1` 复现
 

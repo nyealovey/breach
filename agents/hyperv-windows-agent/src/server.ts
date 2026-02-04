@@ -1,25 +1,24 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
+import { loadConfig } from './config';
 import { createHandler } from './handler';
+import { createLogger } from './logger';
 import { runPowerShellJsonFile } from './powershell';
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v || v.trim().length === 0) throw new Error(`${name} is required`);
-  return v.trim();
+let loaded: ReturnType<typeof loadConfig>;
+try {
+  loaded = loadConfig({ argv: process.argv, importMetaUrl: import.meta.url });
+} catch (err) {
+  console.error(`[hyperv-agent] config error: ${err instanceof Error ? err.message : String(err)}`);
+  console.error('[hyperv-agent] expected config file: hyperv-agent.config.json (or pass --config <path>)');
+  process.exit(1);
 }
 
-const token = requireEnv('HYPERV_AGENT_TOKEN');
-const bind = (process.env.HYPERV_AGENT_BIND ?? '127.0.0.1').trim();
-const port = Number(process.env.HYPERV_AGENT_PORT ?? '8787');
-const psTimeoutMs = Number(process.env.HYPERV_AGENT_PS_TIMEOUT_MS ?? '600000');
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const scriptsDir = path.join(__dirname, 'scripts');
+const psTimeoutMs = loaded.config.ps_timeout_ms;
+const { logger, logDir } = createLogger({ baseDir: loaded.baseDir, config: loaded.config.log });
 
 function scriptPath(name: string): string {
-  return path.join(scriptsDir, name);
+  return path.join(loaded.scriptsDir, name);
 }
 
 const deps = {
@@ -49,9 +48,12 @@ if (!bun?.serve) {
 }
 
 bun.serve({
-  hostname: bind,
-  port,
-  fetch: createHandler({ token, deps }),
+  hostname: loaded.config.bind,
+  port: loaded.config.port,
+  fetch: createHandler({ token: loaded.config.token, deps, logger }),
 });
 
-console.log(`[hyperv-agent] listening on http://${bind}:${port}`);
+console.log(`[hyperv-agent] config: ${loaded.configPath}`);
+console.log(`[hyperv-agent] scripts: ${loaded.scriptsDir}`);
+console.log(`[hyperv-agent] logs: ${logDir}`);
+console.log(`[hyperv-agent] listening on http://${loaded.config.bind}:${loaded.config.port}`);
