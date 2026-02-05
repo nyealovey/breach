@@ -161,6 +161,9 @@ List of websites that started off with Next.js TypeScript Starter:
 - `/runs`：采集 Run 列表与详情（admin/user；支持按调度组/结果筛选；分页大小在列表底部左侧；失败可定位：错误码 + 建议动作）
 - `/assets`：资产清单与详情（admin/user；canonical）
   - 清单：支持搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）
+  - 清单：电源列展示 `fields.runtime.power_state`（VM/Host；`POWERED_ON/OFF/SUSPENDED` → `运行/关机/挂起`）
+  - 清单：IP 列默认过滤 `169.254.*`（APIPA/link-local），避免混入无效地址
+  - 清单：录入时间列位于电源列之后
   - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
   - 分页：每页条数选择在列表底部左侧

@@ -77,6 +77,12 @@ describe('vcenter normalize', () => {
     expect(asset.normalized.identity?.hostname).toBeUndefined();
   });
 
+  it('normalizeHost maps power_state to runtime.power_state', () => {
+    const raw = { host: 'host-1', name: 'esxi-01', power_state: 'POWERED_ON' };
+    const asset = normalizeHost(raw as any);
+    expect(asset.normalized.runtime?.power_state).toBe('poweredOn');
+  });
+
   it('buildRelations creates vm -> host, host -> vm, and host -> cluster edges', () => {
     const vmRaw = { vm: 'vm-1', host: 'host-1' };
     const hostRaw = {

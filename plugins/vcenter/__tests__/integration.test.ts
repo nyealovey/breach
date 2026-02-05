@@ -722,6 +722,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     expect(host?.normalized).toMatchObject({
       os: { name: 'ESXi', version: '7.0.3', fingerprint: '20036589' },
       hardware: { cpu_count: 32, memory_bytes: 274877906944 },
+      runtime: { power_state: 'poweredOn' },
       identity: { serial_number: 'SN-123', vendor: 'HP', model: 'ProLiant DL380p Gen8' },
       network: { management_ip: '192.168.1.10', ip_addresses: ['192.168.1.10'] },
       storage: { datastores: [{ name: 'local-vmfs-1', capacity_bytes: 1000 }] },

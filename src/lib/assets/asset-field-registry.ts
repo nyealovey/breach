@@ -38,7 +38,7 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
   'hardware.disks': { labelZh: '磁盘', groupA: 'vm', groupB: 'hardware', formatHint: 'json' },
 
   // ===== runtime =====
-  'runtime.power_state': { labelZh: '电源状态', groupA: 'vm', groupB: 'runtime', formatHint: 'enum' },
+  'runtime.power_state': { labelZh: '电源状态', groupA: 'common', groupB: 'runtime', formatHint: 'enum' },
   'runtime.tools_running': { labelZh: 'Tools 运行', groupA: 'vm', groupB: 'runtime', formatHint: 'boolean' },
 
   // ===== storage =====

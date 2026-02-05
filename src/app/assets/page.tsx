@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
+import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
 import { listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AssetListUrlState, VmPowerStateParam } from '@/lib/assets/asset-list-url';
@@ -96,11 +97,11 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
   { id: 'ip', label: 'IP', description: 'VM 若 Tools 未运行可能缺失。' },
-  { id: 'recordedAt', label: '录入时间', description: '若未录入台账字段，默认显示第一次采集时间。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
-  { id: 'vmPowerState', label: '状态', description: 'VM 电源状态（poweredOn/off/suspended）。' },
+  { id: 'vmPowerState', label: '电源', description: '电源状态（poweredOn/off/suspended）。' },
+  { id: 'recordedAt', label: '录入时间', description: '若未录入台账字段，默认显示第一次采集时间。' },
 ];
 
 const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
@@ -121,6 +122,9 @@ const DEFAULT_VISIBLE_COLUMNS: AssetListColumnId[] = BASE_ASSET_LIST_COLUMNS.map
 const ASSET_LIST_COLUMN_ID_SET = new Set<AssetListColumnId>(ASSET_LIST_COLUMNS.map((c) => c.id));
 const ASSET_LIST_COLUMN_LABEL_BY_ID = new Map<AssetListColumnId, string>(
   ASSET_LIST_COLUMNS.map((c) => [c.id, c.label]),
+);
+const ASSET_LIST_COLUMN_ORDER_INDEX = new Map<AssetListColumnId, number>(
+  ASSET_LIST_COLUMNS.map((c, idx) => [c.id, idx]),
 );
 
 const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['machineName', 'ip'];
@@ -152,7 +156,13 @@ function ensureCoreVisibleColumns(columns: AssetListColumnId[]): AssetListColumn
 
   // De-dupe while preserving order.
   const seen = new Set<AssetListColumnId>();
-  return next.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+  const unique = next.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+  // Column settings do not support manual reordering; keep a stable, canonical order.
+  return unique.slice().sort((a, b) => {
+    const ia = ASSET_LIST_COLUMN_ORDER_INDEX.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const ib = ASSET_LIST_COLUMN_ORDER_INDEX.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return ia - ib;
+  });
 }
 
 function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
@@ -168,16 +178,14 @@ function sanitizeVisibleColumns(input: unknown): AssetListColumnId[] | null {
 }
 
 function powerStateLabel(powerState: string) {
-  if (powerState === 'poweredOn') return '运行';
-  if (powerState === 'poweredOff') return '关机';
-  if (powerState === 'suspended') return '挂起';
-  return powerState;
+  return powerStateLabelZh(powerState);
 }
 
 function powerStateBadgeVariant(powerState: string): React.ComponentProps<typeof Badge>['variant'] {
-  if (powerState === 'poweredOn') return 'default';
-  if (powerState === 'poweredOff') return 'secondary';
-  if (powerState === 'suspended') return 'outline';
+  const normalized = normalizePowerState(powerState);
+  if (normalized === 'poweredOn') return 'default';
+  if (normalized === 'poweredOff') return 'secondary';
+  if (normalized === 'suspended') return 'outline';
   return 'outline';
 }
 
@@ -1008,7 +1016,8 @@ export default function AssetsPage() {
                             >
                               {item.ip ? (
                                 item.ip
-                              ) : item.vmPowerState === 'poweredOn' && item.toolsRunning === false ? (
+                              ) : normalizePowerState(item.vmPowerState ?? '') === 'poweredOn' &&
+                                item.toolsRunning === false ? (
                                 <span
                                   className="cursor-help text-muted-foreground"
                                   title="VMware Tools 未安装或未运行，无法获取 IP 地址"

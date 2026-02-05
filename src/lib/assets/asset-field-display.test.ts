@@ -11,7 +11,7 @@ describe('asset field display grouping', () => {
       { path: 'weird.path', value: 123, sourcesCount: 0, conflict: false },
     ]);
 
-    expect(grouped.map((g) => g.groupA)).toEqual(['common', 'vm', 'attributes', 'unknown']);
+    expect(grouped.map((g) => g.groupA)).toEqual(['common', 'attributes', 'unknown']);
 
     const common = grouped[0]!;
     expect(common.labelZh).toBe('通用字段');

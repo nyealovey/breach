@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth/require-user';
 import { parseAssetListQuery, buildAssetListWhere } from '@/lib/assets/asset-list-query';
+import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
@@ -23,6 +24,9 @@ function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
 
 function pickPrimaryIp(fields: unknown, privatePrefixes: string[]): string | null {
   const ips = getCanonicalFieldValue(fields, ['network', 'ip_addresses']);
+  // Preserve existing display formatting when no "private prefixes" are configured.
+  // When configured, prefer non-private IPs for the assets list.
+  if (privatePrefixes.length === 0) return formatIpAddressesForDisplay(ips);
   return formatAssetListIpText(ips, privatePrefixes);
 }
 
@@ -98,7 +102,7 @@ function pickOs(fields: unknown, assetType: string): string | null {
   return null;
 }
 
-function pickVmPowerState(fields: unknown): string | null {
+function pickPowerState(fields: unknown): string | null {
   const powerState = getCanonicalFieldValue(fields, ['runtime', 'power_state']);
   if (typeof powerState === 'string' && powerState.trim().length > 0) return powerState.trim();
   return null;
@@ -188,7 +192,8 @@ export async function GET(request: Request) {
         vmName,
         hostName,
         os: pickOs(fields, asset.assetType),
-        vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
+        // Power state is primarily VM-focused but can also exist for Hosts (e.g. ESXi).
+        vmPowerState: pickPowerState(fields),
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields, privateIpPrefixes),
         recordedAt,

@@ -1,3 +1,5 @@
+import { powerStateLabelZh } from '@/lib/assets/power-state';
+
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
 
 export type AssetFieldValueFormatOptions = {
@@ -39,9 +41,7 @@ export function formatAssetFieldValue(value: unknown, options: AssetFieldValueFo
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (options.formatHint === 'enum') {
-      if (trimmed === 'poweredOn') return '运行';
-      if (trimmed === 'poweredOff') return '关机';
-      if (trimmed === 'suspended') return '挂起';
+      return powerStateLabelZh(trimmed);
     }
     return trimmed.length > 0 ? trimmed : '-';
   }

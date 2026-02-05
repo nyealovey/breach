@@ -241,6 +241,8 @@ function mapPowerState(vcenterState?: string): 'poweredOn' | 'poweredOff' | 'sus
     POWERED_ON: 'poweredOn',
     POWERED_OFF: 'poweredOff',
     SUSPENDED: 'suspended',
+    // Host power state (vSphere): standBy → map to suspended for our normalized enum.
+    STANDBY: 'suspended',
   };
 
   // Support case/format differences.
@@ -250,6 +252,7 @@ function mapPowerState(vcenterState?: string): 'poweredOn' | 'poweredOff' | 'sus
   const lower = normalized.toLowerCase();
   if (lower === 'poweredon') return 'poweredOn';
   if (lower === 'poweredoff') return 'poweredOff';
+  if (lower === 'standby' || lower === 'stand_by') return 'suspended';
 
   return undefined;
 }
@@ -365,6 +368,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
   if (soap?.cpuThreads !== undefined) attributes.cpu_threads = soap.cpuThreads;
 
   const hasAttributes = Object.keys(attributes).length > 0;
+  const powerState = mapPowerState(raw.power_state);
 
   return {
     external_kind: 'host',
@@ -394,6 +398,7 @@ export function normalizeHost(raw: HostRaw): NormalizedAsset {
         soap?.cpuCores !== undefined || soap?.memoryBytes !== undefined
           ? { cpu_count: soap?.cpuCores, memory_bytes: soap?.memoryBytes }
           : undefined,
+      runtime: powerState ? { power_state: powerState } : undefined,
       storage: datastores.length > 0 || soap?.datastores ? { datastores } : undefined,
       attributes: hasAttributes ? attributes : undefined,
     },

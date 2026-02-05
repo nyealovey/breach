@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
+import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
+import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
 import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
@@ -108,10 +110,7 @@ function formatAssetType(input: string) {
 }
 
 function powerStateLabel(powerState: string) {
-  if (powerState === 'poweredOn') return '运行';
-  if (powerState === 'poweredOff') return '关机';
-  if (powerState === 'suspended') return '挂起';
-  return powerState;
+  return powerStateLabelZh(powerState);
 }
 
 function pickLatestFieldValue(flattened: FlattenedField[], path: string): unknown {
@@ -407,13 +406,7 @@ export default function AssetDetailPage() {
             ? osVersion.trim()
             : null;
 
-    const ipText =
-      Array.isArray(ipAddresses) && ipAddresses.every((v) => typeof v === 'string')
-        ? ipAddresses
-            .map((ip) => ip.trim())
-            .filter((ip) => ip.length > 0)
-            .join(', ')
-        : null;
+    const ipText = formatIpAddressesForDisplay(ipAddresses);
 
     const machineNameMismatch =
       typeof machineNameOverride === 'string' &&
@@ -595,7 +588,7 @@ export default function AssetDetailPage() {
                       {summary.ipText ? (
                         summary.ipText
                       ) : asset.assetType === 'vm' &&
-                        summary.powerState === 'poweredOn' &&
+                        normalizePowerState(summary.powerState ?? '') === 'poweredOn' &&
                         summary.toolsRunning === false ? (
                         <span
                           className="cursor-help text-muted-foreground"
@@ -616,7 +609,7 @@ export default function AssetDetailPage() {
                     <TableHead>内存</TableHead>
                     <TableCell>{summary.memoryText ?? '-'}</TableCell>
                   </TableRow>
-                  {asset.assetType === 'vm' ? (
+                  {asset.assetType === 'vm' || asset.assetType === 'host' ? (
                     <TableRow>
                       <TableHead>电源状态</TableHead>
                       <TableCell>

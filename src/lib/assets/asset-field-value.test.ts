@@ -21,6 +21,10 @@ describe('asset field value formatter', () => {
     expect(formatAssetFieldValue('poweredOn', { formatHint: 'enum' })).toBe('运行');
     expect(formatAssetFieldValue('poweredOff', { formatHint: 'enum' })).toBe('关机');
     expect(formatAssetFieldValue('suspended', { formatHint: 'enum' })).toBe('挂起');
+    expect(formatAssetFieldValue('POWERED_ON', { formatHint: 'enum' })).toBe('运行');
+    expect(formatAssetFieldValue('POWERED_OFF', { formatHint: 'enum' })).toBe('关机');
+    expect(formatAssetFieldValue('SUSPENDED', { formatHint: 'enum' })).toBe('挂起');
+    expect(formatAssetFieldValue('STANDBY', { formatHint: 'enum' })).toBe('挂起');
   });
 
   it('joins primitive arrays', () => {
