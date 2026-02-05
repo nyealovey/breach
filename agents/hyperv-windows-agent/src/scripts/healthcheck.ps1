@@ -5,6 +5,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-WinRmSpnPrefix() {
+  try {
+    $p = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Client'
+    $v = (Get-ItemProperty -Path $p -Name spn_prefix -ErrorAction Stop).spn_prefix
+    if ([string]::IsNullOrWhiteSpace([string]$v)) { return $null }
+    return [string]$v
+  } catch { return $null }
+}
+
 function Try-GetCluster([string]$Name) {
   try {
     if (Get-Command Get-Cluster -ErrorAction Stop) {
@@ -32,8 +41,11 @@ $canList = Invoke-Command -ComputerName $targetHost -ScriptBlock {
   return $can
 } -ErrorAction Stop
 
+$spnPrefix = Get-WinRmSpnPrefix
+
 [pscustomobject]@{
   ok = $true
+  winrm_client_spn_prefix = $spnPrefix
   can_list_vms = [bool]$canList
   is_cluster = $isCluster
 } | ConvertTo-Json -Compress

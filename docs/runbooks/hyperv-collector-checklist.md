@@ -175,6 +175,9 @@ Windows 侧（部署 Agent 的机器）：
 - 若你在另一台机器（core/worker 或 Postman）访问 Agent：确保 `bind=0.0.0.0`（或绑定到具体网卡 IP），并放行 Windows 防火墙端口；`bind=127.0.0.1` 仅本机可访问
 - `HYPERV_AGENT_AUTH_FAILED`：token 错误；确认 Hyper-V Credential 使用 `{ auth: 'agent', token }` 且与 Agent 配置文件里的 `token` 一致
 - `HYPERV_AGENT_PERMISSION_DENIED`：权限不足；检查 Agent 运行身份（推荐 gMSA）及其 Hyper-V / Failover Cluster 读取权限
+- `HYPERV_AGENT_KERBEROS_SPN`：Kerberos SPN 不匹配；常见于“目标没有 `HTTP/<host>` SPN 且不允许添加”，导致 WinRM 客户端走 Kerberos 时失败
+  - 优先方案：在运行 Agent 的 Windows 上将 WinRM Client `spn_prefix` 从默认 `HTTP` 切换为 `WSMAN`（只改客户端，不改 AD/目标机），然后 `klist purge` 并重启 Agent 后重试
+  - 具体命令见：`agents/hyperv-windows-agent/README.md` → “5. 常见 Kerberos/WinRM 排障”
 - `HYPERV_AGENT_PS_ERROR`：PowerShell 执行失败；优先查看 `errors[].redacted_context` 的 `stderr_excerpt/exit_code`，并在 Agent 机器上手工运行 `scripts/*.ps1` 复现
   - 若 stderr 包含 `Variable reference is not valid. ':' was not followed by a valid variable name character.`：常见原因是 PowerShell 字符串插值里 `$var:` 会被解析成“作用域变量”（例如 `$env:Path`）。请升级 Agent 到最新版本（已用 `${cn}:${cl}` 修复磁盘名格式化），或在 `agents/hyperv-windows-agent/src/scripts/collect.ps1` 将 `"$cn:$cl"` 改为 `"${cn}:${cl}"`。
 - Agent 启动后没有日志/端口未监听：常见原因是 `log.dir` 无写权限（例如安装在 `Program Files`）；优先按 `agents/hyperv-windows-agent/README.md` 调整 `log.dir`（推荐写到 `%ProgramData%`）

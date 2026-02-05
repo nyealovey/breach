@@ -61,6 +61,27 @@ function looksLikePermissionDenied(text: string): boolean {
   );
 }
 
+function looksLikeKerberosSpnIssue(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (!lower.includes('kerberos')) return false;
+
+  // Common localized message from WinRM/PowerShell remoting when SPN cannot be resolved.
+  if (text.includes('找不到计算机')) return true;
+
+  // English variants.
+  if (lower.includes('cannot find the computer')) return true;
+  if (lower.includes('the computer') && lower.includes('is unknown')) return true;
+
+  // SPN hints.
+  if (lower.includes('spn') && (lower.includes('http/') || lower.includes('wsman/'))) return true;
+  if (lower.includes('service principal name')) return true;
+
+  // Some environments surface numeric error hints for SPN/target principal mismatch.
+  if (lower.includes('0x80090322')) return true;
+
+  return false;
+}
+
 function parseRequestBody(
   raw: unknown,
   routeMode: HypervAgentMode,
@@ -227,27 +248,43 @@ export function createHandler(config: { token: string; deps: HypervAgentDeps; lo
       if (err instanceof PowerShellExecError) {
         const combined = `${err.stderr}\n${err.stdout}`;
         const permissionDenied = looksLikePermissionDenied(combined);
-        const status = permissionDenied ? 403 : 500;
+        const kerberosSpnIssue = !permissionDenied && looksLikeKerberosSpnIssue(combined);
+        const status = permissionDenied ? 403 : kerberosSpnIssue ? 422 : 500;
+        const code = permissionDenied
+          ? 'AGENT_PERMISSION_DENIED'
+          : kerberosSpnIssue
+            ? 'AGENT_KERBEROS_SPN'
+            : 'AGENT_PS_ERROR';
+        const message = permissionDenied
+          ? 'permission denied'
+          : kerberosSpnIssue
+            ? 'kerberos spn mismatch'
+            : 'powershell failed';
         const res = json(status, {
           ok: false,
           error: {
-            code: permissionDenied ? 'AGENT_PERMISSION_DENIED' : 'AGENT_PS_ERROR',
-            message: permissionDenied ? 'permission denied' : 'powershell failed',
+            code,
+            message,
             context: {
               stage: routeMode,
               ...(requestId ? { request_id: requestId } : {}),
               exit_code: err.exitCode,
               stderr_excerpt: excerpt(err.stderr, 500),
               stdout_excerpt: excerpt(err.stdout, 500),
+              ...(kerberosSpnIssue
+                ? {
+                    hint: 'WinRM/Kerberos 可能在请求 HTTP/<host> SPN；若不允许添加 HTTP SPN，可在运行 Agent 的 Windows 上将 WinRM Client spn_prefix 设置为 WSMAN 并 klist purge 后重试。',
+                  }
+                : {}),
             },
           },
         });
 
         wideEvent.mode = routeMode;
         wideEvent.status_code = status;
-        wideEvent.outcome = permissionDenied ? 'permission_denied' : 'error';
+        wideEvent.outcome = permissionDenied ? 'permission_denied' : kerberosSpnIssue ? 'kerberos_spn' : 'error';
         wideEvent.error = {
-          code: permissionDenied ? 'AGENT_PERMISSION_DENIED' : 'AGENT_PS_ERROR',
+          code,
           exit_code: err.exitCode,
           stderr_excerpt: excerpt(err.stderr, 200),
         };

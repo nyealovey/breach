@@ -177,6 +177,40 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       },
     ],
   },
+  HYPERV_AGENT_KERBEROS_SPN: {
+    title: 'Kerberos SPN 问题（Hyper-V Agent）',
+    actions: [
+      {
+        title: '切换 WinRM Client SPN 前缀为 WSMAN',
+        steps: [
+          '查看错误详情里的 stderr_excerpt：若包含 Kerberos “找不到计算机/未知” 或提到 HTTP/<host> SPN，通常是 WinRM 客户端在请求 HTTP SPN',
+          '若不允许在 AD 中添加 HTTP/<host> SPN，可在运行 Agent 的 Windows 上将 WinRM Client spn_prefix 设置为 WSMAN（机器级注册表变更）',
+          '执行 reg query/reg add 后，运行 klist purge 并重启 Agent 进程/服务，再重试 collect',
+        ],
+        links: [
+          { label: '打开 Agents', href: '/agents' },
+          { label: '打开 Sources', href: '/sources' },
+        ],
+      },
+    ],
+  },
+  HYPERV_AGENT_PS_ERROR: {
+    title: 'PowerShell 执行失败（Hyper-V Agent）',
+    actions: [
+      {
+        title: '按 stderr 排查',
+        steps: [
+          '在错误详情中查看 stderr_excerpt/exit_code（已脱敏）',
+          '若 stderr 提到 Kerberos/SPN：优先按 Kerberos SPN 排障（常见修复：设置 WinRM Client spn_prefix=WSMAN）',
+          '在 Agent 机器上手工运行 dist/scripts/*.ps1 复现，并结合 WinRM/WinRM Operational 事件日志定位',
+        ],
+        links: [
+          { label: '打开 Agents', href: '/agents' },
+          { label: '打开 Sources', href: '/sources' },
+        ],
+      },
+    ],
+  },
   PLUGIN_TIMEOUT: {
     title: '插件执行超时',
     actions: [

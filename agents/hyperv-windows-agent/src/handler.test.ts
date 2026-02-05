@@ -167,4 +167,47 @@ describe('hyperv windows agent handler', () => {
     expect(events[0].outcome).toBe('error');
     expect(events[0].status_code).toBe(500);
   });
+
+  it('maps kerberos spn errors to AGENT_KERBEROS_SPN (422)', async () => {
+    const { logger, events } = makeLogger();
+    const handler = createHandler({
+      token: 't',
+      deps: {
+        run: async () => {
+          throw new PowerShellExecError('powershell exited non-zero', {
+            exitCode: 1,
+            stdout: '',
+            stderr:
+              '[host01.example.com] 连接到远程服务器 host01.example.com 失败: WinRM 无法处理此请求。使用 Kerberos 身份验证时发生以下错误: 找不到计算机 host01.example.com。',
+          });
+        },
+      },
+      logger,
+    });
+
+    const res = await handler(
+      new Request('http://localhost/v1/hyperv/collect', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: JSON.stringify({
+          source_id: 's',
+          run_id: 'r',
+          mode: 'collect',
+          now: new Date().toISOString(),
+          endpoint: 'host01.example.com',
+          scope: 'auto',
+          max_parallel_nodes: 5,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as any;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('AGENT_KERBEROS_SPN');
+    expect(typeof body.error.context?.hint).toBe('string');
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('kerberos_spn');
+    expect(events[0].status_code).toBe(422);
+  });
 });

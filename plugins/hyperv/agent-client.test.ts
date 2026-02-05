@@ -83,4 +83,28 @@ describe('hyperv agent-client', () => {
     expect((err as HypervAgentClientError).collectorError.code).toBe('HYPERV_AGENT_PERMISSION_DENIED');
     expect((err as HypervAgentClientError).collectorError.category).toBe('permission');
   });
+
+  it('maps agent kerberos spn error to HYPERV_AGENT_KERBEROS_SPN', async () => {
+    const err = await postAgentJson(
+      {
+        baseUrl: 'http://agent.local:8787',
+        token: 't',
+        tlsVerify: true,
+        timeoutMs: 1000,
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ ok: false, error: { code: 'AGENT_KERBEROS_SPN', message: 'spn mismatch' } }), {
+            status: 422,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      '/v1/hyperv/collect',
+      { a: 1 },
+      'test.collect',
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(HypervAgentClientError);
+    expect((err as HypervAgentClientError).collectorError.code).toBe('HYPERV_AGENT_KERBEROS_SPN');
+    expect((err as HypervAgentClientError).collectorError.category).toBe('config');
+    expect((err as HypervAgentClientError).collectorError.retryable).toBe(false);
+  });
 });

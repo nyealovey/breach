@@ -151,7 +151,7 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 
 期望：
 
-- token 正确：返回 `200`（或在权限/模块缺失时返回 `403/500` 且 body 为 `{ok:false,...}`，并写入日志）
+- token 正确：返回 `200`（或在权限/环境问题时返回 `403/422/500` 且 body 为 `{ok:false,...}`，并写入日志）
 - token 错误：返回 `401` 且 `code=AGENT_PERMISSION_DENIED`
 
 ## 4. 运行账号说明（你问的“用 bun 跑到底是谁的权限”）
@@ -160,3 +160,92 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 - 你把它装成 Windows Service：进程与 PowerShell 采集使用**服务 Log On Account** 的权限。
   - 推荐 gMSA：免密码、域内 Kerberos 票据更省心
   - 也支持普通域用户：密码由 Windows Service Manager 保管，但需要你自己做密码轮换与到期处理
+
+## 5. 常见 Kerberos/WinRM 排障
+
+> 本 Agent 通过 PowerShell Remoting（`Invoke-Command`）采集数据，底层走 WinRM/WSMan。
+> 在域环境中默认会优先使用 Kerberos（或 Negotiate→Kerberos）。
+
+### 5.1 报错：Kerberos “未知/找不到计算机” 或提示缺少 `HTTP/<host>` SPN
+
+典型报错关键词（示例）：
+
+- `WinRM 无法处理此请求... Kerberos... 未知`
+- `最常见的 Kerberos 配置问题是，没有为目标配置具有 HTTP/<host> 格式的 SPN`
+- 若走 `connection_method=agent`：Run 错误码可能显示为 `HYPERV_AGENT_KERBEROS_SPN`（Agent API 返回 `AGENT_KERBEROS_SPN`）
+
+原因说明（关键点）：
+
+- 即使你看到目标对象上注册了 `WSMAN/<host>`，PowerShell Remoting 在 Kerberos 下**通常仍会请求** `HTTP/<host>` 形式的 SPN（service class=HTTP）。
+- 因此，目标计算机对象（或承载 WinRM 的服务账号）若缺少 `HTTP/<hostname>`，Kerberos 票据获取会失败，从而导致 `Test-WSMan`/`Invoke-Command`/Agent 采集失败。
+
+自检（在运行 Agent 的 Windows 上执行）：
+
+```powershell
+$h = 'host01.example.com'
+$short = 'host01'
+
+whoami
+
+# DNS 必须能解析到目标（示意）
+Resolve-DnsName $h
+
+# 查 SPN（需要可查询 AD 权限）
+setspn -Q ("HTTP/" + $h) -F
+setspn -Q ("WSMAN/" + $h) -F
+
+# 直接尝试获取服务票据（失败时会给出子状态码）
+klist
+klist get ("HTTP/" + $h)
+klist get ("WSMAN/" + $h)
+```
+
+修复（推荐，最小变更）：
+
+1. 在目标所属域内，给目标计算机对象补齐 `HTTP/<FQDN>` 与 `HTTP/<short>` SPN（示例）：
+
+```powershell
+setspn -S HTTP/host01.example.com HOST01
+setspn -S HTTP/host01           HOST01
+```
+
+2. 在运行 Agent 的机器上清理缓存票据后重试：
+
+```powershell
+klist purge
+Test-WSMan host01.example.com -Authentication Kerberos
+Invoke-Command -ComputerName host01.example.com -Authentication Kerberos -ScriptBlock { $env:COMPUTERNAME }
+```
+
+不建议但可用的 workaround（了解即可）：
+
+- 通过修改 WinRM 客户端的 `spn_prefix` 将 Kerberos 的 SPN 前缀从默认 `HTTP` 切到 `WSMAN`（机器级配置/注册表变更）。
+- 这会影响整台机器上 WinRM 客户端行为，且并非所有环境允许；本 Agent **不提供“按单次请求强制指定 SPN 前缀”的能力**。
+
+示例（需要管理员权限，在运行 Agent 的 Windows 上执行）：
+
+```powershell
+# 查看当前值（不存在则表示使用默认 HTTP 前缀）
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Client" /v spn_prefix
+
+# 设置为 WSMAN（让 WinRM 客户端优先使用 WSMAN/<host> 形式的 SPN）
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Client" /v spn_prefix /t REG_SZ /d WSMAN /f
+
+# 清理当前登录会话的 Kerberos 缓存票据（并重启 Agent 进程/PowerShell）
+klist purge
+
+# 可选：重启 WinRM 服务（谨慎，会影响正在使用 WinRM 的会话）
+# Restart-Service WinRM
+```
+
+回退（恢复默认行为）：
+
+```powershell
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Client" /v spn_prefix /f
+klist purge
+```
+
+跨域/跨林补充说明：
+
+- 若 Agent 运行账号的 Kerberos realm 与目标域不一致（例如 `user@example.com` 访问 `host01.example.net`），需要域/林之间存在可用的信任关系与正确的 DNS/KDC 路由。
+- 即便存在信任，目标侧 SPN 仍必须在**目标所属域**中正确注册（尤其是 `HTTP/<host>`）。否则依然会报 Kerberos “未知/找不到”。

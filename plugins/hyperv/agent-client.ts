@@ -207,6 +207,23 @@ export async function postAgentJson<T>(
     });
   }
 
+  if (agentCode === 'AGENT_KERBEROS_SPN') {
+    throw new HypervAgentClientError({
+      code: 'HYPERV_AGENT_KERBEROS_SPN',
+      category: 'config',
+      message: 'agent kerberos spn mismatch',
+      retryable: false,
+      redacted_context: {
+        stage,
+        url,
+        status,
+        agent_code: agentCode,
+        agent_message_excerpt: excerpt(agentMessage, 200),
+        ...(agentContext ? { agent_context: agentContext } : {}),
+      },
+    });
+  }
+
   if (agentCode === 'AGENT_PS_ERROR') {
     throw new HypervAgentClientError({
       code: 'HYPERV_AGENT_PS_ERROR',

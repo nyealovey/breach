@@ -12,6 +12,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-WinRmSpnPrefix() {
+  try {
+    $p = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Client'
+    $v = (Get-ItemProperty -Path $p -Name spn_prefix -ErrorAction Stop).spn_prefix
+    if ([string]::IsNullOrWhiteSpace([string]$v)) { return $null }
+    return [string]$v
+  } catch { return $null }
+}
+
 function Try-GetCluster([string]$Name) {
   try {
     if (Get-Command Get-Cluster -ErrorAction Stop) {
@@ -24,6 +33,7 @@ function Try-GetCluster([string]$Name) {
 $resolvedScope = $Scope
 $cluster = $null
 $clusterName = $null
+$spnPrefix = Get-WinRmSpnPrefix
 
 if ($resolvedScope -eq 'auto' -or $resolvedScope -eq 'cluster') {
   $cluster = Try-GetCluster $Endpoint
@@ -175,6 +185,7 @@ if ($resolvedScope -eq 'cluster') {
 
   [pscustomobject]@{
     scope = 'cluster'
+    winrm_client_spn_prefix = $spnPrefix
     cluster_name = $clusterName
     nodes = $nodeResults
     owner_rows = $vmOwnerRows
@@ -183,4 +194,9 @@ if ($resolvedScope -eq 'cluster') {
 }
 
 $inv = Invoke-Command -ComputerName $Endpoint -ScriptBlock $sbInventory -ErrorAction Stop
-[pscustomobject]@{ scope = 'standalone'; host = $inv.host; vms = $inv.vms } | ConvertTo-Json -Compress -Depth 6
+[pscustomobject]@{
+  scope = 'standalone'
+  winrm_client_spn_prefix = $spnPrefix
+  host = $inv.host
+  vms = $inv.vms
+} | ConvertTo-Json -Compress -Depth 6
