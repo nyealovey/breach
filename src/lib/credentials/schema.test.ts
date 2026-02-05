@@ -35,6 +35,18 @@ describe('CredentialCreateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts pve user_password credentials with realm field', () => {
+    const result = CredentialCreateSchema.safeParse({
+      name: 'pve-4',
+      type: 'pve',
+      payload: { auth_type: 'user_password', username: 'root', realm: 'pam', password: 'pass' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data.payload as any).realm).toBe('pam');
+    }
+  });
+
   it('accepts hyperv username/password credentials', () => {
     const result = CredentialCreateSchema.safeParse({
       name: 'hv-1',

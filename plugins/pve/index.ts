@@ -27,18 +27,48 @@ function toPveError(err: unknown, stage: string): CollectorError {
   const bodyText =
     typeof err === 'object' && err && 'bodyText' in err ? (err as { bodyText?: string }).bodyText : undefined;
 
-  if (status === 401) {
-    return { code: 'PVE_AUTH_FAILED', category: 'auth', message: 'authentication failed', retryable: false };
-  }
-  if (status === 403) {
-    return { code: 'PVE_PERMISSION_DENIED', category: 'permission', message: 'permission denied', retryable: false };
-  }
-  if (status === 429) {
-    return { code: 'PVE_RATE_LIMIT', category: 'rate_limit', message: 'rate limited', retryable: true };
-  }
-
   const cause = err instanceof Error ? err.message : String(err);
   const lower = cause.toLowerCase();
+
+  if (status === 401) {
+    return {
+      code: 'PVE_AUTH_FAILED',
+      category: 'auth',
+      message: 'authentication failed',
+      retryable: false,
+      redacted_context: {
+        stage,
+        ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+        cause,
+      },
+    };
+  }
+  if (status === 403) {
+    return {
+      code: 'PVE_PERMISSION_DENIED',
+      category: 'permission',
+      message: 'permission denied',
+      retryable: false,
+      redacted_context: {
+        stage,
+        ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+        cause,
+      },
+    };
+  }
+  if (status === 429) {
+    return {
+      code: 'PVE_RATE_LIMIT',
+      category: 'rate_limit',
+      message: 'rate limited',
+      retryable: true,
+      redacted_context: {
+        stage,
+        ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+        cause,
+      },
+    };
+  }
 
   // Config/credential issues (fail-fast; not retryable)
   if (

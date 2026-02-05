@@ -41,6 +41,7 @@ export default function EditCredentialPage() {
 
   const [updateSecret, setUpdateSecret] = useState(false);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [pveRealm, setPveRealm] = useState('pam');
   const [hypervAuth, setHypervAuth] = useState<'winrm' | 'agent'>('winrm');
   const [domain, setDomain] = useState('');
   const [username, setUsername] = useState('');
@@ -83,7 +84,7 @@ export default function EditCredentialPage() {
     if (type === 'pve') {
       return pveAuthType === 'api_token'
         ? { auth_type: 'api_token', api_token_id: apiTokenId, api_token_secret: apiTokenSecret }
-        : { auth_type: 'user_password', username, password };
+        : { auth_type: 'user_password', username, password, ...(pveRealm.trim() ? { realm: pveRealm.trim() } : {}) };
     }
     if (type === 'hyperv') {
       return hypervAuth === 'agent'
@@ -101,6 +102,7 @@ export default function EditCredentialPage() {
     hypervAuth,
     password,
     pveAuthType,
+    pveRealm,
     token,
     type,
     username,
@@ -309,8 +311,20 @@ export default function EditCredentialPage() {
                   ) : (
                     <>
                       <div className="space-y-2">
+                        <Label htmlFor="pveRealm">realm（认证域）</Label>
+                        <Input id="pveRealm" value={pveRealm} onChange={(e) => setPveRealm(e.target.value)} />
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <div>说明：对应 PVE 登录页的下拉框（如 pam/pve/ldap/...）。</div>
+                          <div>
+                            最终会按 <span className="font-mono">username@realm</span> 拼接；若你已输入 root@pam，则
+                            realm 会被忽略。
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
                         <Label htmlFor="username">用户名</Label>
                         <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                        <div className="text-xs text-muted-foreground">示例：root（配合 realm）或 root@pam</div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="password">密码</Label>

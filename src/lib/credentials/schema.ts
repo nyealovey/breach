@@ -30,8 +30,15 @@ const PveUserPasswordPayload = z
     auth_type: z.literal('user_password').optional(),
     username: z.string().min(1),
     password: z.string().min(1),
+    // PVE UI 里“认证域/realm”的值（pam/pve/ldap/...）。当 username 已包含 @realm 时可忽略。
+    realm: z.string().min(1).optional(),
   })
-  .transform((v) => ({ auth_type: 'user_password' as const, username: v.username, password: v.password }));
+  .transform((v) => ({
+    auth_type: 'user_password' as const,
+    username: v.username,
+    password: v.password,
+    ...(v.realm ? { realm: v.realm } : {}),
+  }));
 const PvePayload = z.union([PveApiTokenPayload, PveUserPasswordPayload]);
 const AliyunPayload = z.object({ accessKeyId: z.string().min(1), accessKeySecret: z.string().min(1) });
 const ThirdPartyPayload = z.object({ token: z.string().min(1) });

@@ -109,6 +109,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - 本地开发与测试环境启动指南：[`docs/runbooks/local-dev.md`](docs/runbooks/local-dev.md)
 - Hyper-V（WinRM / Agent）采集验收清单：[`docs/runbooks/hyperv-collector-checklist.md`](docs/runbooks/hyperv-collector-checklist.md)
 - Hyper-V 采集说明：域内且要求“只开 HTTP 但必须信息加密”时，优先使用 `connection_method=agent`（Windows Agent + gMSA 在域内完成 Kerberos/Negotiate 的消息级加密）。注意：Agent 模式下 `endpoint` **仍必填**（目标 Hyper-V 主机名/IP 或 Failover Cluster 名称）；Windows Agent 的 HTTP 地址在「配置中心 → 代理」统一配置，并在 Hyper-V 来源选择 `connection_method=agent` 时通过下拉框选择（内部以 `agentId` 引用；兼容旧 `config.agent_url`）。`connection_method=winrm`（legacy）仍保留；WinRM 模式默认 `auth_method=auto` 优先 Kerberos（HTTP/5985）；Kerberos 首选 `pywinrm`（支持 AllowUnencrypted=false 的消息加密），依赖 `uv` + `kinit`；`auth_method=auto` 下 Kerberos 失败会降级到 `curl --negotiate`/legacy；`auth_method=kerberos` 不降级；`endpoint` 建议使用 hostname/FQDN（或 IP 具备 PTR 反解）以匹配 Kerberos SPN。
+- PVE 采集说明：若使用「用户名/密码」凭据，PVE 的用户名需要带 realm（对应 UI 登录页下拉框），例如 `root@pam` / `admin@pve` / `user@ldap`；本系统支持在凭据里单独填写 `realm`（默认 `pam`），也支持直接在用户名中写 `@realm`。若使用自签名证书且 `tls_verify=true`，可能出现 `unable to verify the first certificate`，可导入 CA 或显式关闭 `tls_verify`（有安全风险）。
 - 调度组页面的「运行」按钮支持选择 `mode=healthcheck|detect|collect`：排障优先 `healthcheck/detect`，确认无误后再 `collect`。
 - 兼容性说明：vCenter 6.5~8 通过 Source 中的“vCenter 版本范围（首选）”选择不同采集 Driver；若所选版本范围与目标环境不兼容（关键能力缺失/关键接口不存在），UI 将默认阻止运行并提示调整版本范围或升级 vCenter（即使绕过 UI，采集也会直接失败）；不再使用降级方式伪成功。
 - 认证/Session：优先调用 `POST /api/session` 获取 session token；若返回 JSON-RPC 错误或该接口不存在，则自动 fallback 到 `POST /rest/com/vmware/cis/session`（常见于 6.5/6.7 环境）。vCenter REST 资源接口优先使用 `/api/vcenter/*`；若遇到 404/405（接口不存在或 GET 不支持）则自动 fallback 到 `/rest/vcenter/*`；VM 按 Host 过滤（`listVMsByHost`）在部分 6.5/6.7 环境会自动从 `hosts=` fallback 到 `filter.hosts=`。
@@ -188,6 +189,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_VCENTER_DEBUG`：vCenter 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log` / `logs/vcenter-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。
 - `ASSET_LEDGER_HYPERV_DEBUG`：Hyper-V 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录 Kerberos 解析与 kinit（`resolved_host/resolved_addresses/realm/principal`）、以及每次 WinRM 请求的 HTTP status、Kerberos `service_name`（SPN service class）、部分响应 header 摘要（如 `server/content_type/content_length`）、以及 401 时的 `WWW-Authenticate` challenge 列表（仅记录 scheme，不记录 token）。
   - Kerberos SPN 默认使用 `WSMAN`（strict：仅尝试一次）。如环境只注册 `HTTP/<host>` 或需兼容多 SPN，可在 Hyper-V Source config 设置 `kerberos_service_name / kerberos_spn_fallback / kerberos_hostname_override`（详见 runbook）。
+- `ASSET_LEDGER_PVE_DEBUG`：PVE 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/pve-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录每次 PVE API 请求的 HTTP status/URL/耗时，以及网络/TLS/解析错误；不会记录密码、`api_token_secret` 或登录 ticket。
 - `ASSET_LEDGER_ADMIN_PASSWORD`：用于 bootstrap 默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取（例如首次登录时）；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。
 - `JWT_SECRET_KEY`：用于 JWT 签名（仅当启用 JWT 模式；v1.0 默认不使用，可留空）。

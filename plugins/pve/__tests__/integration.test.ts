@@ -276,6 +276,44 @@ describe('pve plugin integration (mock PVE API)', () => {
     expect(parsed.stats?.inventory_complete).toBe(true);
   });
 
+  it('collect works with user_password credentials (realm field)', async () => {
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_1',
+        source_type: 'pve',
+        config: { endpoint, tls_verify: true, timeout_ms: 1000 },
+        credential: { auth_type: 'user_password', username: 'root', realm: 'pam', password: 'pass' },
+      },
+      request: { run_id: 'run_collect_pw_realm', mode: 'collect', now: new Date().toISOString() },
+    };
+
+    const result = await runCollector(request);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout) as { errors?: unknown[]; stats?: { inventory_complete?: boolean } };
+    expect(parsed.errors ?? []).toEqual([]);
+    expect(parsed.stats?.inventory_complete).toBe(true);
+  });
+
+  it('collect defaults realm to pam when username has no @realm', async () => {
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_1',
+        source_type: 'pve',
+        config: { endpoint, tls_verify: true, timeout_ms: 1000 },
+        credential: { auth_type: 'user_password', username: 'root', password: 'pass' },
+      },
+      request: { run_id: 'run_collect_pw_default_realm', mode: 'collect', now: new Date().toISOString() },
+    };
+
+    const result = await runCollector(request);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout) as { errors?: unknown[]; stats?: { inventory_complete?: boolean } };
+    expect(parsed.errors ?? []).toEqual([]);
+    expect(parsed.stats?.inventory_complete).toBe(true);
+  });
+
   it('collect includes cluster asset + host->cluster relations when cluster is detected', async () => {
     clusterEnabled = true;
     try {

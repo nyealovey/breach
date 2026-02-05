@@ -36,7 +36,11 @@ export function deriveCredentialAccount(type: SourceType, payload: unknown): str
   if (type === SourceType.pve) {
     const authType = cleanString(data?.auth_type);
     if (authType === 'api_token') return cleanString(data?.api_token_id);
-    return cleanString(data?.username);
+    const username = cleanString(data?.username);
+    if (!username) return null;
+    if (username.includes('@')) return username;
+    const realm = cleanString(data?.realm) ?? 'pam';
+    return `${username}@${realm}`;
   }
 
   if (type === SourceType.aliyun) return cleanString(data?.accessKeyId);

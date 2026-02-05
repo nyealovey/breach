@@ -13,7 +13,7 @@ export type PveConfig = {
 
 export type PveCredential =
   | { auth_type: 'api_token'; api_token_id: string; api_token_secret: string }
-  | { auth_type?: 'user_password'; username: string; password: string };
+  | { auth_type?: 'user_password'; username: string; password: string; realm?: string };
 
 export type CollectorRequestV1 = {
   schema_version: 'collector-request-v1';
