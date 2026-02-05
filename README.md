@@ -193,6 +193,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用；默认 `plugins/vcenter/index.ts`）
 - `ASSET_LEDGER_PVE_PLUGIN_PATH`：PVE 采集插件可执行文件路径（子进程调用；默认 `plugins/pve/index.ts`）
 - `ASSET_LEDGER_HYPERV_PLUGIN_PATH`：Hyper-V 采集插件可执行文件路径（子进程调用；默认 `plugins/hyperv/index.ts`）
+- `ASSET_LEDGER_ASSET_LIST_IP_PRIVATE_PREFIXES`：资产列表（`/assets`）IP 列的展示策略配置：逗号分隔的“私网 IP 前缀”列表（如 `169.,172.`）。配置后：若同一资产同时存在“私网 + 非私网”IP，将优先仅展示非私网；若全部为私网，则仍展示私网作为兜底。未配置/为空：不做过滤，保持原展示行为不变。
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
 - `ASSET_LEDGER_WORKER_BATCH_SIZE`：worker 每次领取 run 数量（默认 1）

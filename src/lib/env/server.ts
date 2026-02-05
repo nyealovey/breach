@@ -37,6 +37,10 @@ export const serverEnv = createEnv({
     ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).default('plugins/vcenter/index.ts'),
     ASSET_LEDGER_PVE_PLUGIN_PATH: z.string().min(1).default('plugins/pve/index.ts'),
     ASSET_LEDGER_HYPERV_PLUGIN_PATH: z.string().min(1).default('plugins/hyperv/index.ts'),
+
+    // Assets list display customization (optional).
+    // Comma-separated prefixes treated as "private IPs" (e.g. "169.,172.").
+    ASSET_LEDGER_ASSET_LIST_IP_PRIVATE_PREFIXES: z.string().optional(),
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

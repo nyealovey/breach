@@ -1,9 +1,11 @@
 import { requireUser } from '@/lib/auth/require-user';
 import { parseAssetListQuery, buildAssetListWhere } from '@/lib/assets/asset-list-query';
 import { prisma } from '@/lib/db/prisma';
+import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { buildPagination, parsePagination } from '@/lib/http/pagination';
 import { fail, okPaginated } from '@/lib/http/response';
+import { formatAssetListIpText, parsePrivateIpPrefixes } from '@/lib/ip/asset-list-ip-display';
 import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
 
 function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
@@ -19,18 +21,9 @@ function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
   return leafValue === undefined ? null : leafValue;
 }
 
-function pickPrimaryIp(fields: unknown): string | null {
+function pickPrimaryIp(fields: unknown, privatePrefixes: string[]): string | null {
   const ips = getCanonicalFieldValue(fields, ['network', 'ip_addresses']);
-  if (Array.isArray(ips)) {
-    const cleaned = ips
-      .filter((ip) => typeof ip === 'string')
-      .map((ip) => ip.trim())
-      .filter((ip) => ip.length > 0);
-
-    if (cleaned.length > 0) return Array.from(new Set(cleaned)).join(', ');
-  }
-
-  return null;
+  return formatAssetListIpText(ips, privatePrefixes);
 }
 
 function sumDiskBytes(fields: unknown): number | null {
@@ -125,6 +118,7 @@ export async function GET(request: Request) {
   const { page, pageSize, skip, take } = parsePagination(url.searchParams);
   const query = parseAssetListQuery(url.searchParams);
   const where = buildAssetListWhere(query);
+  const privateIpPrefixes = parsePrivateIpPrefixes(serverEnv.ASSET_LEDGER_ASSET_LIST_IP_PRIVATE_PREFIXES);
 
   try {
     const totalPromise = prisma.asset.count({ where });
@@ -196,7 +190,7 @@ export async function GET(request: Request) {
         os: pickOs(fields, asset.assetType),
         vmPowerState: asset.assetType === 'vm' ? pickVmPowerState(fields) : null,
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
-        ip: pickPrimaryIp(fields),
+        ip: pickPrimaryIp(fields, privateIpPrefixes),
         recordedAt,
         ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
         cpuCount:
