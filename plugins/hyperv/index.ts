@@ -4,6 +4,7 @@ import { HypervAgentClientError, postAgentJson } from './agent-client';
 import { runPowershellJson, runPowershellWithTimeout } from './client';
 import { buildClusterInventory, buildStandaloneInventory } from './inventory';
 import { normalizeKerberosServiceName } from './kerberos-spn';
+import type { NormalizedAsset } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
@@ -51,6 +52,126 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
   await Promise.all(workers);
   return results;
+}
+
+type PowerState = 'poweredOn' | 'poweredOff' | 'suspended';
+
+type WarningIssue = {
+  code: string;
+  category: string;
+  message: string;
+  retryable?: boolean;
+  redacted_context?: Record<string, unknown>;
+};
+
+function createWarningCollector(options?: { sampleLimitPerCode?: number }) {
+  const sampleLimit = clampPositiveInt(options?.sampleLimitPerCode, 10);
+  const buckets = new Map<string, { total: number; samples: WarningIssue[] }>();
+
+  const record = (issue: WarningIssue) => {
+    const key = issue.code.trim();
+    if (!key) return;
+    const bucket = buckets.get(key) ?? { total: 0, samples: [] };
+    bucket.total += 1;
+    if (bucket.samples.length < sampleLimit) bucket.samples.push(issue);
+    buckets.set(key, bucket);
+  };
+
+  const flush = (): WarningIssue[] => {
+    const out: WarningIssue[] = [];
+    for (const [code, bucket] of buckets.entries()) {
+      out.push(...bucket.samples);
+      if (bucket.total > bucket.samples.length) {
+        out.push({
+          code,
+          category: bucket.samples[0]?.category ?? 'unknown',
+          message: 'more occurrences omitted',
+          redacted_context: { occurrences_count: bucket.total, sample_count: bucket.samples.length },
+        });
+      }
+    }
+    out.sort((a, b) => a.code.localeCompare(b.code));
+    return out;
+  };
+
+  return { record, flush };
+}
+
+function mapClusterNodeStateToPowerState(state: unknown): PowerState | undefined {
+  const v = typeof state === 'string' ? state.trim().toLowerCase() : '';
+  if (!v) return undefined;
+  if (v === 'up' || v.includes('up')) return 'poweredOn';
+  if (v === 'down' || v.includes('down')) return 'poweredOff';
+  if (v.includes('paused') || v.includes('pause')) return 'suspended';
+  return undefined;
+}
+
+function computeCollectWarnings(assets: NormalizedAsset[]): WarningIssue[] {
+  const warningsCollector = createWarningCollector({ sampleLimitPerCode: 10 });
+
+  for (const asset of assets) {
+    const n = asset.normalized as any;
+
+    if (asset.external_kind === 'vm') {
+      const power = n?.runtime?.power_state;
+      const ips = n?.network?.ip_addresses;
+      const isOn = typeof power === 'string' && power.trim() === 'poweredOn';
+      const hasIp = Array.isArray(ips) && ips.length > 0;
+
+      if (isOn && !hasIp) {
+        warningsCollector.record({
+          code: 'HYPERV_VM_IP_UNAVAILABLE',
+          category: 'parse',
+          message: 'vm ip_addresses missing (integration services may be unavailable)',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.vm.ip',
+            vm_external_id: asset.external_id,
+            field: 'network.ip_addresses',
+          },
+        });
+      }
+      continue;
+    }
+
+    if (asset.external_kind === 'host') {
+      const mgmt = n?.network?.management_ip;
+      const ips = n?.network?.ip_addresses;
+      const hasIp = Array.isArray(ips) && ips.length > 0;
+      const hasMgmt = typeof mgmt === 'string' && mgmt.trim().length > 0;
+      if (!hasMgmt && !hasIp) {
+        warningsCollector.record({
+          code: 'HYPERV_HOST_IP_UNAVAILABLE',
+          category: 'parse',
+          message: 'host ip_addresses missing; host IP fields may be empty',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.host.ip',
+            host_external_id: asset.external_id,
+            field: 'network.ip_addresses',
+          },
+        });
+      }
+
+      const datastores = n?.storage?.datastores;
+      const hasDatastores = Array.isArray(datastores) && datastores.length > 0;
+      if (!hasDatastores) {
+        warningsCollector.record({
+          code: 'HYPERV_HOST_DATASTORES_MISSING',
+          category: 'parse',
+          message: 'host datastores missing; storage.datastores may be empty',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.host.datastores',
+            host_external_id: asset.external_id,
+            field: 'storage.datastores',
+          },
+        });
+      }
+    }
+  }
+
+  return warningsCollector.flush();
 }
 
 function getConnectionMethod(request: CollectorRequestV1): 'winrm' | 'agent' {
@@ -402,12 +523,13 @@ async function collectAgent(request: CollectorRequestV1): Promise<{ response: Co
       scope === 'cluster' || (raw && typeof raw === 'object' && !Array.isArray(raw) && 'cluster_name' in raw)
         ? buildClusterInventory(raw)
         : buildStandaloneInventory(raw);
+    const warnings = computeCollectWarnings(built.assets);
 
     return {
       response: makeResponse({
         assets: built.assets,
         relations: built.relations,
-        stats: built.stats,
+        stats: { ...built.stats, warnings },
         errors: built.errors,
       }),
       exitCode: built.exitCode,
@@ -421,6 +543,7 @@ type ClusterDiscovery = {
   is_cluster: boolean;
   cluster_name: string | null;
   nodes: string[];
+  node_states: Record<string, string>;
   error: string | null;
 };
 
@@ -433,18 +556,26 @@ $ErrorActionPreference = 'Stop'
 $isCluster = $false
 $clusterName = $null
 $nodes = @()
+$nodeStates = @()
 $err = $null
 try {
   if (Get-Command Get-Cluster -ErrorAction Stop) {
     $c = Get-Cluster -ErrorAction Stop
     $isCluster = $true
     $clusterName = $c.Name
-    try { $nodes = Get-ClusterNode -ErrorAction Stop | ForEach-Object { $_.Name } } catch { $nodes = @() }
+    try {
+      $rows = Get-ClusterNode -ErrorAction Stop
+      $nodes = $rows | ForEach-Object { $_.Name }
+      $nodeStates = $rows | ForEach-Object { [pscustomobject]@{ name = $_.Name; state = $_.State.ToString() } }
+    } catch {
+      $nodes = @()
+      $nodeStates = @()
+    }
   }
 } catch {
   $err = $_.Exception.Message
 }
-[pscustomobject]@{ is_cluster = $isCluster; cluster_name = $clusterName; nodes = $nodes; error = $err } | ConvertTo-Json -Compress -Depth 6
+[pscustomobject]@{ is_cluster = $isCluster; cluster_name = $clusterName; nodes = $nodes; node_states = $nodeStates; error = $err } | ConvertTo-Json -Compress -Depth 6
 `.trim();
 
   const raw = await runPowershellJson<Record<string, unknown>>(opts, script, 'hyperv.cluster.discovery', meta);
@@ -455,6 +586,20 @@ try {
           .filter((v) => v.length > 0)
       : [];
 
+  const node_states: Record<string, string> = {};
+  const nodeStatesRaw =
+    raw && typeof raw === 'object' && 'node_states' in raw && Array.isArray((raw as any).node_states)
+      ? ((raw as any).node_states as unknown[])
+      : [];
+  for (const row of nodeStatesRaw) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const obj = row as Record<string, unknown>;
+    const name = typeof obj.name === 'string' ? obj.name.trim() : '';
+    const state = typeof obj.state === 'string' ? obj.state.trim() : '';
+    if (!name || !state) continue;
+    node_states[name] = state;
+  }
+
   return {
     is_cluster: !!(raw && typeof raw === 'object' && (raw as any).is_cluster === true),
     cluster_name:
@@ -462,6 +607,7 @@ try {
         ? (raw as any).cluster_name
         : null,
     nodes,
+    node_states,
     error: raw && typeof raw === 'object' && typeof (raw as any).error === 'string' ? (raw as any).error : null,
   };
 }
@@ -517,6 +663,14 @@ async function collectStandalone(
   const script = `
 $ErrorActionPreference = 'Stop'
 
+function Format-MacAddress([string]$mac) {
+  if ([string]::IsNullOrWhiteSpace($mac)) { return $null }
+  $m = ([string]$mac).Trim() -replace '[-:]', ''
+  $m = $m.ToLower()
+  if ($m.Length -ne 12) { return $m }
+  return ($m -replace '(.{2})(?=.)','$1:').TrimEnd(':')
+}
+
 $hostName = $env:COMPUTERNAME
 $bios = $null
 try { $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop | Select-Object -First 1 } catch { $bios = $null }
@@ -543,6 +697,61 @@ try {
   if ($seen) { $diskTotalBytes = $sum }
 } catch { $diskTotalBytes = $null }
 
+$hostIps = @()
+$mgmtIp = $null
+try {
+  if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
+    $hostIps = @(
+      Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+        ForEach-Object { $_.IPAddress } |
+        Where-Object { $_ -and $_ -ne '127.0.0.1' -and $_ -ne '0.0.0.0' } |
+        Sort-Object -Unique
+    )
+  }
+} catch { $hostIps = @() }
+
+try {
+  $preferred = @($hostIps | Where-Object { -not $_.StartsWith('169.254.') } | Select-Object -First 1)
+  if ($preferred -and $preferred.Count -gt 0) { $mgmtIp = $preferred[0] }
+  if (-not $mgmtIp -and $hostIps.Count -gt 0) { $mgmtIp = $hostIps[0] }
+} catch { $mgmtIp = $null }
+
+$datastores = @()
+try {
+  $datastores = @(
+    Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction Stop |
+      ForEach-Object {
+        $name = [string]$_.DeviceID
+        if ([string]::IsNullOrWhiteSpace([string]$name)) { return }
+        $cap = $null
+        try { $cap = [int64]$_.Size } catch { $cap = $null }
+        if ($null -eq $cap -or $cap -lt 0) { return }
+        [pscustomobject]@{ name = $name; capacity_bytes = $cap }
+      } | Where-Object { $_ -ne $null }
+  )
+} catch { $datastores = @() }
+
+# Best-effort: Cluster Shared Volumes (CSV) as datastores when available.
+try {
+  if (Get-Command Get-ClusterSharedVolume -ErrorAction SilentlyContinue) {
+    $volumes = $null
+    try { $volumes = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop } catch { $volumes = $null }
+    $csvs = Get-ClusterSharedVolume -ErrorAction Stop
+    foreach ($csv in $csvs) {
+      $path = $null
+      try { $path = [string]$csv.SharedVolumeInfo.FriendlyVolumeName } catch { $path = $null }
+      if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
+      if ($null -eq $volumes) { continue }
+      $vol = $volumes | Where-Object { $_.Name -eq $path -or $_.Name -eq ($path + [string][char]92) } | Select-Object -First 1
+      if (-not $vol) { continue }
+      $cap = $null
+      try { $cap = [int64]$vol.Capacity } catch { $cap = $null }
+      if ($null -eq $cap -or $cap -lt 0) { continue }
+      $datastores += [pscustomobject]@{ name = $path; capacity_bytes = $cap }
+    }
+  }
+} catch { }
+
 $host = [pscustomobject]@{
   hostname = $hostName
   host_uuid = if ($csp) { $csp.UUID } else { $null }
@@ -553,6 +762,10 @@ $host = [pscustomobject]@{
   os_version = if ($os) { $os.Version } else { $null }
   cpu_count = if ($cs) { $cs.NumberOfLogicalProcessors } else { $null }
   memory_bytes = if ($cs) { [int64]$cs.TotalPhysicalMemory } else { $null }
+  ip_addresses = $hostIps
+  management_ip = $mgmtIp
+  power_state = 'poweredOn'
+  datastores = $datastores
   disk_total_bytes = $diskTotalBytes
 }
 
@@ -580,7 +793,7 @@ try {
             $cn = $drive.ControllerNumber
             $cl = $drive.ControllerLocation
             if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
-              $diskName = "$ct $cn:$cl"
+              $diskName = ($ct + ' ' + [string]$cn + ':' + [string]$cl)
             }
           } catch { $diskName = $null }
 
@@ -593,12 +806,44 @@ try {
       }
     } catch { $vmDisks = @() }
 
+    $vmIps = @()
+    $vmMacs = @()
+    try {
+      if (Get-Command Get-VMNetworkAdapter -ErrorAction SilentlyContinue) {
+        $nics = Get-VMNetworkAdapter -VMId $_.VMId -ErrorAction Stop
+        foreach ($nic in $nics) {
+          try {
+            $mac = $null
+            try { $mac = Format-MacAddress $nic.MacAddress } catch { $mac = $null }
+            if ($mac) { $vmMacs += $mac }
+          } catch { }
+
+          try {
+            $ips = $null
+            try { $ips = $nic.IPAddresses } catch { $ips = $null }
+            foreach ($ip in $ips) {
+              if ([string]::IsNullOrWhiteSpace([string]$ip)) { continue }
+              $s = ([string]$ip).Trim()
+              if ($s -match '^[0-9]{1,3}([.][0-9]{1,3}){3}$' -and $s -ne '127.0.0.1' -and $s -ne '0.0.0.0') {
+                $vmIps += $s
+              }
+            }
+          } catch { }
+        }
+      }
+    } catch { $vmIps = @(); $vmMacs = @() }
+
+    $vmIps = @($vmIps | Sort-Object -Unique)
+    $vmMacs = @($vmMacs | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+
     [pscustomobject]@{
       vm_id = [string]$_.VMId
       name = $_.Name
       state = $_.State.ToString()
       cpu_count = $_.ProcessorCount
       memory_bytes = [int64]$_.MemoryStartup
+      ip_addresses = $vmIps
+      mac_addresses = $vmMacs
       disks = $vmDisks
     }
   }
@@ -611,11 +856,12 @@ try {
 
   const payload = await runPowershellJson<unknown>(opts, script, 'hyperv.collect', { runId });
   const built = buildStandaloneInventory(payload);
+  const warnings = computeCollectWarnings(built.assets);
   return {
     response: makeResponse({
       assets: built.assets,
       relations: built.relations,
-      stats: built.stats,
+      stats: { ...built.stats, warnings },
       errors: built.errors,
     }),
     exitCode: built.exitCode,
@@ -663,6 +909,14 @@ async function collectCluster(
   const nodeScript = `
 $ErrorActionPreference = 'Stop'
 
+function Format-MacAddress([string]$mac) {
+  if ([string]::IsNullOrWhiteSpace($mac)) { return $null }
+  $m = ([string]$mac).Trim() -replace '[-:]', ''
+  $m = $m.ToLower()
+  if ($m.Length -ne 12) { return $m }
+  return ($m -replace '(.{2})(?=.)','$1:').TrimEnd(':')
+}
+
 $hostName = $env:COMPUTERNAME
 $bios = $null
 try { $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop | Select-Object -First 1 } catch { $bios = $null }
@@ -689,6 +943,61 @@ try {
   if ($seen) { $diskTotalBytes = $sum }
 } catch { $diskTotalBytes = $null }
 
+$hostIps = @()
+$mgmtIp = $null
+try {
+  if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
+    $hostIps = @(
+      Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+        ForEach-Object { $_.IPAddress } |
+        Where-Object { $_ -and $_ -ne '127.0.0.1' -and $_ -ne '0.0.0.0' } |
+        Sort-Object -Unique
+    )
+  }
+} catch { $hostIps = @() }
+
+try {
+  $preferred = @($hostIps | Where-Object { -not $_.StartsWith('169.254.') } | Select-Object -First 1)
+  if ($preferred -and $preferred.Count -gt 0) { $mgmtIp = $preferred[0] }
+  if (-not $mgmtIp -and $hostIps.Count -gt 0) { $mgmtIp = $hostIps[0] }
+} catch { $mgmtIp = $null }
+
+$datastores = @()
+try {
+  $datastores = @(
+    Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction Stop |
+      ForEach-Object {
+        $name = [string]$_.DeviceID
+        if ([string]::IsNullOrWhiteSpace([string]$name)) { return }
+        $cap = $null
+        try { $cap = [int64]$_.Size } catch { $cap = $null }
+        if ($null -eq $cap -or $cap -lt 0) { return }
+        [pscustomobject]@{ name = $name; capacity_bytes = $cap }
+      } | Where-Object { $_ -ne $null }
+  )
+} catch { $datastores = @() }
+
+# Best-effort: Cluster Shared Volumes (CSV) as datastores when available.
+try {
+  if (Get-Command Get-ClusterSharedVolume -ErrorAction SilentlyContinue) {
+    $volumes = $null
+    try { $volumes = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop } catch { $volumes = $null }
+    $csvs = Get-ClusterSharedVolume -ErrorAction Stop
+    foreach ($csv in $csvs) {
+      $path = $null
+      try { $path = [string]$csv.SharedVolumeInfo.FriendlyVolumeName } catch { $path = $null }
+      if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
+      if ($null -eq $volumes) { continue }
+      $vol = $volumes | Where-Object { $_.Name -eq $path -or $_.Name -eq ($path + [string][char]92) } | Select-Object -First 1
+      if (-not $vol) { continue }
+      $cap = $null
+      try { $cap = [int64]$vol.Capacity } catch { $cap = $null }
+      if ($null -eq $cap -or $cap -lt 0) { continue }
+      $datastores += [pscustomobject]@{ name = $path; capacity_bytes = $cap }
+    }
+  }
+} catch { }
+
 $host = [pscustomobject]@{
   hostname = $hostName
   host_uuid = if ($csp) { $csp.UUID } else { $null }
@@ -699,6 +1008,9 @@ $host = [pscustomobject]@{
   os_version = if ($os) { $os.Version } else { $null }
   cpu_count = if ($cs) { $cs.NumberOfLogicalProcessors } else { $null }
   memory_bytes = if ($cs) { [int64]$cs.TotalPhysicalMemory } else { $null }
+  ip_addresses = $hostIps
+  management_ip = $mgmtIp
+  datastores = $datastores
   disk_total_bytes = $diskTotalBytes
 }
 
@@ -725,7 +1037,7 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
           $cn = $drive.ControllerNumber
           $cl = $drive.ControllerLocation
           if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
-            $diskName = "$ct $cn:$cl"
+            $diskName = ($ct + ' ' + [string]$cn + ':' + [string]$cl)
           }
         } catch { $diskName = $null }
 
@@ -738,12 +1050,44 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
     }
   } catch { $vmDisks = @() }
 
+  $vmIps = @()
+  $vmMacs = @()
+  try {
+    if (Get-Command Get-VMNetworkAdapter -ErrorAction SilentlyContinue) {
+      $nics = Get-VMNetworkAdapter -VMId $_.VMId -ErrorAction Stop
+      foreach ($nic in $nics) {
+        try {
+          $mac = $null
+          try { $mac = Format-MacAddress $nic.MacAddress } catch { $mac = $null }
+          if ($mac) { $vmMacs += $mac }
+        } catch { }
+
+        try {
+          $ips = $null
+          try { $ips = $nic.IPAddresses } catch { $ips = $null }
+          foreach ($ip in $ips) {
+            if ([string]::IsNullOrWhiteSpace([string]$ip)) { continue }
+            $s = ([string]$ip).Trim()
+            if ($s -match '^[0-9]{1,3}([.][0-9]{1,3}){3}$' -and $s -ne '127.0.0.1' -and $s -ne '0.0.0.0') {
+              $vmIps += $s
+            }
+          }
+        } catch { }
+      }
+    }
+  } catch { $vmIps = @(); $vmMacs = @() }
+
+  $vmIps = @($vmIps | Sort-Object -Unique)
+  $vmMacs = @($vmMacs | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+
   [pscustomobject]@{
     vm_id = [string]$_.VMId
     name = $_.Name
     state = $_.State.ToString()
     cpu_count = $_.ProcessorCount
     memory_bytes = [int64]$_.MemoryStartup
+    ip_addresses = $vmIps
+    mac_addresses = $vmMacs
     disks = $vmDisks
   }
 }
@@ -788,17 +1132,25 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
     return { response: makeResponse({ errors: [toHypervError(err, 'collect.cluster')] }), exitCode: 1 };
   }
 
+  const nodesWithPower = nodeResults.map((r) => {
+    const hostName = typeof r.host?.hostname === 'string' ? r.host.hostname.trim() : '';
+    const state = discovery.node_states[r.node] ?? (hostName ? discovery.node_states[hostName] : undefined);
+    const power_state = mapClusterNodeStateToPowerState(state) ?? 'poweredOn';
+    return { ...r, host: { ...(r.host ?? {}), power_state } };
+  });
+
   const built = buildClusterInventory({
     scope: 'cluster',
     cluster_name: discovery.cluster_name,
-    nodes: nodeResults,
+    nodes: nodesWithPower,
     owner_rows: ownerRows,
   });
+  const warnings = computeCollectWarnings(built.assets);
   return {
     response: makeResponse({
       assets: built.assets,
       relations: built.relations,
-      stats: built.stats,
+      stats: { ...built.stats, warnings },
       errors: built.errors,
     }),
     exitCode: built.exitCode,

@@ -51,12 +51,37 @@ function toFiniteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
 function mapPowerState(state?: string): 'poweredOn' | 'poweredOff' | 'suspended' | undefined {
   const v = (state ?? '').trim().toLowerCase();
   if (!v) return undefined;
   if (v.includes('running')) return 'poweredOn';
   if (v.includes('off')) return 'poweredOff';
   if (v.includes('paused') || v.includes('saved') || v.includes('suspended')) return 'suspended';
+  return undefined;
+}
+
+function mapHostPowerState(state?: string | null): 'poweredOn' | 'poweredOff' | 'suspended' | undefined {
+  const v = (state ?? '').trim();
+  if (!v) return undefined;
+  if (v === 'poweredOn' || v === 'poweredOff' || v === 'suspended') return v;
+
+  const lower = v.toLowerCase();
+  if (lower === 'up' || lower.includes('up')) return 'poweredOn';
+  if (lower === 'down' || lower.includes('down')) return 'poweredOff';
+  if (lower.includes('paused') || lower.includes('pause')) return 'suspended';
   return undefined;
 }
 
@@ -70,11 +95,41 @@ export function normalizeHost(raw: {
   os_version?: string | null;
   cpu_count?: number | null;
   memory_bytes?: number | null;
+  ip_addresses?: string[] | null;
   management_ip?: string | null;
+  power_state?: string | null;
+  datastores?: Array<{ name?: string | null; capacity_bytes?: number | null }> | null;
   disk_total_bytes?: number | null;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.cpu_count ?? undefined);
   const memoryBytes = toFiniteNumber(raw.memory_bytes ?? undefined);
+
+  const ipAddresses = Array.isArray(raw.ip_addresses) ? uniqueStrings(raw.ip_addresses) : [];
+  const mgmtIpRaw = typeof raw.management_ip === 'string' ? raw.management_ip.trim() : '';
+  const mgmtIp = mgmtIpRaw.length > 0 ? mgmtIpRaw : null;
+
+  const datastores = Array.isArray(raw.datastores)
+    ? raw.datastores
+        .map((ds) => {
+          if (!ds || typeof ds !== 'object') return null;
+          const name = typeof ds.name === 'string' ? ds.name.trim() : '';
+          const capRaw = (ds as Record<string, unknown>).capacity_bytes;
+          const capacity =
+            typeof capRaw === 'number' && Number.isFinite(capRaw) && capRaw >= 0 ? Math.trunc(capRaw) : undefined;
+          if (!name || capacity === undefined) return null;
+          return { name, capacity_bytes: capacity };
+        })
+        .filter((ds): ds is NonNullable<typeof ds> => !!ds)
+    : [];
+  const datastoreTotalBytes = datastores.reduce((acc, ds) => acc + ds.capacity_bytes, 0);
+
+  const powerState = mapHostPowerState(raw.power_state);
+
+  const attributes: Record<string, string | number | boolean | null> = {};
+  if (typeof raw.disk_total_bytes === 'number' && Number.isFinite(raw.disk_total_bytes))
+    attributes.disk_total_bytes = raw.disk_total_bytes;
+  if (datastores.length > 0) attributes.datastore_total_bytes = datastoreTotalBytes;
+  const hasAttributes = Object.keys(attributes).length > 0;
 
   return {
     external_kind: 'host',
@@ -99,10 +154,17 @@ export function normalizeHost(raw: {
       ...(cpuCount !== undefined || memoryBytes !== undefined
         ? { hardware: { cpu_count: cpuCount, memory_bytes: memoryBytes } }
         : {}),
-      ...(raw.management_ip ? { network: { management_ip: raw.management_ip } } : {}),
-      ...(typeof raw.disk_total_bytes === 'number' && Number.isFinite(raw.disk_total_bytes)
-        ? { attributes: { disk_total_bytes: raw.disk_total_bytes } }
+      ...(ipAddresses.length > 0 || mgmtIp
+        ? {
+            network: {
+              ...(ipAddresses.length > 0 ? { ip_addresses: ipAddresses } : {}),
+              ...(mgmtIp ? { management_ip: mgmtIp } : {}),
+            },
+          }
         : {}),
+      ...(powerState ? { runtime: { power_state: powerState } } : {}),
+      ...(datastores.length > 0 ? { storage: { datastores } } : {}),
+      ...(hasAttributes ? { attributes } : {}),
     },
     raw_payload: raw,
   };
@@ -124,12 +186,8 @@ export function normalizeVm(raw: {
   const memoryBytes = toFiniteNumber(raw.memory_bytes ?? undefined);
   const powerState = mapPowerState(raw.state ?? undefined);
 
-  const ipAddresses = Array.isArray(raw.ip_addresses)
-    ? raw.ip_addresses.map((v) => (typeof v === 'string' ? v.trim() : '')).filter((v) => v.length > 0)
-    : [];
-  const macAddresses = Array.isArray(raw.mac_addresses)
-    ? raw.mac_addresses.map((v) => (typeof v === 'string' ? v.trim() : '')).filter((v) => v.length > 0)
-    : [];
+  const ipAddresses = Array.isArray(raw.ip_addresses) ? uniqueStrings(raw.ip_addresses) : [];
+  const macAddresses = Array.isArray(raw.mac_addresses) ? uniqueStrings(raw.mac_addresses) : [];
 
   const disks = Array.isArray(raw.disks)
     ? raw.disks

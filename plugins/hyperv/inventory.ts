@@ -13,16 +13,6 @@ function nonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function inventoryRelationsEmptyError(meta: { assets: number; vms: number }): CollectorError {
-  return {
-    code: 'INVENTORY_RELATIONS_EMPTY',
-    category: 'parse',
-    message: 'relations is empty',
-    retryable: false,
-    redacted_context: { mode: 'collect', assets: meta.assets, vms: meta.vms },
-  };
-}
-
 function invalidPayloadError(cause: string): CollectorError {
   return {
     code: 'HYPERV_PARSE_ERROR',
@@ -84,17 +74,6 @@ export function buildStandaloneInventory(payload: unknown): {
       raw_payload: { type: 'hosts_vm', vm_external_id: vm.external_id, host_external_id: hostAsset.external_id },
     },
   ]);
-
-  if (relations.length === 0) {
-    const errors = [inventoryRelationsEmptyError({ assets: assets.length, vms: vmAssets.length })];
-    return {
-      assets,
-      relations,
-      stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
-      errors,
-      exitCode: 1,
-    };
-  }
 
   return {
     assets,
@@ -239,17 +218,6 @@ export function buildClusterInventory(payload: unknown): {
 
   const assets = [clusterAsset, ...hostAssets, ...vmAssets];
   const relations = [...memberOfRelations, ...runsOnRelations, ...hostsVmRelations];
-
-  if (relations.length === 0) {
-    const errors = [inventoryRelationsEmptyError({ assets: assets.length, vms: vmAssets.length })];
-    return {
-      assets,
-      relations,
-      stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
-      errors,
-      exitCode: 1,
-    };
-  }
 
   return {
     assets,

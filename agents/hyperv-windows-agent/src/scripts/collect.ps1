@@ -30,6 +30,15 @@ function Try-GetCluster([string]$Name) {
   return $null
 }
 
+function Map-ClusterNodePowerState([string]$State) {
+  if ([string]::IsNullOrWhiteSpace([string]$State)) { return $null }
+  $s = ([string]$State).Trim().ToLower()
+  if ($s -eq 'up') { return 'poweredOn' }
+  if ($s -eq 'down') { return 'poweredOff' }
+  if ($s -eq 'paused') { return 'suspended' }
+  return $null
+}
+
 $resolvedScope = $Scope
 $cluster = $null
 $clusterName = $null
@@ -48,6 +57,14 @@ if ($resolvedScope -eq 'auto' -or $resolvedScope -eq 'cluster') {
 
 $sbInventory = {
   $ErrorActionPreference = 'Stop'
+
+  function Format-MacAddress([string]$mac) {
+    if ([string]::IsNullOrWhiteSpace($mac)) { return $null }
+    $m = ([string]$mac).Trim() -replace '[-:]', ''
+    $m = $m.ToLower()
+    if ($m.Length -ne 12) { return $m }
+    return ($m -replace '(.{2})(?=.)','$1:').TrimEnd(':')
+  }
 
   $hostName = $env:COMPUTERNAME
   $bios = $null
@@ -75,6 +92,61 @@ $sbInventory = {
     if ($seen) { $diskTotalBytes = $sum }
   } catch { $diskTotalBytes = $null }
 
+  $hostIps = @()
+  $mgmtIp = $null
+  try {
+    if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
+      $hostIps = @(
+        Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+          ForEach-Object { $_.IPAddress } |
+          Where-Object { $_ -and $_ -ne '127.0.0.1' -and $_ -ne '0.0.0.0' } |
+          Sort-Object -Unique
+      )
+    }
+  } catch { $hostIps = @() }
+
+  try {
+    $preferred = @($hostIps | Where-Object { -not $_.StartsWith('169.254.') } | Select-Object -First 1)
+    if ($preferred -and $preferred.Count -gt 0) { $mgmtIp = $preferred[0] }
+    if (-not $mgmtIp -and $hostIps.Count -gt 0) { $mgmtIp = $hostIps[0] }
+  } catch { $mgmtIp = $null }
+
+  $datastores = @()
+  try {
+    $datastores = @(
+      Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction Stop |
+        ForEach-Object {
+          $name = [string]$_.DeviceID
+          if ([string]::IsNullOrWhiteSpace([string]$name)) { return }
+          $cap = $null
+          try { $cap = [int64]$_.Size } catch { $cap = $null }
+          if ($null -eq $cap -or $cap -lt 0) { return }
+          [pscustomobject]@{ name = $name; capacity_bytes = $cap }
+        } | Where-Object { $_ -ne $null }
+    )
+  } catch { $datastores = @() }
+
+  # Best-effort: Cluster Shared Volumes (CSV) as datastores when available.
+  try {
+    if (Get-Command Get-ClusterSharedVolume -ErrorAction SilentlyContinue) {
+      $volumes = $null
+      try { $volumes = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop } catch { $volumes = $null }
+      $csvs = Get-ClusterSharedVolume -ErrorAction Stop
+      foreach ($csv in $csvs) {
+        $path = $null
+        try { $path = [string]$csv.SharedVolumeInfo.FriendlyVolumeName } catch { $path = $null }
+        if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
+        if ($null -eq $volumes) { continue }
+        $vol = $volumes | Where-Object { $_.Name -eq $path -or $_.Name -eq ($path + '\') } | Select-Object -First 1
+        if (-not $vol) { continue }
+        $cap = $null
+        try { $cap = [int64]$vol.Capacity } catch { $cap = $null }
+        if ($null -eq $cap -or $cap -lt 0) { continue }
+        $datastores += [pscustomobject]@{ name = $path; capacity_bytes = $cap }
+      }
+    }
+  } catch { }
+
   # $Host is a built-in read-only variable in PowerShell, so don't overwrite it.
   $hostInfo = [pscustomobject]@{
     hostname = $hostName
@@ -86,6 +158,10 @@ $sbInventory = {
     os_version = if ($os) { $os.Version } else { $null }
     cpu_count = if ($cs) { $cs.NumberOfLogicalProcessors } else { $null }
     memory_bytes = if ($cs) { [int64]$cs.TotalPhysicalMemory } else { $null }
+    ip_addresses = $hostIps
+    management_ip = $mgmtIp
+    power_state = 'poweredOn'
+    datastores = $datastores
     disk_total_bytes = $diskTotalBytes
   }
 
@@ -127,12 +203,44 @@ $sbInventory = {
         }
       } catch { $vmDisks = @() }
 
+      $vmIps = @()
+      $vmMacs = @()
+      try {
+        if (Get-Command Get-VMNetworkAdapter -ErrorAction SilentlyContinue) {
+          $nics = Get-VMNetworkAdapter -VMId $_.VMId -ErrorAction Stop
+          foreach ($nic in $nics) {
+            try {
+              $mac = $null
+              try { $mac = Format-MacAddress $nic.MacAddress } catch { $mac = $null }
+              if ($mac) { $vmMacs += $mac }
+            } catch { }
+
+            try {
+              $ips = $null
+              try { $ips = $nic.IPAddresses } catch { $ips = $null }
+              foreach ($ip in $ips) {
+                if ([string]::IsNullOrWhiteSpace([string]$ip)) { continue }
+                $s = ([string]$ip).Trim()
+                if ($s -match '^[0-9]{1,3}([.][0-9]{1,3}){3}$' -and $s -ne '127.0.0.1' -and $s -ne '0.0.0.0') {
+                  $vmIps += $s
+                }
+              }
+            } catch { }
+          }
+        }
+      } catch { $vmIps = @(); $vmMacs = @() }
+
+      $vmIps = @($vmIps | Sort-Object -Unique)
+      $vmMacs = @($vmMacs | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+
       [pscustomobject]@{
         vm_id = [string]$_.VMId
         name = $_.Name
         state = $_.State.ToString()
         cpu_count = $_.ProcessorCount
         memory_bytes = [int64]$_.MemoryStartup
+        ip_addresses = $vmIps
+        mac_addresses = $vmMacs
         disks = $vmDisks
       }
     }
@@ -148,9 +256,11 @@ if ($resolvedScope -eq 'cluster') {
     $clusterName = $cluster.Name
   }
 
-  $nodes = @(
-    Get-ClusterNode -Cluster $cluster -ErrorAction Stop | ForEach-Object { $_.Name }
+  $nodeRows = @(
+    Get-ClusterNode -Cluster $cluster -ErrorAction Stop
   )
+  $nodes = @($nodeRows | ForEach-Object { $_.Name })
+  $nodeStates = @($nodeRows | ForEach-Object { [pscustomobject]@{ name = $_.Name; state = $_.State.ToString() } })
   if (-not $nodes -or $nodes.Count -eq 0) {
     throw 'cluster has no nodes'
   }
@@ -182,6 +292,27 @@ if ($resolvedScope -eq 'cluster') {
   $nodeResults = @(
     Invoke-Command -ComputerName $nodes -ScriptBlock $sbInventory -ThrottleLimit $throttle -ErrorAction Stop
   )
+
+  # Best-effort: enrich host.power_state from Get-ClusterNode state.
+  try {
+    $powerByNode = @{}
+    foreach ($row in $nodeStates) {
+      $n = if ($row -and $row.name) { [string]$row.name } else { $null }
+      $st = if ($row -and $row.state) { [string]$row.state } else { $null }
+      if ([string]::IsNullOrWhiteSpace([string]$n)) { continue }
+      $p = Map-ClusterNodePowerState $st
+      if ($p) { $powerByNode[$n] = $p }
+    }
+
+    foreach ($nr in $nodeResults) {
+      if ($null -eq $nr -or $null -eq $nr.host) { continue }
+      $n = if ($nr.node) { [string]$nr.node } else { $null }
+      if ([string]::IsNullOrWhiteSpace([string]$n)) { continue }
+      if ($powerByNode.ContainsKey($n)) {
+        $nr.host.power_state = $powerByNode[$n]
+      }
+    }
+  } catch { }
 
   [pscustomobject]@{
     scope = 'cluster'

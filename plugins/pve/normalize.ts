@@ -51,6 +51,19 @@ function toFiniteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
 function mapPowerState(status?: string): 'poweredOn' | 'poweredOff' | 'suspended' | undefined {
   const v = (status ?? '').trim().toLowerCase();
   if (!v) return undefined;
@@ -130,15 +143,22 @@ export function normalizeVm(raw: {
   vmid: number;
   name?: string;
   status?: string;
+  hostname?: string;
   maxmem?: number;
   maxcpu?: number;
   cpus?: number;
   type: 'qemu' | 'lxc';
   ip_addresses?: string[];
+  mac_addresses?: string[];
   disks?: Array<{ name?: string; size_bytes?: number }>;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.maxcpu) ?? toFiniteNumber(raw.cpus);
   const memoryBytes = toFiniteNumber(raw.maxmem);
+  const powerState = mapPowerState(raw.status);
+
+  const ipAddresses = raw.ip_addresses ? uniqueStrings(raw.ip_addresses) : [];
+  const macAddresses = raw.mac_addresses ? uniqueStrings(raw.mac_addresses) : [];
+  const disks = Array.isArray(raw.disks) ? raw.disks : [];
 
   return {
     external_kind: 'vm',
@@ -148,19 +168,29 @@ export function normalizeVm(raw: {
       kind: 'vm',
       identity: {
         cloud_native_id: String(raw.vmid),
+        ...(raw.hostname ? { hostname: raw.hostname } : {}),
         ...(raw.name ? { caption: raw.name } : {}),
       },
-      ...(raw.ip_addresses && raw.ip_addresses.length > 0 ? { network: { ip_addresses: raw.ip_addresses } } : {}),
-      ...(cpuCount !== undefined || memoryBytes !== undefined
+      ...(ipAddresses.length > 0 || macAddresses.length > 0
         ? {
-            hardware: {
-              cpu_count: cpuCount,
-              memory_bytes: memoryBytes,
-              ...(raw.disks && raw.disks.length > 0 ? { disks: raw.disks } : {}),
+            network: {
+              ...(ipAddresses.length > 0 ? { ip_addresses: ipAddresses } : {}),
+              ...(macAddresses.length > 0 ? { mac_addresses: macAddresses } : {}),
             },
           }
         : {}),
-      runtime: { power_state: mapPowerState(raw.status) },
+      ...(cpuCount !== undefined || memoryBytes !== undefined
+        ? {
+            hardware: {
+              ...(cpuCount !== undefined ? { cpu_count: cpuCount } : {}),
+              ...(memoryBytes !== undefined ? { memory_bytes: memoryBytes } : {}),
+              ...(disks.length > 0 ? { disks } : {}),
+            },
+          }
+        : disks.length > 0
+          ? { hardware: { disks } }
+          : {}),
+      ...(powerState ? { runtime: { power_state: powerState } } : {}),
     },
     raw_payload: raw,
   };

@@ -189,8 +189,10 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_VCENTER_DEBUG`：vCenter 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/vcenter-soap-debug-YYYY-MM-DD.log` / `logs/vcenter-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。
 - `ASSET_LEDGER_HYPERV_DEBUG`：Hyper-V 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录 Kerberos 解析与 kinit（`resolved_host/resolved_addresses/realm/principal`）、以及每次 WinRM 请求的 HTTP status、Kerberos `service_name`（SPN service class）、部分响应 header 摘要（如 `server/content_type/content_length`）、以及 401 时的 `WWW-Authenticate` challenge 列表（仅记录 scheme，不记录 token）。
   - Kerberos SPN 默认使用 `WSMAN`（strict：仅尝试一次）。如环境只注册 `HTTP/<host>` 或需兼容多 SPN，可在 Hyper-V Source config 设置 `kerberos_service_name / kerberos_spn_fallback / kerberos_hostname_override`（详见 runbook）。
+  - 字段说明（Hyper-V）：Host（node）会采集 `network.ip_addresses / network.management_ip / storage.datastores / runtime.power_state` 等；VM 会采集 `hardware.disks / runtime.power_state / network.mac_addresses`，以及（best-effort）`network.ip_addresses`。
+  - VM IP 依赖来宾集成服务：仅当来宾系统可上报网络信息时（Windows Integration Services / Linux Hyper-V 集成组件），`Get-VMNetworkAdapter` 才能返回 `IPAddresses`；否则会保留空 IP 并在 Run warnings 中输出 `HYPERV_VM_IP_UNAVAILABLE`（不影响 inventory complete）。
 - `ASSET_LEDGER_PVE_DEBUG`：PVE 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/pve-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录每次 PVE API 请求的 HTTP status/URL/耗时，以及网络/TLS/解析错误；不会记录密码、`api_token_secret` 或登录 ticket。
-  - 字段说明（PVE）：Host（node）会采集 `network.ip_addresses / network.management_ip / storage.datastores / runtime.power_state` 等；VM 会采集 `hardware.disks / runtime.power_state`，以及（best-effort）`network.ip_addresses`。
+  - 字段说明（PVE）：Host（node）会采集 `network.ip_addresses / network.management_ip / storage.datastores / runtime.power_state` 等；VM 会采集 `hardware.disks / runtime.power_state / network.mac_addresses`，以及（best-effort）`network.ip_addresses`。
   - VM IP 依赖 QEMU Guest Agent：仅对 **running 的 QEMU VM** 调用 guest agent 接口；若 guest agent 未安装/未启用/未运行，会保留空 IP 并在 Run warnings 中输出 `PVE_GUEST_AGENT_UNAVAILABLE`（不影响 inventory complete）。
 - `ASSET_LEDGER_ADMIN_PASSWORD`：用于 bootstrap 默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取（例如首次登录时）；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。

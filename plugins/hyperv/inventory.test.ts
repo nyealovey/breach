@@ -23,6 +23,38 @@ describe('hyperv inventory', () => {
     expect(res.relations.length).toBeGreaterThan(0);
   });
 
+  it('normalizes host network + power_state + datastores when provided', () => {
+    const res = buildStandaloneInventory({
+      host: {
+        hostname: 'NODE1',
+        host_uuid: 'h-1',
+        ip_addresses: ['192.0.2.10', '192.0.2.10', '169.254.1.1'],
+        management_ip: '192.0.2.10',
+        power_state: 'poweredOn',
+        datastores: [
+          { name: 'C:', capacity_bytes: 1000 },
+          { name: 'D:', capacity_bytes: 2000 },
+        ],
+        disk_total_bytes: 5000,
+      },
+      vms: [{ vm_id: 'vm-1', name: 'VM1', state: 'Running' }],
+    });
+
+    const host = res.assets.find((a) => a.external_kind === 'host');
+    expect(host).toBeTruthy();
+    expect((host as any).normalized).toMatchObject({
+      network: { ip_addresses: ['192.0.2.10', '169.254.1.1'], management_ip: '192.0.2.10' },
+      runtime: { power_state: 'poweredOn' },
+      storage: {
+        datastores: [
+          { name: 'C:', capacity_bytes: 1000 },
+          { name: 'D:', capacity_bytes: 2000 },
+        ],
+      },
+      attributes: { disk_total_bytes: 5000, datastore_total_bytes: 3000 },
+    });
+  });
+
   it('includes vm hardware.disks when provided', () => {
     const res = buildStandaloneInventory({
       host: { hostname: 'NODE1', host_uuid: 'h-1' },
@@ -35,11 +67,33 @@ describe('hyperv inventory', () => {
     expect(normalized.hardware.disks).toEqual([{ name: 'SCSI 0:0', size_bytes: 100 }]);
   });
 
-  it('standalone without vms fails with INVENTORY_RELATIONS_EMPTY', () => {
+  it('dedupes vm network ip/mac addresses', () => {
+    const res = buildStandaloneInventory({
+      host: { hostname: 'NODE1', host_uuid: 'h-1' },
+      vms: [
+        {
+          vm_id: 'vm-1',
+          name: 'VM1',
+          state: 'Running',
+          ip_addresses: ['192.0.2.11', '192.0.2.11'],
+          mac_addresses: ['00:15:5d:12:34:56', '00:15:5d:12:34:56'],
+        },
+      ],
+    });
+
+    const vm = res.assets.find((a) => a.external_kind === 'vm');
+    expect(vm).toBeTruthy();
+    expect((vm as any).normalized).toMatchObject({
+      network: { ip_addresses: ['192.0.2.11'], mac_addresses: ['00:15:5d:12:34:56'] },
+    });
+  });
+
+  it('standalone without vms still marks inventory_complete=true (host-only inventory)', () => {
     const res = buildStandaloneInventory({ host: { hostname: 'NODE1', host_uuid: 'h-1' }, vms: [] });
-    expect(res.exitCode).toBe(1);
-    expect(res.errors[0]?.code).toBe('INVENTORY_RELATIONS_EMPTY');
-    expect(res.stats.inventory_complete).toBe(false);
+    expect(res.exitCode).toBe(0);
+    expect(res.errors).toEqual([]);
+    expect(res.stats.inventory_complete).toBe(true);
+    expect(res.relations).toEqual([]);
   });
 
   it('cluster success produces member_of relations', () => {

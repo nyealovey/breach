@@ -160,6 +160,49 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       },
     ],
   },
+  HYPERV_VM_IP_UNAVAILABLE: {
+    title: 'VM IP 未采集（Hyper-V）',
+    actions: [
+      {
+        title: '启用/修复来宾集成服务（用于采集 VM IP）',
+        steps: [
+          '确认 VM 处于 Running（poweredOn）状态',
+          '在 VM 内确保集成服务/驱动可用（Windows 建议检查 Integration Services；Linux 建议检查 Hyper-V 集成组件）',
+          '确认网络适配器已连接且 VM 内实际拿到 IPv4 地址',
+          '修复后重新触发 collect（缺 IP 的 VM 将保留空 IP，但不影响 inventory complete）',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
+  HYPERV_HOST_IP_UNAVAILABLE: {
+    title: 'Host IP 未采集（Hyper-V）',
+    actions: [
+      {
+        title: '检查主机网络信息读取能力',
+        steps: [
+          '确认目标节点可执行 Get-NetIPAddress（AddressFamily=IPv4）并返回管理口 IP',
+          '确认采集账号具备读取网络配置的权限（WinRM/Agent 模式均需）',
+          '修复后重新触发 collect',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
+  HYPERV_HOST_DATASTORES_MISSING: {
+    title: 'Host 存储明细缺失（Hyper-V）',
+    actions: [
+      {
+        title: '检查卷/CSV 枚举能力',
+        steps: [
+          '确认目标节点可读取 Win32_LogicalDisk（本地卷容量）',
+          '群集场景确认可读取 Get-ClusterSharedVolume + Win32_Volume（CSV 容量，best-effort）',
+          '修复后重新触发 collect（缺明细不影响 inventory complete，但会影响对齐展示）',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
   HYPERV_NETWORK_ERROR: {
     title: '网络错误（Hyper-V）',
     actions: [{ title: '检查 WinRM 连通性', steps: ['确认 5985/5986 可达', '确认 WinRM 已启用且允许远程'] }],

@@ -153,6 +153,7 @@ describe('pve plugin integration (mock PVE API)', () => {
             name: 'vm-100',
             scsi0: 'local-lvm:vm-100-disk-0,discard=on,size=32G',
             ide2: 'local-lvm:cloudinit,media=cdrom',
+            net0: 'virtio=02:00:00:00:00:01,bridge=vmbr0',
           },
         }),
       );
@@ -334,7 +335,7 @@ describe('pve plugin integration (mock PVE API)', () => {
         disks: [{ name: 'scsi0', size_bytes: 34359738368 }],
       },
       runtime: { power_state: 'poweredOn' },
-      network: { ip_addresses: ['192.0.2.11'] },
+      network: { ip_addresses: ['192.0.2.11'], mac_addresses: ['02:00:00:00:00:01'] },
     });
 
     expect(parsed.relations).toEqual(

@@ -255,6 +255,81 @@ function parseVmDisksFromConfig(input: {
   return out;
 }
 
+function normalizeMacAddress(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+
+  // Common formats:
+  // - aa:bb:cc:dd:ee:ff
+  // - aa-bb-cc-dd-ee-ff
+  // - aabbccddeeff
+  const hexOnly = lower.replace(/[^0-9a-f]/g, '');
+  if (hexOnly.length === 12 && /^[0-9a-f]{12}$/.test(hexOnly)) {
+    return hexOnly.match(/.{2}/g)!.join(':');
+  }
+
+  const normalized = lower.replace(/-/g, ':');
+  if (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/.test(normalized)) return normalized;
+
+  return null;
+}
+
+function parseVmMacsFromConfig(input: { type: 'qemu' | 'lxc'; config: unknown }): string[] {
+  if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) return [];
+  const cfg = input.config as Record<string, unknown>;
+
+  const out: string[] = [];
+  for (const [key, rawValue] of Object.entries(cfg)) {
+    if (!/^net\d+$/.test(key)) continue;
+    if (typeof rawValue !== 'string') continue;
+
+    // Typical formats:
+    // - qemu: net0 = "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,..."
+    // - lxc:  net0 = "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:DD:EE:FF,..."
+    const tokens = rawValue.split(',').map((t) => t.trim());
+    for (const t of tokens) {
+      const idx = t.indexOf('=');
+      if (idx < 0) continue;
+      const k = t.slice(0, idx).trim().toLowerCase();
+      const v = t.slice(idx + 1).trim();
+
+      // Filter known non-MAC keys to avoid accidental matches.
+      if (
+        k === 'bridge' ||
+        k === 'tag' ||
+        k === 'trunks' ||
+        k === 'firewall' ||
+        k === 'rate' ||
+        k === 'mtu' ||
+        k === 'queues' ||
+        k === 'link_down' ||
+        k === 'name' ||
+        k === 'type' ||
+        k === 'gw' ||
+        k === 'gw6' ||
+        k === 'ip' ||
+        k === 'ip6'
+      ) {
+        continue;
+      }
+
+      const mac = normalizeMacAddress(v);
+      if (mac) out.push(mac);
+    }
+  }
+
+  return uniqueStrings(out);
+}
+
+function extractVmHostnameFromConfig(input: { type: 'qemu' | 'lxc'; config: unknown }): string | undefined {
+  if (input.type !== 'lxc') return undefined;
+  if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) return undefined;
+  const cfg = input.config as Record<string, unknown>;
+  const raw = typeof cfg.hostname === 'string' ? cfg.hostname.trim() : '';
+  return raw.length > 0 ? raw : undefined;
+}
+
 function extractVmIpFromGuestAgent(payload: unknown): string[] {
   if (!Array.isArray(payload)) return [];
   const ips: string[] = [];
@@ -724,8 +799,10 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       });
 
       const disks = parseVmDisksFromConfig({ type: vm.type, config });
+      const mac_addresses = parseVmMacsFromConfig({ type: vm.type, config });
+      const hostname = extractVmHostnameFromConfig({ type: vm.type, config });
 
-      return { ...vm, disks };
+      return { ...vm, disks, mac_addresses, hostname };
     });
 
     const runningQemuVms = vmWithDetails.filter(
