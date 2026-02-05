@@ -168,7 +168,7 @@ List of websites that started off with Next.js TypeScript Starter:
   - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
   - 分页：每页条数选择在列表底部左侧
-  - 详情：左右等宽两列；左侧为盘点摘要/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
+  - 详情：左右等宽两列；左侧为盘点摘要（机器名/虚拟机名/操作系统/IP/CPU/内存/总分配磁盘/电源/Tools 等）/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
 - `/exports`：导出台账 CSV 任务列表与下载（admin-only；创建入口在 `/assets`；下载即失效）
 - `/schedule-groups`：调度组配置（admin-only）
 - `/sources`：来源配置（admin-only；清单展示绑定的凭据）
@@ -196,6 +196,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_PVE_DEBUG`：PVE 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/pve-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录每次 PVE API 请求的 HTTP status/URL/耗时，以及网络/TLS/解析错误；不会记录密码、`api_token_secret` 或登录 ticket。
   - 字段说明（PVE）：Host（node）会采集 `network.ip_addresses / network.management_ip / storage.datastores / runtime.power_state` 等；VM 会采集 `hardware.disks / runtime.power_state / network.mac_addresses`，以及（best-effort）`network.ip_addresses`。
   - VM IP 依赖 QEMU Guest Agent：仅对 **running 的 QEMU VM** 调用 guest agent 接口；若 guest agent 未安装/未启用/未运行，会保留空 IP 并在 Run warnings 中输出 `PVE_GUEST_AGENT_UNAVAILABLE`（不影响 inventory complete）。
+  - VM 机器名/OS/Tools（best-effort）：若 guest agent 可用，会尝试采集 `identity.hostname`（guest hostname）、`os.*`（操作系统信息）与 `runtime.tools_running`（映射为 QGA 可用性）；仅对 **running 的 QEMU VM** 生效。
   - 兼容 guest agent 返回形态差异：部分环境下 `network-get-interfaces` 的 `data` 可能是数组，也可能是 `{ result: [...] }` / `{ return: [...] }` 包裹（插件已兼容）。
 - `ASSET_LEDGER_ADMIN_PASSWORD`：用于 bootstrap 默认管理员（用户名固定 `admin`）的密码；仅当 DB 中不存在 admin 时读取（例如首次登录时）；生产环境必须设置。
 - `SECRET_KEY`：用于会话签名（生产必须固定且随机生成）。

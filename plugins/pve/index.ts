@@ -376,6 +376,57 @@ function extractVmIpFromGuestAgent(payload: unknown): string[] {
   return uniqueStrings(ips);
 }
 
+function unwrapGuestAgentResult(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const obj = payload as Record<string, unknown>;
+  if (obj.result !== undefined) return obj.result;
+  if (obj.return !== undefined) return obj.return;
+  return payload;
+}
+
+function firstNonEmptyString(values: unknown[]): string | undefined {
+  for (const v of values) {
+    if (typeof v !== 'string') continue;
+    const s = v.trim();
+    if (s) return s;
+  }
+  return undefined;
+}
+
+function extractVmHostnameFromGuestAgent(payload: unknown): string | undefined {
+  const unwrapped = unwrapGuestAgentResult(payload);
+  if (typeof unwrapped === 'string') {
+    const s = unwrapped.trim();
+    return s ? s : undefined;
+  }
+  if (!unwrapped || typeof unwrapped !== 'object' || Array.isArray(unwrapped)) return undefined;
+  const obj = unwrapped as Record<string, unknown>;
+  return firstNonEmptyString([obj['host-name'], obj.host_name, obj.hostname, obj.hostName, obj.name]);
+}
+
+function extractVmOsFromGuestAgent(
+  payload: unknown,
+): { name?: string; version?: string; fingerprint?: string } | undefined {
+  const unwrapped = unwrapGuestAgentResult(payload);
+  if (!unwrapped || typeof unwrapped !== 'object' || Array.isArray(unwrapped)) return undefined;
+  const obj = unwrapped as Record<string, unknown>;
+
+  const name = firstNonEmptyString([obj.name, obj.id]);
+  const version = firstNonEmptyString([obj['version-id'], obj.version_id, obj.versionId, obj.version]);
+  let fingerprint = firstNonEmptyString([obj['pretty-name'], obj.pretty_name, obj.prettyName]);
+  if (!fingerprint) {
+    const joined = `${name ?? ''} ${version ?? ''}`.trim();
+    fingerprint = joined ? joined : undefined;
+  }
+
+  const out: { name?: string; version?: string; fingerprint?: string } = {};
+  if (name) out.name = name;
+  if (version) out.version = version;
+  if (fingerprint) out.fingerprint = fingerprint;
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function mapHostPowerStateFromOnline(online: unknown): PowerState | undefined {
   if (online === 1 || online === true) return 'poweredOn';
   if (online === 0 || online === false) return 'poweredOff';
@@ -823,17 +874,42 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       const node = vm.node;
       const vmid = vm.vmid;
       const externalId = `${node}:${vmid}`;
-      const path = `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/agent/network-get-interfaces`;
+      const networkPath = `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/agent/network-get-interfaces`;
       try {
         const payload = await pveGet<unknown>({
           endpoint,
-          path,
+          path: networkPath,
           authHeaders: auth.headers,
           tlsVerify,
           timeoutMs,
         });
         const ip_addresses = extractVmIpFromGuestAgent(payload);
-        return { externalId, ip_addresses };
+
+        const hostNamePayload = await pveGet<unknown>({
+          endpoint,
+          path: `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/agent/get-host-name`,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        }).catch(() => null);
+        const osInfoPayload = await pveGet<unknown>({
+          endpoint,
+          path: `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/agent/get-osinfo`,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        }).catch(() => null);
+
+        const hostname = hostNamePayload ? extractVmHostnameFromGuestAgent(hostNamePayload) : undefined;
+        const os = osInfoPayload ? extractVmOsFromGuestAgent(osInfoPayload) : undefined;
+
+        return {
+          externalId,
+          ip_addresses,
+          tools_running: true,
+          ...(hostname ? { hostname } : {}),
+          ...(os ? { os } : {}),
+        };
       } catch (err) {
         const status =
           typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
@@ -853,12 +929,27 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
             cause: err instanceof Error ? err.message : String(err),
           },
         });
-        return { externalId, ip_addresses: [] as string[] };
+        return { externalId, ip_addresses: [] as string[], tools_running: false };
       }
     });
 
-    const ipByVmExternalId = new Map<string, string[]>();
-    for (const r of guestAgentResults) ipByVmExternalId.set(r.externalId, r.ip_addresses);
+    const guestInfoByVmExternalId = new Map<
+      string,
+      {
+        ip_addresses: string[];
+        tools_running: boolean;
+        hostname?: string;
+        os?: { name?: string; version?: string; fingerprint?: string };
+      }
+    >();
+    for (const r of guestAgentResults) {
+      guestInfoByVmExternalId.set(r.externalId, {
+        ip_addresses: r.ip_addresses,
+        tools_running: r.tools_running,
+        ...(r.hostname ? { hostname: r.hostname } : {}),
+        ...(r.os ? { os: r.os } : {}),
+      });
+    }
 
     const hostAssets = hostDetails.map((r) =>
       normalizeHost({
@@ -872,12 +963,20 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       }),
     );
 
-    const vmAssets = vmWithDetails.map((vm) =>
-      normalizeVm({
+    const vmAssets = vmWithDetails.map((vm) => {
+      const guest = guestInfoByVmExternalId.get(`${vm.node}:${vm.vmid}`) ?? null;
+      return normalizeVm({
         ...vm,
-        ip_addresses: ipByVmExternalId.get(`${vm.node}:${vm.vmid}`) ?? undefined,
-      }),
-    );
+        ...(guest
+          ? {
+              ip_addresses: guest.ip_addresses,
+              tools_running: guest.tools_running,
+              ...(guest.hostname ? { hostname: guest.hostname } : {}),
+              ...(guest.os ? { os: guest.os } : {}),
+            }
+          : {}),
+      });
+    });
 
     const assets = [...(clusterAsset ? [clusterAsset] : []), ...hostAssets, ...vmAssets];
     const warnings = warningsCollector.flush();

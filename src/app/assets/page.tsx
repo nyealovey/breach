@@ -1020,7 +1020,7 @@ export default function AssetsPage() {
                                 item.toolsRunning === false ? (
                                 <span
                                   className="cursor-help text-muted-foreground"
-                                  title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                                  title="Guest Agent / Tools 未安装或未运行，无法获取 IP 地址"
                                 >
                                   - (Tools 未运行)
                                 </span>

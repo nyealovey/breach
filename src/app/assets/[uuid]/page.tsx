@@ -394,6 +394,7 @@ export default function AssetDetailPage() {
     const ipAddresses = pickLatestFieldValue(canonicalFields, 'network.ip_addresses');
     const cpuCount = pickLatestFieldValue(canonicalFields, 'hardware.cpu_count');
     const memoryBytes = pickLatestFieldValue(canonicalFields, 'hardware.memory_bytes');
+    const disks = pickLatestFieldValue(canonicalFields, 'hardware.disks');
     const powerState = pickLatestFieldValue(canonicalFields, 'runtime.power_state');
     const toolsRunning = pickLatestFieldValue(canonicalFields, 'runtime.tools_running');
 
@@ -407,6 +408,20 @@ export default function AssetDetailPage() {
             : null;
 
     const ipText = formatIpAddressesForDisplay(ipAddresses);
+
+    const diskTotalBytes = (() => {
+      if (!Array.isArray(disks)) return null;
+      let sum = 0;
+      let seen = false;
+      for (const disk of disks) {
+        if (!disk || typeof disk !== 'object') continue;
+        const sizeBytes = (disk as Record<string, unknown>).size_bytes;
+        if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes) || sizeBytes < 0) continue;
+        sum += sizeBytes;
+        seen = true;
+      }
+      return seen ? sum : null;
+    })();
 
     const machineNameMismatch =
       typeof machineNameOverride === 'string' &&
@@ -426,6 +441,8 @@ export default function AssetDetailPage() {
       ipText,
       cpuText: typeof cpuCount === 'number' ? String(cpuCount) : null,
       memoryText: typeof memoryBytes === 'number' ? formatAssetFieldValue(memoryBytes, { formatHint: 'bytes' }) : null,
+      diskText:
+        typeof diskTotalBytes === 'number' ? formatAssetFieldValue(diskTotalBytes, { formatHint: 'bytes' }) : null,
       powerState: typeof powerState === 'string' ? powerState.trim() : null,
       toolsRunning: typeof toolsRunning === 'boolean' ? toolsRunning : null,
     };
@@ -592,7 +609,7 @@ export default function AssetDetailPage() {
                         summary.toolsRunning === false ? (
                         <span
                           className="cursor-help text-muted-foreground"
-                          title="VMware Tools 未安装或未运行，无法获取 IP 地址"
+                          title="Guest Agent / Tools 未安装或未运行，无法获取 IP 地址"
                         >
                           - (Tools 未运行)
                         </span>
@@ -609,6 +626,12 @@ export default function AssetDetailPage() {
                     <TableHead>内存</TableHead>
                     <TableCell>{summary.memoryText ?? '-'}</TableCell>
                   </TableRow>
+                  {asset.assetType === 'vm' ? (
+                    <TableRow>
+                      <TableHead>总分配磁盘</TableHead>
+                      <TableCell>{summary.diskText ?? '-'}</TableCell>
+                    </TableRow>
+                  ) : null}
                   {asset.assetType === 'vm' || asset.assetType === 'host' ? (
                     <TableRow>
                       <TableHead>电源状态</TableHead>

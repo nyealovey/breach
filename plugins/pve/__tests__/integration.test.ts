@@ -191,6 +191,44 @@ describe('pve plugin integration (mock PVE API)', () => {
       return;
     }
 
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/qemu/100/agent/get-host-name') {
+      if (!guestAgentEnabled) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ data: null, errors: [{ msg: 'guest agent not running' }] }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data:
+            guestAgentResponseWrapper === 'result'
+              ? { result: { 'host-name': 'vm-100-guest' } }
+              : { 'host-name': 'vm-100-guest' },
+        }),
+      );
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/qemu/100/agent/get-osinfo') {
+      if (!guestAgentEnabled) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ data: null, errors: [{ msg: 'guest agent not running' }] }));
+        return;
+      }
+      const osinfo = { name: 'Ubuntu', 'version-id': '22.04', 'pretty-name': 'Ubuntu 22.04.3 LTS' };
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data: guestAgentResponseWrapper === 'result' ? { result: osinfo } : osinfo,
+        }),
+      );
+      return;
+    }
+
     if (method === 'GET' && pathname === '/api2/json/nodes/node1/lxc') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
@@ -331,13 +369,14 @@ describe('pve plugin integration (mock PVE API)', () => {
     const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
     expect(vm).toBeTruthy();
     expect(vm?.normalized).toMatchObject({
-      identity: { cloud_native_id: '100', caption: 'vm-100' },
+      identity: { cloud_native_id: '100', caption: 'vm-100', hostname: 'vm-100-guest' },
       hardware: {
         cpu_count: 2,
         memory_bytes: 2147483648,
         disks: [{ name: 'scsi0', size_bytes: 34359738368 }],
       },
-      runtime: { power_state: 'poweredOn' },
+      os: { name: 'Ubuntu', version: '22.04', fingerprint: 'Ubuntu 22.04.3 LTS' },
+      runtime: { power_state: 'poweredOn', tools_running: true },
       network: { ip_addresses: ['192.0.2.11'], mac_addresses: ['02:00:00:00:00:01'] },
     });
 
@@ -385,7 +424,10 @@ describe('pve plugin integration (mock PVE API)', () => {
       const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
       expect(vm).toBeTruthy();
       expect(vm?.normalized).toMatchObject({
+        identity: { hostname: 'vm-100-guest' },
+        os: { name: 'Ubuntu', version: '22.04', fingerprint: 'Ubuntu 22.04.3 LTS' },
         network: { ip_addresses: ['192.0.2.11'] },
+        runtime: { tools_running: true },
       });
     } finally {
       guestAgentResponseWrapper = 'direct';
@@ -431,7 +473,7 @@ describe('pve plugin integration (mock PVE API)', () => {
       expect(vm?.normalized).toMatchObject({
         identity: { cloud_native_id: '100', caption: 'vm-100' },
         hardware: { cpu_count: 2, memory_bytes: 2147483648 },
-        runtime: { power_state: 'poweredOn' },
+        runtime: { power_state: 'poweredOn', tools_running: false },
       });
       // ip_addresses should be absent when guest agent is unavailable.
       expect((vm?.normalized as any)?.network?.ip_addresses ?? []).toEqual([]);

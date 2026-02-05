@@ -144,6 +144,7 @@ export function normalizeVm(raw: {
   name?: string;
   status?: string;
   hostname?: string;
+  os?: { name?: string; version?: string; fingerprint?: string };
   maxmem?: number;
   maxcpu?: number;
   cpus?: number;
@@ -151,6 +152,7 @@ export function normalizeVm(raw: {
   ip_addresses?: string[];
   mac_addresses?: string[];
   disks?: Array<{ name?: string; size_bytes?: number }>;
+  tools_running?: boolean;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.maxcpu) ?? toFiniteNumber(raw.cpus);
   const memoryBytes = toFiniteNumber(raw.maxmem);
@@ -159,6 +161,18 @@ export function normalizeVm(raw: {
   const ipAddresses = raw.ip_addresses ? uniqueStrings(raw.ip_addresses) : [];
   const macAddresses = raw.mac_addresses ? uniqueStrings(raw.mac_addresses) : [];
   const disks = Array.isArray(raw.disks) ? raw.disks : [];
+  const osRaw = raw.os && typeof raw.os === 'object' ? (raw.os as Record<string, unknown>) : null;
+  const osName = typeof osRaw?.name === 'string' ? osRaw.name.trim() : '';
+  const osVersion = typeof osRaw?.version === 'string' ? osRaw.version.trim() : '';
+  const osFingerprint = typeof osRaw?.fingerprint === 'string' ? osRaw.fingerprint.trim() : '';
+  const os =
+    osName || osVersion || osFingerprint
+      ? {
+          ...(osName ? { name: osName } : {}),
+          ...(osVersion ? { version: osVersion } : {}),
+          ...(osFingerprint ? { fingerprint: osFingerprint } : {}),
+        }
+      : undefined;
 
   return {
     external_kind: 'vm',
@@ -190,7 +204,15 @@ export function normalizeVm(raw: {
         : disks.length > 0
           ? { hardware: { disks } }
           : {}),
-      ...(powerState ? { runtime: { power_state: powerState } } : {}),
+      ...(os ? { os } : {}),
+      ...(powerState || typeof raw.tools_running === 'boolean'
+        ? {
+            runtime: {
+              ...(powerState ? { power_state: powerState } : {}),
+              ...(typeof raw.tools_running === 'boolean' ? { tools_running: raw.tools_running } : {}),
+            },
+          }
+        : {}),
     },
     raw_payload: raw,
   };
