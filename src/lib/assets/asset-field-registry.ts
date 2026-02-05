@@ -25,6 +25,7 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
 
   // ===== network =====
   'network.ip_addresses': { labelZh: 'IP 地址', groupA: 'common', groupB: 'network', formatHint: 'ip' },
+  'network.management_ip': { labelZh: '管理 IP', groupA: 'host', groupB: 'network', formatHint: 'ip' },
 
   // ===== os =====
   'os.name': { labelZh: '操作系统', groupA: 'common', groupB: 'os', formatHint: 'string' },

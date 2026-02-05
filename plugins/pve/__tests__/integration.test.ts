@@ -34,6 +34,7 @@ describe('pve plugin integration (mock PVE API)', () => {
   let endpoint = '';
   let clusterEnabled = false;
   let pveVersion = '8.1.0';
+  let guestAgentEnabled = true;
   const tokenHeader = 'PVEAPIToken=user@pam!tokenid=secret';
   const ticketValue = 'ticket-123';
 
@@ -104,12 +105,84 @@ describe('pve plugin integration (mock PVE API)', () => {
       return;
     }
 
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/network') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data: [
+            { iface: 'lo', type: 'loopback', address: '127.0.0.1/8' },
+            { iface: 'vmbr0', type: 'bridge', address: '192.0.2.10/24' },
+          ],
+        }),
+      );
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/storage') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data: [
+            { storage: 'local-lvm', total: 1000, used: 100, avail: 900 },
+            { storage: 'nfs-share', total: 2000, used: 400, avail: 1600 },
+          ],
+        }),
+      );
+      return;
+    }
+
     if (method === 'GET' && pathname === '/api2/json/nodes/node1/qemu') {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
           data: [{ vmid: 100, name: 'vm-100', status: 'running', maxmem: 2147483648, maxcpu: 2 }],
+        }),
+      );
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/qemu/100/config') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data: {
+            name: 'vm-100',
+            scsi0: 'local-lvm:vm-100-disk-0,discard=on,size=32G',
+            ide2: 'local-lvm:cloudinit,media=cdrom',
+          },
+        }),
+      );
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api2/json/nodes/node1/qemu/100/agent/network-get-interfaces') {
+      if (!guestAgentEnabled) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ data: null, errors: [{ msg: 'guest agent not running' }] }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          data: [
+            {
+              name: 'lo',
+              'ip-addresses': [{ 'ip-address-type': 'ipv4', 'ip-address': '127.0.0.1', prefix: 8 }],
+            },
+            {
+              name: 'eth0',
+              'ip-addresses': [
+                { 'ip-address-type': 'ipv4', 'ip-address': '192.0.2.11', prefix: 24 },
+                { 'ip-address-type': 'ipv6', 'ip-address': 'fe80::1', prefix: 64 },
+              ],
+            },
+          ],
         }),
       );
       return;
@@ -131,7 +204,14 @@ describe('pve plugin integration (mock PVE API)', () => {
       }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ data: [{ type: 'cluster', name: 'pve-cluster' }] }));
+      res.end(
+        JSON.stringify({
+          data: [
+            { type: 'cluster', name: 'pve-cluster' },
+            { type: 'node', name: 'node1', online: 1 },
+          ],
+        }),
+      );
       return;
     }
 
@@ -193,6 +273,7 @@ describe('pve plugin integration (mock PVE API)', () => {
   });
 
   it('collect returns host + vm assets + relations', async () => {
+    guestAgentEnabled = true;
     const request = {
       schema_version: 'collector-request-v1',
       source: {
@@ -222,6 +303,7 @@ describe('pve plugin integration (mock PVE API)', () => {
     expect(parsed.schema_version).toBe('collector-response-v1');
     expect(parsed.errors ?? []).toEqual([]);
     expect(parsed.stats.inventory_complete).toBe(true);
+    expect(parsed.stats.warnings ?? []).toEqual([]);
     expect(parsed.assets).toHaveLength(2);
     expect(parsed.relations).toHaveLength(2);
 
@@ -231,14 +313,28 @@ describe('pve plugin integration (mock PVE API)', () => {
       identity: { hostname: 'node1' },
       os: { name: 'Proxmox VE', version: '8.1.0' },
       hardware: { cpu_count: 8, memory_bytes: 17179869184 },
+      network: { ip_addresses: ['192.0.2.10'], management_ip: '192.0.2.10' },
+      runtime: { power_state: 'poweredOn' },
+      storage: {
+        datastores: [
+          { name: 'local-lvm', capacity_bytes: 1000 },
+          { name: 'nfs-share', capacity_bytes: 2000 },
+        ],
+      },
+      attributes: { datastore_total_bytes: 3000 },
     });
 
     const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
     expect(vm).toBeTruthy();
     expect(vm?.normalized).toMatchObject({
       identity: { cloud_native_id: '100', caption: 'vm-100' },
-      hardware: { cpu_count: 2, memory_bytes: 2147483648 },
+      hardware: {
+        cpu_count: 2,
+        memory_bytes: 2147483648,
+        disks: [{ name: 'scsi0', size_bytes: 34359738368 }],
+      },
       runtime: { power_state: 'poweredOn' },
+      network: { ip_addresses: ['192.0.2.11'] },
     });
 
     expect(parsed.relations).toEqual(
@@ -255,6 +351,54 @@ describe('pve plugin integration (mock PVE API)', () => {
         }),
       ]),
     );
+  });
+
+  it('collect warns when guest agent is unavailable', async () => {
+    guestAgentEnabled = false;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'pve',
+          config: { endpoint, tls_verify: true, timeout_ms: 1000, max_parallel_nodes: 5 },
+          credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
+        },
+        request: { run_id: 'run_collect_guest_agent_missing', mode: 'collect', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        schema_version: string;
+        assets: Array<{ external_kind: string; external_id: string; normalized: Record<string, unknown> }>;
+        stats: { inventory_complete: boolean; warnings?: unknown[] };
+        errors?: unknown[];
+      };
+
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors ?? []).toEqual([]);
+      expect(parsed.stats.inventory_complete).toBe(true);
+
+      const warnings = Array.isArray(parsed.stats.warnings) ? parsed.stats.warnings : [];
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'PVE_GUEST_AGENT_UNAVAILABLE' })]),
+      );
+
+      const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
+      expect(vm).toBeTruthy();
+      expect(vm?.normalized).toMatchObject({
+        identity: { cloud_native_id: '100', caption: 'vm-100' },
+        hardware: { cpu_count: 2, memory_bytes: 2147483648 },
+        runtime: { power_state: 'poweredOn' },
+      });
+      // ip_addresses should be absent when guest agent is unavailable.
+      expect((vm?.normalized as any)?.network?.ip_addresses ?? []).toEqual([]);
+    } finally {
+      guestAgentEnabled = true;
+    }
   });
 
   it('collect works with user_password credentials', async () => {

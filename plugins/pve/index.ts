@@ -4,6 +4,8 @@ import { createPveAuth, pveGet } from './client';
 import { normalizeCluster, normalizeHost, normalizeVm } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
+type PowerState = 'poweredOn' | 'poweredOff' | 'suspended';
+
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
   return {
     schema_version: 'collector-response-v1',
@@ -123,6 +125,177 @@ function clampPositiveInt(value: unknown, fallback: number): number {
   return fallback;
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const s = typeof v === 'string' ? v.trim() : '';
+    if (!s) continue;
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function isIPv4(input: string): boolean {
+  const s = input.trim();
+  const parts = s.split('.');
+  if (parts.length !== 4) return false;
+  for (const p of parts) {
+    if (p.length === 0 || p.length > 3) return false;
+    if (!/^\d+$/.test(p)) return false;
+    const n = Number(p);
+    if (!Number.isInteger(n) || n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
+function normalizeMaybeCidrIp(value: string): string {
+  const s = value.trim();
+  const idx = s.indexOf('/');
+  return idx >= 0 ? s.slice(0, idx).trim() : s;
+}
+
+function isUselessIp(ip: string): boolean {
+  return ip === '127.0.0.1' || ip === '0.0.0.0';
+}
+
+function extractNodeIpInfo(network: unknown): { ip_addresses: string[]; management_ip?: string } {
+  if (!Array.isArray(network)) return { ip_addresses: [] };
+
+  const candidates: Array<{ iface: string; ip: string }> = [];
+
+  for (const row of network) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const obj = row as Record<string, unknown>;
+    const iface =
+      typeof obj.iface === 'string' ? obj.iface.trim() : typeof obj.name === 'string' ? obj.name.trim() : '';
+    const address =
+      typeof obj.address === 'string' ? obj.address : typeof obj.address4 === 'string' ? obj.address4 : '';
+    const ip = normalizeMaybeCidrIp(address);
+    if (!iface || !ip || !isIPv4(ip) || isUselessIp(ip)) continue;
+    candidates.push({ iface, ip });
+  }
+
+  const preferred = candidates.find((c) => c.iface === 'vmbr0')?.ip ?? null;
+  const ip_addresses = uniqueStrings(candidates.map((c) => c.ip));
+  const management_ip = preferred ?? ip_addresses[0];
+
+  return { ip_addresses, management_ip: management_ip && isIPv4(management_ip) ? management_ip : undefined };
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function extractNodeDatastores(storage: unknown): Array<{ name: string; capacity_bytes: number }> {
+  if (!Array.isArray(storage)) return [];
+  const out: Array<{ name: string; capacity_bytes: number }> = [];
+  for (const row of storage) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const obj = row as Record<string, unknown>;
+    const name = typeof obj.storage === 'string' ? obj.storage.trim() : '';
+    const total = toFiniteNumber(obj.total);
+    if (!name || total === undefined || total < 0) continue;
+    out.push({ name, capacity_bytes: Math.trunc(total) });
+  }
+  return out;
+}
+
+function parseSizeBytes(value: string): number | undefined {
+  const s = value.trim();
+  const m = /^(\d+(?:\.\d+)?)([KMGTPE]?)(?:i?B)?$/i.exec(s);
+  if (!m) return undefined;
+  const num = Number(m[1]);
+  if (!Number.isFinite(num) || num < 0) return undefined;
+  const unit = (m[2] ?? '').toUpperCase();
+  const pow =
+    unit === 'K' ? 1 : unit === 'M' ? 2 : unit === 'G' ? 3 : unit === 'T' ? 4 : unit === 'P' ? 5 : unit === 'E' ? 6 : 0;
+  const bytes = num * 1024 ** pow;
+  if (!Number.isFinite(bytes) || bytes < 0) return undefined;
+  const int = Math.trunc(bytes);
+  return Number.isSafeInteger(int) ? int : undefined;
+}
+
+function parseDiskSizeFromConfigValue(value: string): number | undefined {
+  // Typical PVE syntax: "... ,size=32G,..." or "size=8G"
+  const parts = value.split(',').map((p) => p.trim());
+  const sizePart = parts.find((p) => p.toLowerCase().startsWith('size='));
+  if (!sizePart) return undefined;
+  const raw = sizePart.slice('size='.length).trim();
+  return parseSizeBytes(raw);
+}
+
+function parseVmDisksFromConfig(input: {
+  type: 'qemu' | 'lxc';
+  config: unknown;
+}): Array<{ name?: string; size_bytes?: number }> {
+  if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) return [];
+  const cfg = input.config as Record<string, unknown>;
+
+  const out: Array<{ name?: string; size_bytes?: number }> = [];
+
+  const shouldIncludeKey = (key: string) => {
+    if (input.type === 'qemu') {
+      return /^(scsi|virtio|sata|ide)\d+$/.test(key) || key === 'efidisk0';
+    }
+    // lxc
+    return key === 'rootfs' || /^mp\d+$/.test(key);
+  };
+
+  for (const [key, rawValue] of Object.entries(cfg)) {
+    if (!shouldIncludeKey(key)) continue;
+    if (typeof rawValue !== 'string') continue;
+    const sizeBytes = parseDiskSizeFromConfigValue(rawValue);
+    if (sizeBytes === undefined) continue;
+    out.push({ name: key, size_bytes: sizeBytes });
+  }
+
+  return out;
+}
+
+function extractVmIpFromGuestAgent(payload: unknown): string[] {
+  if (!Array.isArray(payload)) return [];
+  const ips: string[] = [];
+
+  for (const iface of payload) {
+    if (!iface || typeof iface !== 'object' || Array.isArray(iface)) continue;
+    const obj = iface as Record<string, unknown>;
+    const addrs =
+      (obj['ip-addresses'] as unknown) ??
+      (obj.ip_addresses as unknown) ??
+      (obj.ipAddresses as unknown) ??
+      (obj.addresses as unknown);
+    if (!Array.isArray(addrs)) continue;
+
+    for (const addr of addrs) {
+      if (!addr || typeof addr !== 'object' || Array.isArray(addr)) continue;
+      const a = addr as Record<string, unknown>;
+      const ipRaw =
+        (a['ip-address'] as unknown) ?? (a.ip_address as unknown) ?? (a.ipAddress as unknown) ?? (a.address as unknown);
+      const typeRaw = (a['ip-address-type'] as unknown) ?? (a.ip_address_type as unknown) ?? (a.type as unknown);
+
+      const ipText = typeof ipRaw === 'string' ? normalizeMaybeCidrIp(ipRaw) : '';
+      if (!ipText || !isIPv4(ipText) || isUselessIp(ipText)) continue;
+
+      const typeText = typeof typeRaw === 'string' ? typeRaw.trim().toLowerCase() : '';
+      const isV4 = typeText ? typeText.includes('ipv4') || typeText === 'v4' : true;
+      if (!isV4) continue;
+
+      ips.push(ipText);
+    }
+  }
+
+  return uniqueStrings(ips);
+}
+
+function mapHostPowerStateFromOnline(online: unknown): PowerState | undefined {
+  if (online === 1 || online === true) return 'poweredOn';
+  if (online === 0 || online === false) return 'poweredOff';
+  return undefined;
+}
+
 function shouldFailRelations(vmCount: number, runsOnCount: number): boolean {
   if (vmCount === 0) return false;
   return runsOnCount === 0;
@@ -240,6 +413,47 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
+type WarningIssue = {
+  code: string;
+  category: string;
+  message: string;
+  retryable?: boolean;
+  redacted_context?: Record<string, unknown>;
+};
+
+function createWarningCollector(options?: { sampleLimitPerCode?: number }) {
+  const sampleLimit = clampPositiveInt(options?.sampleLimitPerCode, 10);
+  const buckets = new Map<string, { total: number; samples: WarningIssue[] }>();
+
+  const record = (issue: WarningIssue) => {
+    const key = issue.code.trim();
+    if (!key) return;
+    const bucket = buckets.get(key) ?? { total: 0, samples: [] };
+    bucket.total += 1;
+    if (bucket.samples.length < sampleLimit) bucket.samples.push(issue);
+    buckets.set(key, bucket);
+  };
+
+  const flush = (): WarningIssue[] => {
+    const out: WarningIssue[] = [];
+    for (const [code, bucket] of buckets.entries()) {
+      out.push(...bucket.samples);
+      if (bucket.total > bucket.samples.length) {
+        out.push({
+          code,
+          category: bucket.samples[0]?.category ?? 'unknown',
+          message: 'more occurrences omitted',
+          redacted_context: { occurrences_count: bucket.total, sample_count: bucket.samples.length },
+        });
+      }
+    }
+    out.sort((a, b) => a.code.localeCompare(b.code));
+    return out;
+  };
+
+  return { record, flush };
+}
+
 async function collect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   const cfg = request.source.config;
   const endpoint = cfg.endpoint;
@@ -247,6 +461,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
   const timeoutMs = cfg.timeout_ms ?? 60_000;
   const maxParallelNodes = clampPositiveInt(cfg.max_parallel_nodes, 5);
   const configuredScope = cfg.scope ?? 'auto';
+  const warningsCollector = createWarningCollector({ sampleLimitPerCode: 10 });
 
   try {
     const auth = await createPveAuth({ endpoint, tlsVerify, timeoutMs, credential: request.source.credential });
@@ -260,8 +475,9 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     })) as any;
     const versionString = typeof version?.version === 'string' ? version.version : null;
 
-    // Best-effort: cluster discovery.
+    // Best-effort: cluster discovery + host online states (for host power_state mapping).
     let clusterName: string | null = null;
+    const hostPowerByNode = new Map<string, PowerState>();
     try {
       const status = await pveGet<Array<Record<string, unknown>>>({
         endpoint,
@@ -272,6 +488,22 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       });
       const clusterRow = status.find((row) => (row.type as unknown) === 'cluster') ?? null;
       clusterName = typeof clusterRow?.name === 'string' ? clusterRow.name : null;
+
+      for (const row of status) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+        const type = (row as Record<string, unknown>).type;
+        if (type !== 'node') continue;
+        const name =
+          typeof (row as Record<string, unknown>).name === 'string'
+            ? ((row as Record<string, unknown>).name as string).trim()
+            : typeof (row as Record<string, unknown>).id === 'string'
+              ? ((row as Record<string, unknown>).id as string).trim()
+              : '';
+        if (!name) continue;
+        const online = (row as Record<string, unknown>).online;
+        const power = mapHostPowerStateFromOnline(online);
+        if (power) hostPowerByNode.set(name, power);
+      }
     } catch {
       // ignore
     }
@@ -288,15 +520,78 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     const nodeNames = nodes.map((n) => (typeof n?.node === 'string' ? n.node.trim() : '')).filter((n) => n.length > 0);
 
-    const hostStatuses = await mapLimit(nodeNames, maxParallelNodes, async (node) => {
-      const status = await pveGet<unknown>({
-        endpoint,
-        path: `/api2/json/nodes/${encodeURIComponent(node)}/status`,
-        authHeaders: auth.headers,
-        tlsVerify,
-        timeoutMs,
-      }).catch(() => null);
-      return { node, status };
+    const hostDetails = await mapLimit(nodeNames, maxParallelNodes, async (node) => {
+      const [status, network, storage] = await Promise.all([
+        pveGet<unknown>({
+          endpoint,
+          path: `/api2/json/nodes/${encodeURIComponent(node)}/status`,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        }).catch(() => null),
+        pveGet<unknown>({
+          endpoint,
+          path: `/api2/json/nodes/${encodeURIComponent(node)}/network`,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        }).catch((err) => {
+          warningsCollector.record({
+            code: 'PVE_HOST_NETWORK_UNAVAILABLE',
+            category: 'network',
+            message: 'failed to collect host network info; host IP fields may be missing',
+            retryable: true,
+            redacted_context: {
+              stage: 'collect.host.network',
+              node_external_id: node,
+              status:
+                typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined,
+              cause: err instanceof Error ? err.message : String(err),
+            },
+          });
+          return null;
+        }),
+        pveGet<unknown>({
+          endpoint,
+          path: `/api2/json/nodes/${encodeURIComponent(node)}/storage`,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        }).catch((err) => {
+          warningsCollector.record({
+            code: 'PVE_HOST_STORAGE_UNAVAILABLE',
+            category: 'network',
+            message: 'failed to collect host storage info; datastore fields may be missing',
+            retryable: true,
+            redacted_context: {
+              stage: 'collect.host.storage',
+              node_external_id: node,
+              status:
+                typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined,
+              cause: err instanceof Error ? err.message : String(err),
+            },
+          });
+          return null;
+        }),
+      ]);
+
+      const ipInfo = extractNodeIpInfo(network);
+      const datastores = extractNodeDatastores(storage);
+      const power_state: PowerState | undefined = clusterMode
+        ? hostPowerByNode.get(node)
+        : status
+          ? 'poweredOn'
+          : undefined;
+
+      return {
+        node,
+        status,
+        network,
+        storage,
+        ipInfo,
+        datastores,
+        power_state,
+      };
     });
 
     const clusterAsset = clusterMode ? normalizeCluster({ name: clusterName! }) : null;
@@ -391,12 +686,113 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       vmInputs = await listVmsPerNode();
     }
 
-    const hostAssets = hostStatuses.map((r) =>
-      normalizeHost({ node: r.node, status: r.status, version: versionString }),
+    // Keep these internal (no new UI config knobs); adjust if needed after observing real clusters.
+    const maxParallelVm = 20;
+    const maxParallelGuestAgent = 10;
+
+    // Fetch per-VM config (for disks) and (best-effort) guest agent IPs for running QEMU VMs.
+    const vmWithDetails = await mapLimit(vmInputs, maxParallelVm, async (vm) => {
+      const node = vm.node;
+      const vmid = vm.vmid;
+
+      // Disks (best-effort)
+      const configPath =
+        vm.type === 'lxc'
+          ? `/api2/json/nodes/${encodeURIComponent(node)}/lxc/${encodeURIComponent(String(vmid))}/config`
+          : `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/config`;
+
+      const config = await pveGet<unknown>({
+        endpoint,
+        path: configPath,
+        authHeaders: auth.headers,
+        tlsVerify,
+        timeoutMs,
+      }).catch((err) => {
+        warningsCollector.record({
+          code: 'PVE_VM_CONFIG_UNAVAILABLE',
+          category: 'permission',
+          message: 'failed to collect vm config; disk fields may be missing',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.vm.config',
+            vm_external_id: `${node}:${vmid}`,
+            status: typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined,
+            cause: err instanceof Error ? err.message : String(err),
+          },
+        });
+        return null;
+      });
+
+      const disks = parseVmDisksFromConfig({ type: vm.type, config });
+
+      return { ...vm, disks };
+    });
+
+    const runningQemuVms = vmWithDetails.filter(
+      (vm) => vm.type === 'qemu' && (vm.status ?? '').toLowerCase() === 'running',
     );
-    const vmAssets = vmInputs.map((vm) => normalizeVm(vm));
+    const guestAgentResults = await mapLimit(runningQemuVms, maxParallelGuestAgent, async (vm) => {
+      const node = vm.node;
+      const vmid = vm.vmid;
+      const externalId = `${node}:${vmid}`;
+      const path = `/api2/json/nodes/${encodeURIComponent(node)}/qemu/${encodeURIComponent(String(vmid))}/agent/network-get-interfaces`;
+      try {
+        const payload = await pveGet<unknown>({
+          endpoint,
+          path,
+          authHeaders: auth.headers,
+          tlsVerify,
+          timeoutMs,
+        });
+        const ip_addresses = extractVmIpFromGuestAgent(payload);
+        return { externalId, ip_addresses };
+      } catch (err) {
+        const status =
+          typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+        const bodyText =
+          typeof err === 'object' && err && 'bodyText' in err ? (err as { bodyText?: string }).bodyText : undefined;
+
+        warningsCollector.record({
+          code: 'PVE_GUEST_AGENT_UNAVAILABLE',
+          category: 'parse',
+          message: 'qemu guest agent unavailable; vm ip_addresses may be missing',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.vm.guest_agent.network_get_interfaces',
+            vm_external_id: externalId,
+            ...(status ? { status } : {}),
+            ...(bodyText ? { body_excerpt: bodyText.slice(0, 500) } : {}),
+            cause: err instanceof Error ? err.message : String(err),
+          },
+        });
+        return { externalId, ip_addresses: [] as string[] };
+      }
+    });
+
+    const ipByVmExternalId = new Map<string, string[]>();
+    for (const r of guestAgentResults) ipByVmExternalId.set(r.externalId, r.ip_addresses);
+
+    const hostAssets = hostDetails.map((r) =>
+      normalizeHost({
+        node: r.node,
+        status: r.status,
+        version: versionString,
+        ip_addresses: r.ipInfo.ip_addresses,
+        management_ip: r.ipInfo.management_ip,
+        power_state: r.power_state,
+        datastores: r.datastores,
+      }),
+    );
+
+    const vmAssets = vmWithDetails.map((vm) =>
+      normalizeVm({
+        ...vm,
+        ip_addresses: ipByVmExternalId.get(`${vm.node}:${vm.vmid}`) ?? undefined,
+      }),
+    );
 
     const assets = [...(clusterAsset ? [clusterAsset] : []), ...hostAssets, ...vmAssets];
+    const warnings = warningsCollector.flush();
 
     const memberOfRelations = clusterAsset
       ? nodeNames.map((node) => ({
@@ -434,7 +830,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
         response: makeResponse({
           assets,
           relations,
-          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings: [] },
+          stats: { assets: assets.length, relations: relations.length, inventory_complete: false, warnings },
           errors: [
             {
               code: 'INVENTORY_RELATIONS_EMPTY',
@@ -453,7 +849,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       response: makeResponse({
         assets,
         relations,
-        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings: [] },
+        stats: { assets: assets.length, relations: relations.length, inventory_complete: true, warnings },
         errors: [],
       }),
       exitCode: 0,
@@ -462,7 +858,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     return {
       response: makeResponse({
         errors: [toPveError(err, 'collect')],
-        stats: { assets: 0, relations: 0, inventory_complete: false, warnings: [] },
+        stats: { assets: 0, relations: 0, inventory_complete: false, warnings: warningsCollector.flush() },
       }),
       exitCode: 1,
     };

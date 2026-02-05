@@ -146,6 +146,20 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       },
     ],
   },
+  PVE_GUEST_AGENT_UNAVAILABLE: {
+    title: 'Guest Agent 不可用（PVE）',
+    actions: [
+      {
+        title: '启用 QEMU Guest Agent（用于采集 VM IP）',
+        steps: [
+          '在目标 VM 内安装并启动 qemu-guest-agent（或确保该服务处于 running 状态）',
+          '在 PVE 中为该 VM 启用 QEMU Guest Agent（硬件/选项中相关开关）',
+          '修复后重新触发 collect（无 agent 的 VM 将保留空 IP，但不影响 inventory complete）',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
   HYPERV_NETWORK_ERROR: {
     title: '网络错误（Hyper-V）',
     actions: [{ title: '检查 WinRM 连通性', steps: ['确认 5985/5986 可达', '确认 WinRM 已启用且允许远程'] }],

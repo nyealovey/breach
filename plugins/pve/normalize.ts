@@ -14,6 +14,10 @@ type NormalizedV1 = {
   hardware?: {
     cpu_count?: number;
     memory_bytes?: number;
+    disks?: Array<{
+      name?: string;
+      size_bytes?: number;
+    }>;
   };
   os?: {
     name?: string;
@@ -22,6 +26,9 @@ type NormalizedV1 = {
   };
   runtime?: {
     power_state?: 'poweredOn' | 'poweredOff' | 'suspended';
+  };
+  storage?: {
+    datastores?: Array<{ name: string; capacity_bytes: number }>;
   };
   attributes?: Record<string, string | number | boolean | null>;
 };
@@ -53,15 +60,37 @@ function mapPowerState(status?: string): 'poweredOn' | 'poweredOff' | 'suspended
   return undefined;
 }
 
-export function normalizeHost(raw: { node: string; status?: unknown; version?: string | null }): NormalizedAsset {
+export function normalizeHost(raw: {
+  node: string;
+  status?: unknown;
+  version?: string | null;
+  ip_addresses?: string[];
+  management_ip?: string;
+  power_state?: 'poweredOn' | 'poweredOff' | 'suspended';
+  datastores?: Array<{ name: string; capacity_bytes: number }>;
+}): NormalizedAsset {
   const status = raw.status && typeof raw.status === 'object' ? (raw.status as Record<string, unknown>) : null;
   const cpuinfo =
     status?.cpuinfo && typeof status.cpuinfo === 'object' ? (status.cpuinfo as Record<string, unknown>) : null;
   const memory =
     status?.memory && typeof status.memory === 'object' ? (status.memory as Record<string, unknown>) : null;
+  const rootfs =
+    status?.rootfs && typeof status.rootfs === 'object' ? (status.rootfs as Record<string, unknown>) : null;
 
   const cpuCount = toFiniteNumber(cpuinfo?.cpus) ?? toFiniteNumber(cpuinfo?.cores);
   const memoryBytes = toFiniteNumber(memory?.total);
+  const diskTotalBytes = toFiniteNumber(rootfs?.total);
+
+  const datastores =
+    raw.datastores
+      ?.map((ds) => ({ name: ds.name.trim(), capacity_bytes: ds.capacity_bytes }))
+      .filter((ds) => ds.name.length > 0 && Number.isFinite(ds.capacity_bytes) && ds.capacity_bytes >= 0) ?? [];
+  const datastoreTotalBytes = datastores.reduce((acc, ds) => acc + ds.capacity_bytes, 0);
+
+  const attributes: Record<string, string | number | boolean | null> = {};
+  if (diskTotalBytes !== undefined) attributes.disk_total_bytes = diskTotalBytes;
+  if (datastores.length > 0) attributes.datastore_total_bytes = datastoreTotalBytes;
+  const hasAttributes = Object.keys(attributes).length > 0;
 
   return {
     external_kind: 'host',
@@ -75,9 +104,22 @@ export function normalizeHost(raw: { node: string; status?: unknown; version?: s
             os: { name: 'Proxmox VE', version: raw.version },
           }
         : {}),
+      ...(raw.ip_addresses && raw.ip_addresses.length > 0
+        ? {
+            network: {
+              ip_addresses: raw.ip_addresses,
+              management_ip: raw.management_ip,
+            },
+          }
+        : raw.management_ip
+          ? { network: { management_ip: raw.management_ip } }
+          : {}),
       ...(cpuCount !== undefined || memoryBytes !== undefined
         ? { hardware: { cpu_count: cpuCount, memory_bytes: memoryBytes } }
         : {}),
+      ...(raw.power_state ? { runtime: { power_state: raw.power_state } } : {}),
+      ...(datastores.length > 0 ? { storage: { datastores } } : {}),
+      ...(hasAttributes ? { attributes } : {}),
     },
     raw_payload: raw,
   };
@@ -92,6 +134,8 @@ export function normalizeVm(raw: {
   maxcpu?: number;
   cpus?: number;
   type: 'qemu' | 'lxc';
+  ip_addresses?: string[];
+  disks?: Array<{ name?: string; size_bytes?: number }>;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.maxcpu) ?? toFiniteNumber(raw.cpus);
   const memoryBytes = toFiniteNumber(raw.maxmem);
@@ -106,8 +150,15 @@ export function normalizeVm(raw: {
         cloud_native_id: String(raw.vmid),
         ...(raw.name ? { caption: raw.name } : {}),
       },
+      ...(raw.ip_addresses && raw.ip_addresses.length > 0 ? { network: { ip_addresses: raw.ip_addresses } } : {}),
       ...(cpuCount !== undefined || memoryBytes !== undefined
-        ? { hardware: { cpu_count: cpuCount, memory_bytes: memoryBytes } }
+        ? {
+            hardware: {
+              cpu_count: cpuCount,
+              memory_bytes: memoryBytes,
+              ...(raw.disks && raw.disks.length > 0 ? { disks: raw.disks } : {}),
+            },
+          }
         : {}),
       runtime: { power_state: mapPowerState(raw.status) },
     },
