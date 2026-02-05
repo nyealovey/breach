@@ -35,6 +35,7 @@ describe('pve plugin integration (mock PVE API)', () => {
   let clusterEnabled = false;
   let pveVersion = '8.1.0';
   let guestAgentEnabled = true;
+  let guestAgentResponseWrapper: 'direct' | 'result' = 'direct';
   const tokenHeader = 'PVEAPIToken=user@pam!tokenid=secret';
   const ticketValue = 'ticket-123';
 
@@ -167,23 +168,24 @@ describe('pve plugin integration (mock PVE API)', () => {
         res.end(JSON.stringify({ data: null, errors: [{ msg: 'guest agent not running' }] }));
         return;
       }
+      const ifaceList = [
+        {
+          name: 'lo',
+          'ip-addresses': [{ 'ip-address-type': 'ipv4', 'ip-address': '127.0.0.1', prefix: 8 }],
+        },
+        {
+          name: 'eth0',
+          'ip-addresses': [
+            { 'ip-address-type': 'ipv4', 'ip-address': '192.0.2.11', prefix: 24 },
+            { 'ip-address-type': 'ipv6', 'ip-address': 'fe80::1', prefix: 64 },
+          ],
+        },
+      ];
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
-          data: [
-            {
-              name: 'lo',
-              'ip-addresses': [{ 'ip-address-type': 'ipv4', 'ip-address': '127.0.0.1', prefix: 8 }],
-            },
-            {
-              name: 'eth0',
-              'ip-addresses': [
-                { 'ip-address-type': 'ipv4', 'ip-address': '192.0.2.11', prefix: 24 },
-                { 'ip-address-type': 'ipv6', 'ip-address': 'fe80::1', prefix: 64 },
-              ],
-            },
-          ],
+          data: guestAgentResponseWrapper === 'result' ? { result: ifaceList } : ifaceList,
         }),
       );
       return;
@@ -275,6 +277,7 @@ describe('pve plugin integration (mock PVE API)', () => {
 
   it('collect returns host + vm assets + relations', async () => {
     guestAgentEnabled = true;
+    guestAgentResponseWrapper = 'direct';
     const request = {
       schema_version: 'collector-request-v1',
       source: {
@@ -352,6 +355,41 @@ describe('pve plugin integration (mock PVE API)', () => {
         }),
       ]),
     );
+  });
+
+  it('collect extracts vm ip when guest agent wraps interfaces under result', async () => {
+    guestAgentEnabled = true;
+    guestAgentResponseWrapper = 'result';
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'pve',
+          config: { endpoint, tls_verify: true, timeout_ms: 1000, max_parallel_nodes: 5 },
+          credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
+        },
+        request: { run_id: 'run_collect_result_wrapper', mode: 'collect', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as {
+        assets: Array<{ external_kind: string; external_id: string; normalized: Record<string, unknown> }>;
+        errors?: unknown[];
+      };
+
+      expect(parsed.errors ?? []).toEqual([]);
+
+      const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
+      expect(vm).toBeTruthy();
+      expect(vm?.normalized).toMatchObject({
+        network: { ip_addresses: ['192.0.2.11'] },
+      });
+    } finally {
+      guestAgentResponseWrapper = 'direct';
+    }
   });
 
   it('collect warns when guest agent is unavailable', async () => {

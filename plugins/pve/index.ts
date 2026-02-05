@@ -331,10 +331,21 @@ function extractVmHostnameFromConfig(input: { type: 'qemu' | 'lxc'; config: unkn
 }
 
 function extractVmIpFromGuestAgent(payload: unknown): string[] {
-  if (!Array.isArray(payload)) return [];
+  const ifacesRaw = (() => {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    const obj = payload as Record<string, unknown>;
+    const candidates = [obj.result, obj.return, obj.interfaces, obj['network-interfaces'], obj['network_interfaces']];
+    for (const c of candidates) {
+      if (Array.isArray(c)) return c;
+    }
+    return null;
+  })();
+
+  if (!Array.isArray(ifacesRaw)) return [];
   const ips: string[] = [];
 
-  for (const iface of payload) {
+  for (const iface of ifacesRaw) {
     if (!iface || typeof iface !== 'object' || Array.isArray(iface)) continue;
     const obj = iface as Record<string, unknown>;
     const addrs =
