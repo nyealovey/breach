@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { Prisma } from '@prisma/client';
 import { buildAssetListWhere, isUuid, parseAssetListQuery } from '@/lib/assets/asset-list-query';
@@ -26,6 +26,37 @@ describe('asset list query', () => {
       os: undefined,
       vmPowerState: 'poweredOn',
       ipMissing: true,
+      machineNameMissing: undefined,
+      machineNameVmNameMismatch: undefined,
+      createdWithinDays: undefined,
+    });
+  });
+
+  it('parses quick filters (machine_name_missing/vmname_mismatch/created_within_days)', () => {
+    const params = new URLSearchParams({
+      asset_type: 'vm',
+      machine_name_missing: 'true',
+      machine_name_vmname_mismatch: 'true',
+      created_within_days: '7',
+    });
+
+    expect(parseAssetListQuery(params)).toEqual({
+      assetType: 'vm',
+      excludeAssetType: undefined,
+      sourceId: undefined,
+      q: undefined,
+      region: undefined,
+      company: undefined,
+      department: undefined,
+      systemCategory: undefined,
+      systemLevel: undefined,
+      bizOwner: undefined,
+      os: undefined,
+      vmPowerState: undefined,
+      ipMissing: undefined,
+      machineNameMissing: true,
+      machineNameVmNameMismatch: true,
+      createdWithinDays: 7,
     });
   });
 
@@ -45,6 +76,9 @@ describe('asset list query', () => {
       os: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
+      machineNameMissing: undefined,
+      machineNameVmNameMismatch: undefined,
+      createdWithinDays: undefined,
     });
   });
 
@@ -64,6 +98,9 @@ describe('asset list query', () => {
       os: undefined,
       vmPowerState: undefined,
       ipMissing: undefined,
+      machineNameMissing: undefined,
+      machineNameVmNameMismatch: undefined,
+      createdWithinDays: undefined,
     });
   });
 
@@ -150,6 +187,52 @@ describe('asset list query', () => {
 
     const ignored = buildAssetListWhere({ assetType: 'host', ipMissing: true });
     expect(ignored).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: 'host' }] });
+  });
+
+  it('builds where with machine_name_missing=true (only when assetType=vm)', () => {
+    const where = buildAssetListWhere({ assetType: 'vm', machineNameMissing: true });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { assetType: 'vm' },
+        {
+          AND: [
+            { OR: [{ machineNameOverride: null }, { machineNameOverride: '' }] },
+            { OR: [{ collectedHostname: null }, { collectedHostname: '' }] },
+          ],
+        },
+      ]),
+    });
+
+    const ignored = buildAssetListWhere({ assetType: 'host', machineNameMissing: true });
+    expect(ignored).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: 'host' }] });
+  });
+
+  it('builds where with machine_name_vmname_mismatch=true (only when assetType=vm)', () => {
+    const where = buildAssetListWhere({ assetType: 'vm', machineNameVmNameMismatch: true });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { assetType: 'vm' },
+        { machineNameVmNameMismatch: true },
+      ]),
+    });
+
+    const ignored = buildAssetListWhere({ assetType: 'host', machineNameVmNameMismatch: true });
+    expect(ignored).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: 'host' }] });
+  });
+
+  it('builds where with createdWithinDays', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-05T00:00:00.000Z'));
+
+    const where = buildAssetListWhere({ createdWithinDays: 7 });
+
+    vi.useRealTimers();
+
+    const and = (where as any).AND as any[];
+    const clause = and.find((c) => c && typeof c === 'object' && c.createdAt && c.createdAt.gte instanceof Date);
+    expect(clause?.createdAt?.gte?.toISOString()).toBe('2026-01-29T00:00:00.000Z');
   });
 
   it('builds where with uuid equality search (not contains)', () => {

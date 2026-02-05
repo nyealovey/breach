@@ -17,6 +17,9 @@ export type AssetListUrlState = {
   os?: string;
   vmPowerState?: VmPowerStateParam;
   ipMissing?: boolean;
+  machineNameMissing?: boolean;
+  machineNameVmNameMismatch?: boolean;
+  createdWithinDays?: number;
   page: number;
   pageSize: number;
 };
@@ -46,6 +49,23 @@ function parseIpMissing(input: string | null): boolean | undefined {
   return undefined;
 }
 
+function parseMachineNameMissing(input: string | null): boolean | undefined {
+  if (input === 'true') return true;
+  return undefined;
+}
+
+function parseMachineNameVmNameMismatch(input: string | null): boolean | undefined {
+  if (input === 'true') return true;
+  return undefined;
+}
+
+function parseCreatedWithinDays(input: string | null): number | undefined {
+  if (!input) return undefined;
+  const raw = Number(input);
+  if (!Number.isFinite(raw) || raw <= 0) return undefined;
+  return Math.min(365, Math.floor(raw));
+}
+
 function normalizePageSize(pageSize: number): number {
   return (ALLOWED_PAGE_SIZES as readonly number[]).includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE;
 }
@@ -67,6 +87,9 @@ export function parseAssetListUrlState(params: URLSearchParams): AssetListUrlSta
     os: parseOptionalString(params.get('os')),
     vmPowerState: parseVmPowerState(params.get('vm_power_state')),
     ipMissing: parseIpMissing(params.get('ip_missing')),
+    machineNameMissing: parseMachineNameMissing(params.get('machine_name_missing')),
+    machineNameVmNameMismatch: parseMachineNameVmNameMismatch(params.get('machine_name_vmname_mismatch')),
+    createdWithinDays: parseCreatedWithinDays(params.get('created_within_days')),
     page,
     pageSize: normalizePageSize(pageSize),
   };
@@ -90,6 +113,10 @@ export function buildAssetListUrlSearchParams(state: AssetListUrlState): URLSear
   if (state.os) params.set('os', state.os);
   if (state.vmPowerState) params.set('vm_power_state', state.vmPowerState);
   if (state.ipMissing === true) params.set('ip_missing', 'true');
+  if (state.machineNameMissing === true) params.set('machine_name_missing', 'true');
+  if (state.machineNameVmNameMismatch === true) params.set('machine_name_vmname_mismatch', 'true');
+  if (state.createdWithinDays && state.createdWithinDays > 0)
+    params.set('created_within_days', String(state.createdWithinDays));
 
   const page = Number.isFinite(state.page) && state.page > 0 ? Math.floor(state.page) : DEFAULT_PAGE;
   const pageSize = normalizePageSize(

@@ -14,6 +14,9 @@ export type AssetListQuery = {
   os: string | undefined;
   vmPowerState: 'poweredOn' | 'poweredOff' | 'suspended' | undefined;
   ipMissing: boolean | undefined;
+  machineNameMissing: boolean | undefined;
+  machineNameVmNameMismatch: boolean | undefined;
+  createdWithinDays: number | undefined;
 };
 
 function parseAssetType(input: string | null): AssetType | undefined {
@@ -38,6 +41,23 @@ function parseIpMissing(input: string | null): boolean | undefined {
   return undefined;
 }
 
+function parseMachineNameMissing(input: string | null): boolean | undefined {
+  if (input === 'true') return true;
+  return undefined;
+}
+
+function parseMachineNameVmNameMismatch(input: string | null): boolean | undefined {
+  if (input === 'true') return true;
+  return undefined;
+}
+
+function parseCreatedWithinDays(input: string | null): number | undefined {
+  if (!input) return undefined;
+  const raw = Number(input);
+  if (!Number.isFinite(raw) || raw <= 0) return undefined;
+  return Math.min(365, Math.floor(raw));
+}
+
 export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
   return {
     assetType: parseAssetType(params.get('asset_type')),
@@ -53,6 +73,9 @@ export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
     os: parseOptionalString(params.get('os')),
     vmPowerState: parseVmPowerState(params.get('vm_power_state')),
     ipMissing: parseIpMissing(params.get('ip_missing')),
+    machineNameMissing: parseMachineNameMissing(params.get('machine_name_missing')),
+    machineNameVmNameMismatch: parseMachineNameVmNameMismatch(params.get('machine_name_vmname_mismatch')),
+    createdWithinDays: parseCreatedWithinDays(params.get('created_within_days')),
   };
 }
 
@@ -91,6 +114,9 @@ export function buildAssetListWhere(query: {
   os?: string;
   vmPowerState?: AssetListQuery['vmPowerState'];
   ipMissing?: boolean;
+  machineNameMissing?: boolean;
+  machineNameVmNameMismatch?: boolean;
+  createdWithinDays?: number;
 }): Prisma.AssetWhereInput {
   const and: Prisma.AssetWhereInput[] = [];
 
@@ -100,6 +126,11 @@ export function buildAssetListWhere(query: {
   if (query.assetType) and.push({ assetType: query.assetType });
   if (query.excludeAssetType) and.push({ assetType: { not: query.excludeAssetType } });
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
+
+  if (query.createdWithinDays && query.createdWithinDays > 0) {
+    const cutoffMs = Date.now() - query.createdWithinDays * 24 * 60 * 60 * 1000;
+    and.push({ createdAt: { gte: new Date(cutoffMs) } });
+  }
 
   // Ledger-fields-v1 filters (case-insensitive substring).
   if (query.region) and.push({ ledgerFields: { is: { region: { contains: query.region, mode: 'insensitive' } } } });
@@ -146,6 +177,19 @@ export function buildAssetListWhere(query: {
     });
   }
 
+  if (query.assetType === AssetType.vm && query.machineNameMissing === true) {
+    and.push({
+      AND: [
+        { OR: [{ machineNameOverride: null }, { machineNameOverride: '' }] },
+        { OR: [{ collectedHostname: null }, { collectedHostname: '' }] },
+      ],
+    });
+  }
+
+  if (query.assetType === AssetType.vm && query.machineNameVmNameMismatch === true) {
+    and.push({ machineNameVmNameMismatch: true });
+  }
+
   if (query.q) {
     const tokens = query.q
       .split(/\s+/g)
@@ -158,6 +202,9 @@ export function buildAssetListWhere(query: {
       const or: Prisma.AssetWhereInput[] = [
         { displayName: { contains: token, mode: 'insensitive' } },
         { machineNameOverride: { contains: token, mode: 'insensitive' } },
+        { collectedHostname: { contains: token, mode: 'insensitive' } },
+        { collectedVmCaption: { contains: token, mode: 'insensitive' } },
+        { collectedIpText: { contains: token, mode: 'insensitive' } },
         { sourceLinks: { some: { externalId: { contains: token, mode: 'insensitive' } } } },
         // Ledger-fields-v1: must always be searchable (case-insensitive substring).
         { ledgerFields: { is: { region: { contains: token, mode: 'insensitive' } } } },

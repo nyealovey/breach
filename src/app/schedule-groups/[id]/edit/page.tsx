@@ -8,10 +8,10 @@ import { toast } from 'sonner';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -129,14 +129,10 @@ export default function EditScheduleGroupPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6">
       <PageHeader
         title="编辑调度组"
-        meta={
-          <span className="font-mono" title={params.id}>
-            {compactId(params.id)}
-          </span>
-        }
+        meta={<IdText value={params.id} className="text-foreground" />}
         actions={
           <>
             <Button asChild size="sm" variant="outline">
@@ -203,9 +199,7 @@ export default function EditScheduleGroupPage() {
                         />
                         <div className="min-w-0 space-y-0.5">
                           <div className="font-medium leading-none">{s.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground" title={s.sourceId}>
-                            {compactId(s.sourceId)}
-                          </div>
+                          <IdText value={s.sourceId} />
                           {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
                         </div>
                       </label>

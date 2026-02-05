@@ -9,11 +9,11 @@ import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -171,14 +171,10 @@ export default function EditCredentialPage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-xl space-y-6">
+      <div className="mx-auto w-full max-w-xl space-y-6">
         <PageHeader
           title="编辑凭据"
-          meta={
-            <span className="font-mono" title={params.id}>
-              {compactId(params.id)}
-            </span>
-          }
+          meta={<IdText value={params.id} className="text-foreground" />}
           actions={
             <Button asChild size="sm" variant="outline">
               <Link href="/credentials">返回列表</Link>

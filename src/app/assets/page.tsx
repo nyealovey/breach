@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardPenLine, Columns3, Download, Eye, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -245,6 +248,9 @@ export default function AssetsPage() {
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
+  const [machineNameMissingInput, setMachineNameMissingInput] = useState(false);
+  const [machineNameVmNameMismatchInput, setMachineNameVmNameMismatchInput] = useState(false);
+  const [recentAddedInput, setRecentAddedInput] = useState(false);
   const [regionInput, setRegionInput] = useState('');
   const [companyInput, setCompanyInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
@@ -265,9 +271,13 @@ export default function AssetsPage() {
     const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
     const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
     const ipMissing = ipMissingInput ? true : undefined;
+    const machineNameMissing = machineNameMissingInput ? true : undefined;
+    const machineNameVmNameMismatch = machineNameVmNameMismatchInput ? true : undefined;
+    const createdWithinDays = recentAddedInput ? 7 : undefined;
 
-    // Both vm_power_state and ip_missing are VM-only filters; selecting them implies `asset_type=vm`.
-    const impliedAssetType = vmPowerState || ipMissing ? ('vm' as const) : assetType;
+    // VM-only filters imply `asset_type=vm`.
+    const impliedAssetType =
+      vmPowerState || ipMissing || machineNameMissing || machineNameVmNameMismatch ? ('vm' as const) : assetType;
 
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
@@ -283,6 +293,9 @@ export default function AssetsPage() {
       os: osInput.trim() ? osInput.trim() : undefined,
       vmPowerState,
       ipMissing,
+      machineNameMissing,
+      machineNameVmNameMismatch,
+      createdWithinDays,
       page,
       pageSize,
     };
@@ -290,12 +303,15 @@ export default function AssetsPage() {
     assetTypeInput,
     bizOwnerInput,
     companyInput,
+    machineNameMissingInput,
+    machineNameVmNameMismatchInput,
     departmentInput,
     ipMissingInput,
     osInput,
     page,
     pageSize,
     qInput,
+    recentAddedInput,
     regionInput,
     sourceIdInput,
     systemCategoryInput,
@@ -327,6 +343,9 @@ export default function AssetsPage() {
     setOsInput(parsed.os ?? '');
     setVmPowerStateInput(parsed.vmPowerState ?? 'all');
     setIpMissingInput(parsed.ipMissing === true);
+    setMachineNameMissingInput(parsed.machineNameMissing === true);
+    setMachineNameVmNameMismatchInput(parsed.machineNameVmNameMismatch === true);
+    setRecentAddedInput(parsed.createdWithinDays === 7);
     setPage(parsed.page);
     setPageSize(parsed.pageSize);
   }, [searchParams]);
@@ -353,6 +372,9 @@ export default function AssetsPage() {
       os: query.os,
       vmPowerState: query.vmPowerState,
       ipMissing: query.ipMissing,
+      machineNameMissing: query.machineNameMissing,
+      machineNameVmNameMismatch: query.machineNameVmNameMismatch,
+      createdWithinDays: query.createdWithinDays,
       page: query.page,
       pageSize: query.pageSize,
     } satisfies AssetListUrlState);
@@ -457,6 +479,9 @@ export default function AssetsPage() {
         os: query.os,
         vmPowerState: query.vmPowerState,
         ipMissing: query.ipMissing,
+        machineNameMissing: query.machineNameMissing,
+        machineNameVmNameMismatch: query.machineNameVmNameMismatch,
+        createdWithinDays: query.createdWithinDays,
         page: query.page,
         pageSize: query.pageSize,
       } satisfies AssetListUrlState);
@@ -495,27 +520,12 @@ export default function AssetsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="资产"
-        description="统一视图（canonical）。支持搜索/筛选/列设置与台账字段批量维护。"
-        actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
-              setColumnSettingsOpen(true);
-            }}
-          >
-            列设置
-          </Button>
-        }
-      />
+      <PageHeader title="资产" description="统一视图（canonical）。支持搜索/筛选/列设置与台账字段批量维护。" />
 
       <Card>
         <CardContent className="space-y-4 pt-6">
           <Input
-            placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/台账字段/externalId/uuid）"
+            placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）"
             value={qInput}
             onChange={(e) => {
               setPage(1);
@@ -523,267 +533,306 @@ export default function AssetsPage() {
             }}
           />
 
-          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
-            <Select
-              value={assetTypeInput}
-              onValueChange={(value) => {
-                setPage(1);
-                setAssetTypeInput(value as typeof assetTypeInput);
-
-                // VM-only filters don't apply to other types; reset them to avoid confusing empty results.
-                if (value !== 'vm') {
-                  setVmPowerStateInput('all');
-                  setIpMissingInput(false);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full md:w-[150px]">
-                <SelectValue placeholder="类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部类型</SelectItem>
-                <SelectItem value="vm">VM</SelectItem>
-                <SelectItem value="host">Host</SelectItem>
-                <SelectItem value="cluster">Cluster</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={sourceIdInput}
-              onValueChange={(value) => {
-                setPage(1);
-                setSourceIdInput(value);
-              }}
-            >
-              <SelectTrigger className="w-full md:w-[240px]">
-                <SelectValue placeholder="来源" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部来源</SelectItem>
-                {sourceOptions.map((s) => (
-                  <SelectItem key={s.sourceId} value={s.sourceId}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={vmPowerStateInput}
-              onValueChange={(value) => {
-                setPage(1);
-                setVmPowerStateInput(value as typeof vmPowerStateInput);
-
-                if (value !== 'all') setAssetTypeInput('vm');
-              }}
-            >
-              <SelectTrigger className="w-full md:w-[160px]">
-                <SelectValue placeholder="电源状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部电源状态</SelectItem>
-                <SelectItem value="poweredOn">运行</SelectItem>
-                <SelectItem value="poweredOff">关机</SelectItem>
-                <SelectItem value="suspended">挂起</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 md:w-[220px]">
-              <div className="min-w-0">
-                <div className="text-sm font-medium">仅 IP 缺失</div>
-                <div className="text-xs text-muted-foreground">仅 VM 且 IP 缺失</div>
+          <details open className="rounded-md border bg-background p-3">
+            <summary className="cursor-pointer select-none text-sm font-medium">快捷筛选</summary>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">仅 IP 缺失</div>
+                  <div className="text-xs text-muted-foreground">仅 VM 且 IP 缺失</div>
+                </div>
+                <Switch
+                  checked={ipMissingInput}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setIpMissingInput(checked);
+                    if (checked) setAssetTypeInput('vm');
+                  }}
+                />
               </div>
-              <Switch
-                checked={ipMissingInput}
-                onCheckedChange={(checked) => {
-                  setPage(1);
-                  setIpMissingInput(checked);
-                  if (checked) setAssetTypeInput('vm');
-                }}
-              />
+
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">仅 机器名缺失</div>
+                  <div className="text-xs text-muted-foreground">仅 VM 且机器名缺失</div>
+                </div>
+                <Switch
+                  checked={machineNameMissingInput}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setMachineNameMissingInput(checked);
+                    if (checked) setAssetTypeInput('vm');
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">仅 机器名≠虚拟机名</div>
+                  <div className="text-xs text-muted-foreground">仅 VM 且机器名与虚拟机名不一致</div>
+                </div>
+                <Switch
+                  checked={machineNameVmNameMismatchInput}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setMachineNameVmNameMismatchInput(checked);
+                    if (checked) setAssetTypeInput('vm');
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">仅 最近新增</div>
+                  <div className="text-xs text-muted-foreground">最近 7 天创建</div>
+                </div>
+                <Switch
+                  checked={recentAddedInput}
+                  onCheckedChange={(checked) => {
+                    setPage(1);
+                    setRecentAddedInput(checked);
+                  }}
+                />
+              </div>
             </div>
+          </details>
 
-            <Select
-              value={String(pageSize)}
-              onValueChange={(value) => {
-                setPage(1);
-                setPageSize(Number(value));
-              }}
-            >
-              <SelectTrigger className="w-full md:w-[140px]">
-                <SelectValue placeholder="每页" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10 / 页</SelectItem>
-                <SelectItem value="20">20 / 页</SelectItem>
-                <SelectItem value="50">50 / 页</SelectItem>
-                <SelectItem value="100">100 / 页</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <details open className="rounded-md border bg-background p-3">
+            <summary className="cursor-pointer select-none text-sm font-medium">资产字段</summary>
+            <div className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
+              <Select
+                value={assetTypeInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setAssetTypeInput(value as typeof assetTypeInput);
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <Select
-              value={regionInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setRegionInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="地区（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部地区</SelectItem>
-                {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
-                  <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.regions.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  // VM-only filters don't apply to other types; reset them to avoid confusing empty results.
+                  if (value !== 'vm') {
+                    setVmPowerStateInput('all');
+                    setIpMissingInput(false);
+                    setMachineNameMissingInput(false);
+                    setMachineNameVmNameMismatchInput(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[150px]">
+                  <SelectValue placeholder="类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部类型</SelectItem>
+                  <SelectItem value="vm">VM</SelectItem>
+                  <SelectItem value="host">Host</SelectItem>
+                  <SelectItem value="cluster">Cluster</SelectItem>
+                </SelectContent>
+              </Select>
 
-            <Select
-              value={companyInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setCompanyInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="公司（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部公司</SelectItem>
-                {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
-                  <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.companies.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select
+                value={sourceIdInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setSourceIdInput(value);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[240px]">
+                  <SelectValue placeholder="来源" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部来源</SelectItem>
+                  {sourceOptions.map((s) => (
+                    <SelectItem key={s.sourceId} value={s.sourceId}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select
-              value={departmentInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setDepartmentInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="部门（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部部门</SelectItem>
-                {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
-                  <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.departments.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select
+                value={vmPowerStateInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setVmPowerStateInput(value as typeof vmPowerStateInput);
 
-            <Select
-              value={systemCategoryInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setSystemCategoryInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="系统分类（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部系统分类</SelectItem>
-                {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
-                  <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.systemCategories.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  if (value !== 'all') setAssetTypeInput('vm');
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[160px]">
+                  <SelectValue placeholder="电源状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部电源状态</SelectItem>
+                  <SelectItem value="poweredOn">运行</SelectItem>
+                  <SelectItem value="poweredOff">关机</SelectItem>
+                  <SelectItem value="suspended">挂起</SelectItem>
+                </SelectContent>
+              </Select>
 
-            <Select
-              value={systemLevelInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setSystemLevelInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="系统分级（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部系统分级</SelectItem>
-                {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
-                  <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.systemLevels.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select
+                value={osInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setOsInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[220px]">
+                  <SelectValue placeholder="操作系统" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部操作系统</SelectItem>
+                  {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
+                    <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.osNames.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </details>
 
-            <Select
-              value={bizOwnerInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setBizOwnerInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="业务对接人员（台账）" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部业务对接人员</SelectItem>
-                {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
-                  <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.bizOwners.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <details className="rounded-md border bg-background p-3">
+            <summary className="cursor-pointer select-none text-sm font-medium">台账字段</summary>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <Select
+                value={regionInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setRegionInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="地区（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部地区</SelectItem>
+                  {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
+                    <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.regions.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select
-              value={osInput || 'all'}
-              onValueChange={(value) => {
-                setPage(1);
-                setOsInput(value === 'all' ? '' : value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="操作系统" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部操作系统</SelectItem>
-                {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
-                  <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
-                ) : null}
-                {ledgerFieldFilterOptions.osNames.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <Select
+                value={companyInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setCompanyInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="公司（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部公司</SelectItem>
+                  {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
+                    <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.companies.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={departmentInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setDepartmentInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="部门（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部部门</SelectItem>
+                  {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
+                    <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.departments.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={systemCategoryInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setSystemCategoryInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="系统分类（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部系统分类</SelectItem>
+                  {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
+                    <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.systemCategories.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={systemLevelInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setSystemLevelInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="系统分级（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部系统分级</SelectItem>
+                  {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
+                    <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.systemLevels.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={bizOwnerInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setBizOwnerInput(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="业务对接人员（台账）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部业务对接人员</SelectItem>
+                  {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
+                    <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.bizOwners.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -803,27 +852,50 @@ export default function AssetsPage() {
             </div>
           </div>
 
-          {isAdmin ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={selectedAssetUuids.length < 1}
-                onClick={() => {
-                  setBulkKey('');
-                  setBulkValue('');
-                  setBulkSetOpen(true);
-                }}
-              >
-                批量设置台账字段
-              </Button>
-              {selectedAssetUuids.length > 0 ? (
-                <Button size="sm" variant="ghost" onClick={() => setSelectedAssetUuids([])}>
-                  清空选择
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              title="列设置"
+              aria-label="列设置"
+              onClick={() => {
+                setColumnDraft(ensureCoreVisibleColumns(visibleColumns));
+                setColumnSettingsOpen(true);
+              }}
+            >
+              <Columns3 />
+            </Button>
+
+            {isAdmin ? (
+              <>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  title="批量设置台账字段"
+                  aria-label="批量设置台账字段"
+                  disabled={selectedAssetUuids.length < 1}
+                  onClick={() => {
+                    setBulkKey('');
+                    setBulkValue('');
+                    setBulkSetOpen(true);
+                  }}
+                >
+                  <ClipboardPenLine />
                 </Button>
-              ) : null}
-            </div>
-          ) : null}
+
+                <CreateAssetLedgerExportButton size="sm" variant="outline">
+                  <Download />
+                  导出台账 CSV
+                </CreateAssetLedgerExportButton>
+
+                {selectedAssetUuids.length > 0 ? (
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedAssetUuids([])}>
+                    清空选择
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -886,16 +958,19 @@ export default function AssetsPage() {
                       {visibleColumnsForTable.map((colId) => {
                         if (colId === 'machineName') {
                           return (
-                            <TableCell key={colId} className="font-medium">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span>{item.machineName ?? ''}</span>
-                                {item.machineNameOverride ? (
-                                  item.machineNameMismatch ? (
-                                    <Badge variant="destructive">覆盖≠采集</Badge>
-                                  ) : (
-                                    <Badge variant="secondary">覆盖</Badge>
-                                  )
-                                ) : null}
+                            <TableCell key={colId}>
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2 font-medium">
+                                  <span>{item.machineName ?? '-'}</span>
+                                  {item.machineNameOverride ? (
+                                    item.machineNameMismatch ? (
+                                      <Badge variant="destructive">覆盖≠采集</Badge>
+                                    ) : (
+                                      <Badge variant="secondary">覆盖</Badge>
+                                    )
+                                  ) : null}
+                                </div>
+                                <IdText value={item.assetUuid} />
                               </div>
                             </TableCell>
                           );
@@ -1012,19 +1087,23 @@ export default function AssetsPage() {
                         <div className="flex justify-end gap-2">
                           {isAdmin ? (
                             <Button
-                              size="sm"
+                              size="icon"
                               variant="outline"
+                              title="编辑机器名"
+                              aria-label="编辑机器名"
                               onClick={() => {
                                 setEditTarget(item);
                                 setEditMachineNameValue(item.machineNameOverride ?? '');
                                 setEditMachineNameOpen(true);
                               }}
                             >
-                              编辑机器名
+                              <Pencil />
                             </Button>
                           ) : null}
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/assets/${item.assetUuid}`}>查看</Link>
+                          <Button asChild size="icon" variant="outline" title="查看详情" aria-label="查看详情">
+                            <Link href={`/assets/${item.assetUuid}`}>
+                              <Eye />
+                            </Link>
                           </Button>
                         </div>
                       </TableCell>
@@ -1033,18 +1112,41 @@ export default function AssetsPage() {
                 </TableBody>
               </Table>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!canPrev}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  上一页
-                </Button>
-                <Button size="sm" variant="outline" disabled={!canNext} onClick={() => setPage((p) => p + 1)}>
-                  下一页
-                </Button>
+              <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-muted-foreground">每页</div>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(value) => {
+                      setPage(1);
+                      setPageSize(Number(value));
+                    }}
+                  >
+                    <SelectTrigger className="w-[120px]">
+                      <SelectValue placeholder="每页" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10 / 页</SelectItem>
+                      <SelectItem value="20">20 / 页</SelectItem>
+                      <SelectItem value="50">50 / 页</SelectItem>
+                      <SelectItem value="100">100 / 页</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canPrev}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    上一页
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={!canNext} onClick={() => setPage((p) => p + 1)}>
+                    下一页
+                  </Button>
+                </div>
               </div>
             </>
           )}

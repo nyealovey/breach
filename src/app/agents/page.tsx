@@ -9,8 +9,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { compactId } from '@/lib/ui/compact-id';
 
 type AgentItem = {
   agentId: string;
@@ -164,9 +164,7 @@ export default function AgentsPage() {
                       <TableRow key={item.agentId}>
                         <TableCell>
                           <div className="font-medium">{item.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground" title={item.agentId}>
-                            {compactId(item.agentId)}
-                          </div>
+                          <IdText value={item.agentId} />
                         </TableCell>
                         <TableCell className="font-mono text-xs">{item.agentType}</TableCell>
                         <TableCell>

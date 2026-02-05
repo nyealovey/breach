@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -20,7 +21,6 @@ import {
   confidenceBadgeVariant,
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type {
   DuplicateCandidateAssetTypeParam,
@@ -180,23 +180,6 @@ export default function DuplicateCandidatesPage() {
                   <SelectItem value="Medium">Medium (70-89)</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Select
-                value={String(pageSize)}
-                onValueChange={(value) => {
-                  replaceUrlState({ ...urlState, page: 1, pageSize: Number(value) });
-                }}
-              >
-                <SelectTrigger className="w-full md:w-[140px]">
-                  <SelectValue placeholder="每页" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10 / 页</SelectItem>
-                  <SelectItem value="20">20 / 页</SelectItem>
-                  <SelectItem value="50">50 / 页</SelectItem>
-                  <SelectItem value="100">100 / 页</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
@@ -255,18 +238,14 @@ export default function DuplicateCandidatesPage() {
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">{item.assetA.displayName ?? '-'}</div>
-                              <div className="font-mono text-xs text-muted-foreground" title={item.assetA.assetUuid}>
-                                {compactId(item.assetA.assetUuid)}
-                              </div>
+                              <IdText value={item.assetA.assetUuid} />
                             </div>
                           </TableCell>
 
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">{item.assetB.displayName ?? '-'}</div>
-                              <div className="font-mono text-xs text-muted-foreground" title={item.assetB.assetUuid}>
-                                {compactId(item.assetB.assetUuid)}
-                              </div>
+                              <IdText value={item.assetB.assetUuid} />
                             </div>
                           </TableCell>
 
@@ -292,23 +271,45 @@ export default function DuplicateCandidatesPage() {
                   </TableBody>
                 </Table>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!canPrev}
-                    onClick={() => replaceUrlState({ ...urlState, page: Math.max(1, page - 1) })}
-                  >
-                    上一页
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!canNext}
-                    onClick={() => replaceUrlState({ ...urlState, page: page + 1 })}
-                  >
-                    下一页
-                  </Button>
+                <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-muted-foreground">每页</div>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(value) => {
+                        replaceUrlState({ ...urlState, page: 1, pageSize: Number(value) });
+                      }}
+                    >
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="每页" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 / 页</SelectItem>
+                        <SelectItem value="20">20 / 页</SelectItem>
+                        <SelectItem value="50">50 / 页</SelectItem>
+                        <SelectItem value="100">100 / 页</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canPrev}
+                      onClick={() => replaceUrlState({ ...urlState, page: Math.max(1, page - 1) })}
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canNext}
+                      onClick={() => replaceUrlState({ ...urlState, page: page + 1 })}
+                    >
+                      下一页
+                    </Button>
+                  </div>
                 </div>
               </>
             )}

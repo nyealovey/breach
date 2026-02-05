@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { compactId } from '@/lib/ui/compact-id';
+import { IdText } from '@/components/ui/id-text';
 
 type NormalizedResponse = {
   normalizedPayload: unknown;
@@ -153,11 +153,7 @@ export default function SourceRecordPage() {
     <div className="space-y-6">
       <PageHeader
         title="Source Record"
-        meta={
-          <span className="font-mono" title={recordId}>
-            {compactId(recordId)}
-          </span>
-        }
+        meta={<IdText value={recordId} className="text-foreground" />}
         actions={
           <>
             <Button size="sm" variant="outline" disabled={loading || payload === undefined} onClick={copy}>
@@ -195,22 +191,13 @@ export default function SourceRecordPage() {
               <div className="space-y-3">
                 <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
                   <div>
-                    recordId:{' '}
-                    <span className="font-mono" title={recordId}>
-                      {compactId(recordId)}
-                    </span>
+                    recordId: <IdText value={recordId} className="text-foreground" />
                   </div>
                   <div>
-                    sourceId:{' '}
-                    <span className="font-mono" title={raw.meta.sourceId}>
-                      {compactId(raw.meta.sourceId)}
-                    </span>
+                    sourceId: <IdText value={raw.meta.sourceId} className="text-foreground" />
                   </div>
                   <div>
-                    runId:{' '}
-                    <span className="font-mono" title={raw.meta.runId}>
-                      {compactId(raw.meta.runId)}
-                    </span>
+                    runId: <IdText value={raw.meta.runId} className="text-foreground" />
                   </div>
                   <div>collectedAt: {raw.meta.collectedAt}</div>
                   <div>
@@ -229,28 +216,16 @@ export default function SourceRecordPage() {
             <div className="space-y-3">
               <div className="rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
                 <div>
-                  recordId:{' '}
-                  <span className="font-mono" title={normalized.meta.recordId}>
-                    {compactId(normalized.meta.recordId)}
-                  </span>
+                  recordId: <IdText value={normalized.meta.recordId} className="text-foreground" />
                 </div>
                 <div>
-                  assetUuid:{' '}
-                  <span className="font-mono" title={normalized.meta.assetUuid}>
-                    {compactId(normalized.meta.assetUuid)}
-                  </span>
+                  assetUuid: <IdText value={normalized.meta.assetUuid} className="text-foreground" />
                 </div>
                 <div>
-                  sourceId:{' '}
-                  <span className="font-mono" title={normalized.meta.sourceId}>
-                    {compactId(normalized.meta.sourceId)}
-                  </span>
+                  sourceId: <IdText value={normalized.meta.sourceId} className="text-foreground" />
                 </div>
                 <div>
-                  runId:{' '}
-                  <span className="font-mono" title={normalized.meta.runId}>
-                    {compactId(normalized.meta.runId)}
-                  </span>
+                  runId: <IdText value={normalized.meta.runId} className="text-foreground" />
                 </div>
                 <div>collectedAt: {normalized.meta.collectedAt}</div>
                 <div>

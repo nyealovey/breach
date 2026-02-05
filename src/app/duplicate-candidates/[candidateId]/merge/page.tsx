@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -29,7 +30,6 @@ import {
   confidenceBadgeVariant,
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
@@ -290,11 +290,7 @@ export default function DuplicateCandidateMergePage() {
       <div className="space-y-6">
         <PageHeader
           title="合并确认"
-          meta={
-            <span className="font-mono" title={candidateId}>
-              {compactId(candidateId)}
-            </span>
-          }
+          meta={<IdText value={candidateId} className="text-foreground" />}
           actions={
             <Button
               size="sm"
@@ -355,9 +351,7 @@ export default function DuplicateCandidateMergePage() {
                           )}
                         </div>
                       ) : null}
-                      <div className="font-mono text-xs text-muted-foreground" title={data.assetA.assetUuid}>
-                        {compactId(data.assetA.assetUuid)}
-                      </div>
+                      <IdText value={data.assetA.assetUuid} />
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetA.lastSeenAt ?? '-'}</div>
                       <Button asChild size="sm" variant="outline">
                         <Link href={`/assets/${encodeURIComponent(data.assetA.assetUuid)}`}>打开资产</Link>
@@ -394,9 +388,7 @@ export default function DuplicateCandidateMergePage() {
                           )}
                         </div>
                       ) : null}
-                      <div className="font-mono text-xs text-muted-foreground" title={data.assetB.assetUuid}>
-                        {compactId(data.assetB.assetUuid)}
-                      </div>
+                      <IdText value={data.assetB.assetUuid} />
                       <div className="text-xs text-muted-foreground">lastSeenAt: {data.assetB.lastSeenAt ?? '-'}</div>
                       <Button asChild size="sm" variant="outline">
                         <Link href={`/assets/${encodeURIComponent(data.assetB.assetUuid)}`}>打开资产</Link>
@@ -432,24 +424,10 @@ export default function DuplicateCandidateMergePage() {
                     <div className="font-medium">本次合并</div>
                     <div className="mt-2 space-y-1">
                       <div>
-                        primary:{' '}
-                        {primary?.assetUuid ? (
-                          <span className="font-mono" title={primary.assetUuid}>
-                            {compactId(primary.assetUuid)}
-                          </span>
-                        ) : (
-                          <span className="font-mono">-</span>
-                        )}
+                        primary: <IdText value={primary?.assetUuid ?? null} />
                       </div>
                       <div>
-                        merge:{' '}
-                        {secondary?.assetUuid ? (
-                          <span className="font-mono" title={secondary.assetUuid}>
-                            {compactId(secondary.assetUuid)}
-                          </span>
-                        ) : (
-                          <span className="font-mono">-</span>
-                        )}
+                        merge: <IdText value={secondary?.assetUuid ?? null} />
                       </div>
                     </div>
                   </div>
@@ -568,24 +546,10 @@ export default function DuplicateCandidateMergePage() {
 
             <div className="rounded-md border bg-muted/20 p-3 text-xs">
               <div>
-                primary:{' '}
-                {primary?.assetUuid ? (
-                  <span className="font-mono" title={primary.assetUuid}>
-                    {compactId(primary.assetUuid)}
-                  </span>
-                ) : (
-                  <span className="font-mono">-</span>
-                )}
+                primary: <IdText value={primary?.assetUuid ?? null} />
               </div>
               <div>
-                merge:{' '}
-                {secondary?.assetUuid ? (
-                  <span className="font-mono" title={secondary.assetUuid}>
-                    {compactId(secondary.assetUuid)}
-                  </span>
-                ) : (
-                  <span className="font-mono">-</span>
-                )}
+                merge: <IdText value={secondary?.assetUuid ?? null} />
               </div>
             </div>
 

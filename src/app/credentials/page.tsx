@@ -8,13 +8,14 @@ import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { compactId } from '@/lib/ui/compact-id';
 
 type CredentialItem = {
   credentialId: string;
   name: string;
   type: string;
+  account: string | null;
   usageCount: number;
   updatedAt: string;
 };
@@ -99,6 +100,7 @@ export default function CredentialsPage() {
                 <TableHeader className="bg-muted/30">
                   <TableRow>
                     <TableHead>名称</TableHead>
+                    <TableHead>用户名/账号</TableHead>
                     <TableHead>类型</TableHead>
                     <TableHead>引用数</TableHead>
                     <TableHead>更新时间</TableHead>
@@ -110,10 +112,9 @@ export default function CredentialsPage() {
                     <TableRow key={item.credentialId}>
                       <TableCell>
                         <div className="font-medium">{item.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground" title={item.credentialId}>
-                          {compactId(item.credentialId)}
-                        </div>
+                        <IdText value={item.credentialId} />
                       </TableCell>
+                      <TableCell className="text-sm">{item.account ?? '-'}</TableCell>
                       <TableCell className="font-mono text-xs">{item.type}</TableCell>
                       <TableCell className="font-mono text-xs">{item.usageCount}</TableCell>
                       <TableCell className="font-mono text-xs">{item.updatedAt}</TableCell>

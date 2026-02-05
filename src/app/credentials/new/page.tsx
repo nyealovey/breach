@@ -117,7 +117,7 @@ export default function NewCredentialPage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-xl space-y-6">
+      <div className="mx-auto w-full max-w-xl space-y-6">
         <PageHeader
           title="新建凭据"
           description="配置采集凭据（可被多个来源引用）。"

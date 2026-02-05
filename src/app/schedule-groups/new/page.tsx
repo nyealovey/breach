@@ -9,10 +9,10 @@ import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -86,7 +86,7 @@ export default function NewScheduleGroupPage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-2xl space-y-6">
+      <div className="mx-auto w-full max-w-2xl space-y-6">
         <PageHeader
           title="新建调度组"
           description="绑定多个来源并按时区/时间批量触发 Run。"
@@ -146,9 +146,7 @@ export default function NewScheduleGroupPage() {
                           />
                           <div className="min-w-0 space-y-0.5">
                             <div className="font-medium leading-none">{s.name}</div>
-                            <div className="font-mono text-xs text-muted-foreground" title={s.sourceId}>
-                              {compactId(s.sourceId)}
-                            </div>
+                            <IdText value={s.sourceId} />
                             {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
                           </div>
                         </label>

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { GET, POST } from '@/app/api/v1/credentials/route';
 import { requireAdmin } from '@/lib/auth/require-admin';
+import { encryptJson } from '@/lib/crypto/aes-gcm';
 import { prisma } from '@/lib/db/prisma';
 
 vi.mock('@/lib/auth/require-admin', () => ({ requireAdmin: vi.fn() }));
@@ -38,6 +39,7 @@ describe('GET /api/v1/credentials', () => {
         id: 'c1',
         name: 'cred-1',
         type: 'vcenter',
+        payloadCiphertext: encryptJson({ username: 'vc_user', password: 'p' }),
         createdAt: new Date('2026-01-29T00:00:00.000Z'),
         updatedAt: new Date('2026-01-29T00:00:00.000Z'),
       },
@@ -57,6 +59,7 @@ describe('GET /api/v1/credentials', () => {
         credentialId: 'c1',
         name: 'cred-1',
         type: 'vcenter',
+        account: 'vc_user',
         usageCount: 2,
         createdAt: '2026-01-29T00:00:00.000Z',
         updatedAt: '2026-01-29T00:00:00.000Z',

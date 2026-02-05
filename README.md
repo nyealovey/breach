@@ -156,17 +156,25 @@ List of websites that started off with Next.js TypeScript Starter:
 - 导航：顶部主导航（一级）；「配置中心」为一级菜单，二级菜单包含「来源」「凭据」。
 - 未登录访问页面：默认跳转到 `/login`。
 
+- `/`：资产统计（按类型/状态/来源/台账字段等维度统计；可一键跳转到资产清单筛选结果）
 - `/login`：登录（admin/user；登录成功默认跳转 `/assets`）
-- `/runs`：采集 Run 列表与详情（admin/user；失败可定位：错误码 + 建议动作；结构化 errors/warnings；脱敏上下文白名单）
-- `/assets`：资产统一视图（canonical）+ 来源明细（normalized）+ 关系（outgoing）（admin/user）；raw 查看仅 admin（脱敏+审计）；资产详情包含“历史/时间线”（M12）；支持筛选：操作系统、地区、业务对接人员、公司、部门、系统分类、系统分级（下拉候选来自 `GET /api/v1/assets/ledger-fields/options`）；筛选条件会同步到 URL query（便于分享/前进后退）；资产列表新增“录入时间”（默认显示首次采集时间）；列设置支持两列展示避免高度溢出，且“机器名/IP”为核心列固定显示；资产详情的来源记录查看（normalized/raw）为页面跳转：`/source-records/:recordId?tab=normalized|raw`（避免模态框），并按资产类型隐藏不相关字段
-- `/exports`：资产台账导出 CSV（admin-only；异步任务；下载即失效）
+- `/runs`：采集 Run 列表与详情（admin/user；支持按调度组/结果筛选；分页大小在列表底部左侧；失败可定位：错误码 + 建议动作）
+- `/assets`：资产清单与详情（admin/user；canonical）
+  - 清单：支持搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）
+  - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
+  - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
+  - 分页：每页条数选择在列表底部左侧
+  - 详情：左右等宽两列；左侧为盘点摘要/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
+- `/exports`：导出台账 CSV 任务列表与下载（admin-only；创建入口在 `/assets`；下载即失效）
 - `/schedule-groups`：调度组配置（admin-only）
-- `/sources`：来源配置（admin-only）
-- `/credentials`：凭据管理（admin-only）
+- `/sources`：来源配置（admin-only；清单展示绑定的凭据）
+- `/credentials`：凭据管理（admin-only；清单展示用户名/账号与凭据类型）
 - `/duplicate-candidates`：重复中心（admin-only）：候选列表/详情、命中原因（dup-rules-v1）、关键字段对比；VM 详情/合并页会展示宿主机（runs_on_host）；关键字段对比将“双方都缺失”标记为“缺失”；支持 Ignore（永久）与合并确认（`primary_wins`，入口：候选详情“进入 Merge” → `/duplicate-candidates/:candidateId/merge`）
 - `/api/docs`：OpenAPI/Swagger（admin-only）
 
-备注：UI 中内部 ID（如 Run ID / Source ID 等）默认以缩略形式展示（前 8 + 后 7，中间省略号），鼠标悬浮可查看完整值。Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
+备注：UI 中内部 ID（如 Run ID / Source ID / Asset UUID 等）统一全量展示（不再缩略）；大量 ID 会自动换行避免挤压布局。Raw 查看使用 zstd 压缩，依赖 `@bokuweb/zstd-wasm` 的 `zstd.wasm`。若使用 Turbopack/standalone/serverless 等“产物裁剪”部署方式，需确保该 wasm 文件被包含；仓库已在 `next.config.ts` 通过 `serverExternalPackages` + `outputFileTracingIncludes` 处理。
+
+备注：为支持 VM 快捷筛选（机器名缺失/机器名≠虚拟机名/最近新增）与搜索（宿主机名、管理IP 等），Asset 增加采集派生字段并提供回填脚本：`bun src/bin/backfill-asset-derived-fields.ts`（升级后先执行 `bun run db:migrate`，再回填历史数据）。
 
 ### 资产台账（单机自建 / PG-only）运行方式（MVP）
 

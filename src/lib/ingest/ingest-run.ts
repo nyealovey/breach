@@ -37,6 +37,35 @@ function deriveAssetDisplayName(normalized: Record<string, unknown>): string | n
   return null;
 }
 
+function deriveAssetDerivedFields(normalized: Record<string, unknown>) {
+  const identity = normalized.identity;
+  const hostnameRaw = identity && typeof identity === 'object' ? (identity as Record<string, unknown>).hostname : null;
+  const captionRaw = identity && typeof identity === 'object' ? (identity as Record<string, unknown>).caption : null;
+
+  const collectedHostname =
+    typeof hostnameRaw === 'string' && hostnameRaw.trim().length > 0 ? hostnameRaw.trim() : null;
+  const collectedVmCaption = typeof captionRaw === 'string' && captionRaw.trim().length > 0 ? captionRaw.trim() : null;
+
+  const network = normalized.network;
+  const ipAddressesRaw =
+    network && typeof network === 'object' ? (network as Record<string, unknown>).ip_addresses : null;
+  const collectedIpText = Array.isArray(ipAddressesRaw)
+    ? Array.from(
+        new Set(
+          ipAddressesRaw
+            .filter((ip) => typeof ip === 'string')
+            .map((ip) => ip.trim())
+            .filter((ip) => ip.length > 0),
+        ),
+      ).join(', ')
+    : null;
+
+  const machineNameVmNameMismatch =
+    collectedHostname !== null && collectedVmCaption !== null && collectedHostname !== collectedVmCaption;
+
+  return { collectedHostname, collectedVmCaption, collectedIpText, machineNameVmNameMismatch };
+}
+
 export async function ingestCollectRun(args: {
   prisma: PrismaClient;
   runId: string;
@@ -141,6 +170,7 @@ export async function ingestCollectRun(args: {
       for (const entry of compressedAssets) {
         const { asset } = entry;
         const displayName = deriveAssetDisplayName(asset.normalized);
+        const derived = deriveAssetDerivedFields(asset.normalized);
 
         const link = await tx.assetSourceLink.upsert({
           where: {
@@ -157,6 +187,10 @@ export async function ingestCollectRun(args: {
             asset: {
               update: {
                 lastSeenAt: args.collectedAt,
+                collectedHostname: derived.collectedHostname,
+                collectedVmCaption: derived.collectedVmCaption,
+                collectedIpText: derived.collectedIpText,
+                machineNameVmNameMismatch: derived.machineNameVmNameMismatch,
                 ...(displayName ? { displayName } : {}),
               },
             },
@@ -173,6 +207,10 @@ export async function ingestCollectRun(args: {
                 assetType: asset.external_kind,
                 displayName,
                 lastSeenAt: args.collectedAt,
+                collectedHostname: derived.collectedHostname,
+                collectedVmCaption: derived.collectedVmCaption,
+                collectedIpText: derived.collectedIpText,
+                machineNameVmNameMismatch: derived.machineNameVmNameMismatch,
               },
             },
           },

@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 
-export function CreateAssetLedgerExportButton() {
+import type { ButtonProps } from '@/components/ui/button';
+
+type Props = Pick<ButtonProps, 'size' | 'variant' | 'className' | 'children'>;
+
+export function CreateAssetLedgerExportButton({ size, variant, className, children }: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,8 +39,8 @@ export function CreateAssetLedgerExportButton() {
   };
 
   return (
-    <Button onClick={onClick} disabled={submitting}>
-      {submitting ? '创建中…' : '导出台账 CSV'}
+    <Button onClick={onClick} disabled={submitting} size={size} variant={variant} className={className}>
+      {submitting ? '创建中…' : (children ?? '导出台账 CSV')}
     </Button>
   );
 }

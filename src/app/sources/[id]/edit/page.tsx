@@ -9,11 +9,11 @@ import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -319,14 +319,10 @@ export default function EditSourcePage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-2xl space-y-6">
+      <div className="mx-auto w-full max-w-2xl space-y-6">
         <PageHeader
           title="编辑来源"
-          meta={
-            <span className="font-mono" title={params.id}>
-              {compactId(params.id)}
-            </span>
-          }
+          meta={<IdText value={params.id} className="text-foreground" />}
           actions={
             <>
               <Button asChild size="sm" variant="outline">
@@ -344,10 +340,7 @@ export default function EditSourcePage() {
             <form className="space-y-4" onSubmit={onSubmit}>
               <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                 <div>
-                  sourceId:{' '}
-                  <span className="font-mono" title={params.id}>
-                    {compactId(params.id)}
-                  </span>
+                  sourceId: <IdText value={params.id} className="text-foreground" />
                 </div>
                 <div>
                   scheduleGroup:{' '}
@@ -355,7 +348,7 @@ export default function EditSourcePage() {
                     <>
                       <span>{scheduleGroupName ?? '-'}</span>{' '}
                       <span className="font-mono" title={scheduleGroupId}>
-                        ({compactId(scheduleGroupId)})
+                        (<IdText value={scheduleGroupId} className="text-foreground" />)
                       </span>
                     </>
                   ) : (
@@ -363,14 +356,7 @@ export default function EditSourcePage() {
                   )}
                 </div>
                 <div>
-                  credentialId:{' '}
-                  {credentialId ? (
-                    <span className="font-mono" title={credentialId}>
-                      {compactId(credentialId)}
-                    </span>
-                  ) : (
-                    '-'
-                  )}
+                  credentialId: {credentialId ? <IdText value={credentialId} className="text-foreground" /> : '-'}
                 </div>
               </div>
               <div className="space-y-2">
@@ -646,7 +632,7 @@ export default function EditSourcePage() {
                   <option value="">不选择</option>
                   {credentials.map((c) => (
                     <option key={c.credentialId} value={c.credentialId}>
-                      {c.name} · {compactId(c.credentialId)}
+                      {c.name}
                     </option>
                   ))}
                 </NativeSelect>

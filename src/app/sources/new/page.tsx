@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { compactId } from '@/lib/ui/compact-id';
 
 import type { FormEvent } from 'react';
 
@@ -167,7 +166,7 @@ export default function NewSourcePage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-2xl space-y-6">
+      <div className="mx-auto w-full max-w-2xl space-y-6">
         <PageHeader
           title="新建来源"
           description="配置采集来源（endpoint/类型/凭据）。保存后可参与运行/调度。"
@@ -443,7 +442,7 @@ export default function NewSourcePage() {
                   <option value="">不选择</option>
                   {credentials.map((c) => (
                     <option key={c.credentialId} value={c.credentialId}>
-                      {c.name} · {compactId(c.credentialId)}
+                      {c.name}
                     </option>
                   ))}
                 </NativeSelect>

@@ -75,7 +75,7 @@ export default function NewAgentPage() {
   return (
     <>
       <RequireAdminClient />
-      <div className="max-w-xl space-y-6">
+      <div className="mx-auto w-full max-w-xl space-y-6">
         <PageHeader
           title="新建代理"
           description="配置 Agent 的 endpoint/类型/超时/TLS 校验。"

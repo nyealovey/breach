@@ -5,19 +5,20 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
-import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
-import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
-import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
+import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
+import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
+import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
 import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
-import { compactId } from '@/lib/ui/compact-id';
 
+import type { AssetFieldRow } from '@/lib/assets/asset-field-display';
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
 import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
 
@@ -38,9 +39,21 @@ type SourceRecordItem = {
   collectedAt: string;
   runId: string;
   sourceId: string;
+  sourceName: string | null;
   externalKind: string;
   externalId: string;
   normalized: unknown;
+};
+
+type SourceChangeStatus = 'new' | 'changed' | 'same';
+
+type SourceSummary = {
+  sourceId: string;
+  sourceName: string | null;
+  latest: SourceRecordItem;
+  previous: SourceRecordItem | null;
+  status: SourceChangeStatus;
+  recordsCount: number;
 };
 
 type RelationItem = {
@@ -85,6 +98,8 @@ type FlattenedField = {
   conflict: boolean;
 };
 
+type StructuredFieldRow = AssetFieldRow & { groupTitle: string };
+
 function formatAssetType(input: string) {
   if (input === 'vm') return 'VM';
   if (input === 'host') return 'Host';
@@ -110,6 +125,24 @@ function isComplexValue(value: unknown): boolean {
   return typeof value === 'object';
 }
 
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(obj).sort((a, b) => a.localeCompare(b, 'en'))) {
+      out[key] = sortJson(obj[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function stableStringifyJson(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  return JSON.stringify(sortJson(value)) ?? 'undefined';
+}
+
 function CanonicalValueCell({ value, formatHint }: { value: unknown; formatHint?: AssetFieldFormatHint }) {
   const text = formatAssetFieldValue(value, { formatHint });
 
@@ -131,6 +164,7 @@ export default function AssetDetailPage() {
 
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [sourceRecords, setSourceRecords] = useState<SourceRecordItem[]>([]);
+  const [showAllSources, setShowAllSources] = useState(false);
   const [relations, setRelations] = useState<RelationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -333,6 +367,17 @@ export default function AssetDetailPage() {
     return allowedGroupA ? groupedFields.filter((g) => allowedGroupA.has(g.groupA)) : groupedFields;
   }, [asset?.assetType, groupedFields]);
 
+  const structuredRows = useMemo<StructuredFieldRow[]>(() => {
+    const out: StructuredFieldRow[] = [];
+    for (const section of visibleGroupedFields) {
+      for (const g of section.groups) {
+        const groupTitle = `${section.labelZh} / ${g.labelZh}`;
+        for (const row of g.rows) out.push({ ...row, groupTitle });
+      }
+    }
+    return out;
+  }, [visibleGroupedFields]);
+
   const summary = useMemo(() => {
     const assetType = asset?.assetType ?? '';
     const machineNameCollected = pickLatestFieldValue(canonicalFields, 'identity.hostname');
@@ -418,6 +463,51 @@ export default function AssetDetailPage() {
     return { totalBytes, sumBytes, hasList, mismatch };
   }, [asset?.assetType, canonicalFields, hostDatastores]);
 
+  const sourceSummaries = useMemo<SourceSummary[]>(() => {
+    const bySourceId = new Map<string, SourceRecordItem[]>();
+    for (const r of sourceRecords) {
+      const bucket = bySourceId.get(r.sourceId);
+      if (bucket) bucket.push(r);
+      else bySourceId.set(r.sourceId, [r]);
+    }
+
+    const statusOrder = (status: SourceChangeStatus) => (status === 'changed' ? 0 : status === 'new' ? 1 : 2);
+
+    const out: SourceSummary[] = [];
+    for (const [sourceId, records] of bySourceId) {
+      const sorted = records.slice().sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
+      const latest = sorted[0];
+      if (!latest) continue;
+      const previous = sorted[1] ?? null;
+      const status: SourceChangeStatus = !previous
+        ? 'new'
+        : stableStringifyJson(latest.normalized) === stableStringifyJson(previous.normalized)
+          ? 'same'
+          : 'changed';
+
+      out.push({
+        sourceId,
+        sourceName: latest.sourceName ?? null,
+        latest,
+        previous,
+        status,
+        recordsCount: sorted.length,
+      });
+    }
+
+    out.sort((a, b) => {
+      const d = statusOrder(a.status) - statusOrder(b.status);
+      if (d !== 0) return d;
+      return b.latest.collectedAt.localeCompare(a.latest.collectedAt);
+    });
+
+    return out;
+  }, [sourceRecords]);
+
+  const visibleSourceSummaries = useMemo(() => {
+    return showAllSources ? sourceSummaries : sourceSummaries.filter((s) => s.status !== 'same');
+  }, [showAllSources, sourceSummaries]);
+
   if (loading) return <div className="text-sm text-muted-foreground">加载中…</div>;
   if (!asset) return <div className="text-sm text-muted-foreground">未找到资产。</div>;
 
@@ -430,18 +520,8 @@ export default function AssetDetailPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={
-          asset.displayName ?? (
-            <span className="font-mono" title={asset.assetUuid}>
-              {compactId(asset.assetUuid)}
-            </span>
-          )
-        }
-        meta={
-          <span className="font-mono" title={asset.assetUuid}>
-            {compactId(asset.assetUuid)}
-          </span>
-        }
+        title={asset.displayName ?? <IdText value={asset.assetUuid} className="text-foreground" />}
+        meta={<IdText value={asset.assetUuid} />}
         actions={
           <Button asChild size="sm" variant="outline">
             <Link href="/assets">返回列表</Link>
@@ -449,8 +529,8 @@ export default function AssetDetailPage() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        <div className="space-y-6 lg:col-span-8">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>盘点摘要</CardTitle>
@@ -468,7 +548,7 @@ export default function AssetDetailPage() {
                 <div className="mt-1 font-mono text-xs">
                   {asset.latestSnapshot ? (
                     <>
-                      <span title={asset.latestSnapshot.runId}>{compactId(asset.latestSnapshot.runId)}</span> ·{' '}
+                      <IdText value={asset.latestSnapshot.runId} className="text-foreground" /> ·{' '}
                       {asset.latestSnapshot.createdAt}
                     </>
                   ) : (
@@ -556,158 +636,83 @@ export default function AssetDetailPage() {
                   ) : null}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>历史 / 时间线</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant={historyTypes.length === 0 ? 'default' : 'outline'}
-                    onClick={() => setHistoryTypes([])}
-                  >
-                    全部
-                  </Button>
-                  {HISTORY_TYPE_OPTIONS.map((o) => {
-                    const active = historyTypes.includes(o.type);
-                    return (
-                      <Button
-                        key={o.type}
-                        size="sm"
-                        variant={active ? 'default' : 'outline'}
-                        onClick={() => {
-                          setHistoryTypes((prev) => {
-                            if (prev.length === 0) return [o.type];
-                            if (prev.includes(o.type)) {
-                              const next = prev.filter((t) => t !== o.type);
-                              return next.length === 0 ? [] : next;
-                            }
-                            return [...prev, o.type];
-                          });
-                        }}
-                      >
-                        {o.label}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {historyLoading && historyItems.length === 0 ? (
-                <div className="text-sm text-muted-foreground">加载中…</div>
-              ) : historyError ? (
-                <div className="text-sm text-destructive">加载失败：{historyError}</div>
-              ) : historyItems.length === 0 ? (
-                <div className="text-sm text-muted-foreground">暂无历史事件（可能尚未发生变化/尚无审计操作）。</div>
-              ) : (
-                <div className="space-y-3">
-                  {historyItems.map((e) => {
-                    const label = HISTORY_TYPE_OPTIONS.find((o) => o.type === e.eventType)?.label ?? e.eventType;
-                    const summaryObj =
-                      e.summary && typeof e.summary === 'object' ? (e.summary as Record<string, unknown>) : null;
+              {asset.assetType === 'host' ? (
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer select-none text-sm font-medium">Datastores（可选）</summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">总容量：</span>
+                      <span className="font-medium">
+                        {datastoresTotals.totalBytes === null
+                          ? '-'
+                          : formatAssetFieldValue(datastoresTotals.totalBytes, { formatHint: 'bytes' })}
+                      </span>
+                      <span className="text-muted-foreground">明细求和：</span>
+                      <span className="font-medium">
+                        {datastoresTotals.hasList
+                          ? formatAssetFieldValue(datastoresTotals.sumBytes, { formatHint: 'bytes' })
+                          : '-'}
+                      </span>
+                      {datastoresTotals.mismatch ? <Badge variant="destructive">不一致</Badge> : null}
+                    </div>
 
-                    const lines: string[] = [];
-                    if (e.eventType === 'collect.changed') {
-                      const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
-                      for (const c of changes.slice(0, 5)) {
-                        if (!c || typeof c !== 'object') continue;
-                        const obj = c as Record<string, unknown>;
-                        const labelZh =
-                          typeof obj.labelZh === 'string' ? obj.labelZh : typeof obj.path === 'string' ? obj.path : '-';
-                        const before = typeof obj.before === 'string' ? obj.before : '';
-                        const after = typeof obj.after === 'string' ? obj.after : '';
-                        lines.push(`${labelZh}: ${before || '-'} -> ${after || '-'}`);
-                      }
-                      const relChanges = Array.isArray(summaryObj?.relationChanges)
-                        ? (summaryObj?.relationChanges as unknown[])
-                        : [];
-                      for (const r of relChanges.slice(0, 3)) {
-                        if (!r || typeof r !== 'object') continue;
-                        const obj = r as Record<string, unknown>;
-                        const type = typeof obj.type === 'string' ? obj.type : 'relation';
-                        const before = typeof obj.before === 'string' ? obj.before : '';
-                        const after = typeof obj.after === 'string' ? obj.after : '';
-                        lines.push(`${type}: ${before || '-'} -> ${after || '-'}`);
-                      }
-                    } else if (e.eventType === 'asset.status_changed') {
-                      const before = typeof summaryObj?.before === 'string' ? summaryObj.before : '';
-                      const after = typeof summaryObj?.after === 'string' ? summaryObj.after : '';
-                      lines.push(`${before || '-'} -> ${after || '-'}`);
-                    } else if (e.eventType === 'asset.merged') {
-                      const merged = Array.isArray(summaryObj?.mergedAssetUuids)
-                        ? (summaryObj?.mergedAssetUuids as unknown[]).filter((v) => typeof v === 'string')
-                        : [];
-                      lines.push(`合并数量：${merged.length}`);
-                    } else if (e.eventType === 'ledger_fields.changed') {
-                      const actor =
-                        summaryObj?.actor && typeof summaryObj.actor === 'object' ? (summaryObj.actor as any) : null;
-                      const actorName = typeof actor?.username === 'string' ? actor.username : '-';
-                      lines.push(`操作者：${actorName}`);
-                      const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
-                      for (const c of changes.slice(0, 5)) {
-                        if (!c || typeof c !== 'object') continue;
-                        const obj = c as Record<string, unknown>;
-                        const key = typeof obj.key === 'string' ? obj.key : '-';
-                        const before = typeof obj.before === 'string' ? obj.before : '';
-                        const after = typeof obj.after === 'string' ? obj.after : '';
-                        lines.push(`${key}: ${before || '-'} -> ${after || '-'}`);
-                      }
-                      const key = typeof summaryObj?.key === 'string' ? summaryObj.key : '';
-                      const valueSummary = typeof summaryObj?.valueSummary === 'string' ? summaryObj.valueSummary : '';
-                      if (key) lines.push(`${key}: ${valueSummary || '-'}`);
-                    }
-
-                    const refs = e.refs && typeof e.refs === 'object' ? (e.refs as Record<string, unknown>) : {};
-                    const runId = typeof refs.runId === 'string' ? refs.runId : null;
-
-                    return (
-                      <div key={e.eventId} className="rounded-md border p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="text-sm font-medium">{e.title}</div>
-                            <Badge variant="secondary">{label}</Badge>
-                            {e.sourceAssetUuid ? (
-                              <Badge variant="outline" title={e.sourceAssetUuid}>
-                                来自合并资产
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <div className="font-mono text-xs text-muted-foreground">{e.occurredAt}</div>
-                        </div>
-
-                        {lines.length > 0 ? (
-                          <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                            {lines.slice(0, 6).map((t, idx) => (
-                              <div key={`${e.eventId}:${idx}`}>{t}</div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {runId ? (
-                          <div className="mt-3">
-                            <Button asChild size="sm" variant="outline">
-                              <Link href={`/runs/${runId}`}>查看 Run</Link>
-                            </Button>
-                          </div>
+                    {hostDatastores === null ? (
+                      <div className="text-sm text-muted-foreground">
+                        暂无 Datastore 明细（可能无权限/未采集到/采集异常）。建议查看该资产最近一次 Run 的
+                        warnings/errors。
+                        {asset.latestSnapshot?.runId ? (
+                          <>
+                            {' '}
+                            <Link
+                              href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}
+                              className="underline"
+                            >
+                              打开 Run
+                            </Link>
+                            。
+                          </>
                         ) : null}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {historyCursor ? (
-                <Button
-                  variant="outline"
-                  disabled={historyLoading}
-                  onClick={() => void loadHistoryPage({ cursor: historyCursor, replace: false })}
-                >
-                  {historyLoading ? '加载中…' : '加载更多'}
-                </Button>
+                    ) : hostDatastores.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        Datastore 明细为空（该 Host 可能无 datastore，或已被过滤，或权限不足）。建议查看 Run 的
+                        warnings/errors。
+                        {asset.latestSnapshot?.runId ? (
+                          <>
+                            {' '}
+                            <Link
+                              href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}
+                              className="underline"
+                            >
+                              打开 Run
+                            </Link>
+                            。
+                          </>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>名称</TableHead>
+                            <TableHead className="text-right">容量</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {hostDatastores.map((ds, idx) => (
+                            <TableRow key={`${ds.name}:${idx}`}>
+                              <TableCell className="font-mono text-xs">{ds.name}</TableCell>
+                              <TableCell className="text-right text-sm">
+                                {formatAssetFieldValue(ds.capacityBytes, { formatHint: 'bytes' })}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </details>
               ) : null}
             </CardContent>
           </Card>
@@ -861,146 +866,200 @@ export default function AssetDetailPage() {
             </Card>
           ) : null}
 
-          {asset.assetType === 'host' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Datastores</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">总容量：</span>
-                  <span className="font-medium">
-                    {datastoresTotals.totalBytes === null
-                      ? '-'
-                      : formatAssetFieldValue(datastoresTotals.totalBytes, { formatHint: 'bytes' })}
-                  </span>
-                  <span className="text-muted-foreground">明细求和：</span>
-                  <span className="font-medium">
-                    {datastoresTotals.hasList
-                      ? formatAssetFieldValue(datastoresTotals.sumBytes, { formatHint: 'bytes' })
-                      : '-'}
-                  </span>
-                  {datastoresTotals.mismatch ? <Badge variant="destructive">不一致</Badge> : null}
-                </div>
-
-                {hostDatastores === null ? (
-                  <div className="text-sm text-muted-foreground">
-                    暂无 Datastore 明细（可能无权限/未采集到/采集异常）。建议查看该资产最近一次 Run 的 warnings/errors。
-                    {asset.latestSnapshot?.runId ? (
-                      <>
-                        {' '}
-                        <Link href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`} className="underline">
-                          打开 Run
-                        </Link>
-                        。
-                      </>
-                    ) : null}
-                  </div>
-                ) : hostDatastores.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    Datastore 明细为空（该 Host 可能无 datastore，或已被过滤，或权限不足）。建议查看 Run 的
-                    warnings/errors。
-                    {asset.latestSnapshot?.runId ? (
-                      <>
-                        {' '}
-                        <Link href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`} className="underline">
-                          打开 Run
-                        </Link>
-                        。
-                      </>
-                    ) : null}
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>名称</TableHead>
-                        <TableHead className="text-right">容量</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {hostDatastores.map((ds, idx) => (
-                        <TableRow key={`${ds.name}:${idx}`}>
-                          <TableCell className="font-mono text-xs">{ds.name}</TableCell>
-                          <TableCell className="text-right text-sm">
-                            {formatAssetFieldValue(ds.capacityBytes, { formatHint: 'bytes' })}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
-
           <Card>
             <CardHeader>
               <CardTitle>字段（结构化）</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               {!asset.latestSnapshot ? (
                 <div className="text-sm text-muted-foreground">暂无 canonical 快照。</div>
               ) : groupedFields.length === 0 ? (
                 <div className="text-sm text-muted-foreground">canonical.fields 为空或不可解析。</div>
-              ) : visibleGroupedFields.length === 0 ? (
+              ) : structuredRows.length === 0 ? (
                 <div className="text-sm text-muted-foreground">当前资产类型无可展示字段（已隐藏不相关字段）。</div>
               ) : (
-                <div className="space-y-4">
-                  {visibleGroupedFields.map((section) => (
-                    <div key={section.groupA} className="space-y-2">
-                      <div className="text-sm font-semibold">{section.labelZh}</div>
-                      {section.groups.map((g) => (
-                        <div key={`${section.groupA}:${g.groupB}`} className="space-y-2 rounded-md border p-3">
-                          <div className="text-xs font-medium text-muted-foreground">{g.labelZh}</div>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-[220px]">字段 ID</TableHead>
-                                <TableHead className="w-[160px]">字段名</TableHead>
-                                <TableHead>值</TableHead>
-                                <TableHead className="w-[80px] text-right">来源数</TableHead>
-                                <TableHead className="w-[80px]">冲突</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {g.rows.map((row) => (
-                                <TableRow key={`${section.groupA}:${g.groupB}:${row.path}`}>
-                                  <TableCell className="font-mono text-xs">{row.path}</TableCell>
-                                  <TableCell className="text-sm">{row.labelZh}</TableCell>
-                                  <TableCell>
-                                    <CanonicalValueCell value={row.value} formatHint={row.formatHint} />
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-muted-foreground">
-                                    {row.sourcesCount}
-                                  </TableCell>
-                                  <TableCell>
-                                    {row.conflict ? <Badge variant="destructive">冲突</Badge> : '-'}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[260px]">字段 ID</TableHead>
+                        <TableHead>值</TableHead>
+                        <TableHead className="w-[80px] text-right">来源数</TableHead>
+                        <TableHead className="w-[80px]">冲突</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {structuredRows.map((row) => (
+                        <TableRow key={row.path}>
+                          <TableCell className="font-mono text-xs" title={row.groupTitle}>
+                            {row.path}
+                          </TableCell>
+                          <TableCell>
+                            <CanonicalValueCell value={row.value} formatHint={row.formatHint} />
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">{row.sourcesCount}</TableCell>
+                          <TableCell>{row.conflict ? <Badge variant="destructive">冲突</Badge> : '-'}</TableCell>
+                        </TableRow>
                       ))}
-                    </div>
-                  ))}
-
-                  <details className="rounded-md border p-3">
-                    <summary className="cursor-pointer select-none text-sm font-medium">
-                      调试：查看原始 canonical JSON
-                    </summary>
-                    <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">
-                      {JSON.stringify(asset.latestSnapshot.canonical, null, 2)}
-                    </pre>
-                  </details>
-                </div>
+                    </TableBody>
+                  </Table>
+                </>
               )}
             </CardContent>
           </Card>
+
+          <details className="rounded-md border bg-background p-3">
+            <summary className="cursor-pointer select-none text-sm font-medium">历史 / 时间线（可选）</summary>
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={historyTypes.length === 0 ? 'secondary' : 'outline'}
+                  onClick={() => setHistoryTypes([])}
+                >
+                  全部
+                </Button>
+                {HISTORY_TYPE_OPTIONS.map((o) => {
+                  const active = historyTypes.includes(o.type);
+                  return (
+                    <Button
+                      key={o.type}
+                      size="sm"
+                      variant={active ? 'secondary' : 'outline'}
+                      onClick={() => {
+                        setHistoryTypes((prev) => {
+                          if (prev.length === 0) return [o.type];
+                          if (prev.includes(o.type)) {
+                            const next = prev.filter((t) => t !== o.type);
+                            return next.length === 0 ? [] : next;
+                          }
+                          return [...prev, o.type];
+                        });
+                      }}
+                    >
+                      {o.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {historyLoading && historyItems.length === 0 ? (
+                <div className="text-sm text-muted-foreground">加载中…</div>
+              ) : historyError ? (
+                <div className="text-sm text-destructive">加载失败：{historyError}</div>
+              ) : historyItems.length === 0 ? (
+                <div className="text-sm text-muted-foreground">暂无历史事件（可能尚未发生变化/尚无审计操作）。</div>
+              ) : (
+                <div className="space-y-3">
+                  {historyItems.map((e) => {
+                    const label = HISTORY_TYPE_OPTIONS.find((o) => o.type === e.eventType)?.label ?? e.eventType;
+                    const summaryObj =
+                      e.summary && typeof e.summary === 'object' ? (e.summary as Record<string, unknown>) : null;
+
+                    const lines: string[] = [];
+                    if (e.eventType === 'collect.changed') {
+                      const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
+                      for (const c of changes.slice(0, 5)) {
+                        if (!c || typeof c !== 'object') continue;
+                        const obj = c as Record<string, unknown>;
+                        const labelZh =
+                          typeof obj.labelZh === 'string' ? obj.labelZh : typeof obj.path === 'string' ? obj.path : '-';
+                        const before = typeof obj.before === 'string' ? obj.before : '';
+                        const after = typeof obj.after === 'string' ? obj.after : '';
+                        lines.push(`${labelZh}: ${before || '-'} -> ${after || '-'}`);
+                      }
+                      const relChanges = Array.isArray(summaryObj?.relationChanges)
+                        ? (summaryObj?.relationChanges as unknown[])
+                        : [];
+                      for (const r of relChanges.slice(0, 3)) {
+                        if (!r || typeof r !== 'object') continue;
+                        const obj = r as Record<string, unknown>;
+                        const type = typeof obj.type === 'string' ? obj.type : 'relation';
+                        const before = typeof obj.before === 'string' ? obj.before : '';
+                        const after = typeof obj.after === 'string' ? obj.after : '';
+                        lines.push(`${type}: ${before || '-'} -> ${after || '-'}`);
+                      }
+                    } else if (e.eventType === 'asset.status_changed') {
+                      const before = typeof summaryObj?.before === 'string' ? summaryObj.before : '';
+                      const after = typeof summaryObj?.after === 'string' ? summaryObj.after : '';
+                      lines.push(`${before || '-'} -> ${after || '-'}`);
+                    } else if (e.eventType === 'asset.merged') {
+                      const merged = Array.isArray(summaryObj?.mergedAssetUuids)
+                        ? (summaryObj?.mergedAssetUuids as unknown[]).filter((v) => typeof v === 'string')
+                        : [];
+                      lines.push(`合并数量：${merged.length}`);
+                    } else if (e.eventType === 'ledger_fields.changed') {
+                      const actor =
+                        summaryObj?.actor && typeof summaryObj.actor === 'object' ? (summaryObj.actor as any) : null;
+                      const actorName = typeof actor?.username === 'string' ? actor.username : '-';
+                      lines.push(`操作者：${actorName}`);
+                      const changes = Array.isArray(summaryObj?.changes) ? (summaryObj?.changes as unknown[]) : [];
+                      for (const c of changes.slice(0, 5)) {
+                        if (!c || typeof c !== 'object') continue;
+                        const obj = c as Record<string, unknown>;
+                        const key = typeof obj.key === 'string' ? obj.key : '-';
+                        const before = typeof obj.before === 'string' ? obj.before : '';
+                        const after = typeof obj.after === 'string' ? obj.after : '';
+                        lines.push(`${key}: ${before || '-'} -> ${after || '-'}`);
+                      }
+                      const key = typeof summaryObj?.key === 'string' ? summaryObj.key : '';
+                      const valueSummary = typeof summaryObj?.valueSummary === 'string' ? summaryObj.valueSummary : '';
+                      if (key) lines.push(`${key}: ${valueSummary || '-'}`);
+                    }
+
+                    const refs = e.refs && typeof e.refs === 'object' ? (e.refs as Record<string, unknown>) : {};
+                    const runId = typeof refs.runId === 'string' ? refs.runId : null;
+
+                    return (
+                      <div key={e.eventId} className="rounded-md border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-medium">{e.title}</div>
+                            <Badge variant="secondary">{label}</Badge>
+                            {e.sourceAssetUuid ? (
+                              <Badge variant="outline" title={e.sourceAssetUuid}>
+                                来自合并资产
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="font-mono text-xs text-muted-foreground">{e.occurredAt}</div>
+                        </div>
+
+                        {lines.length > 0 ? (
+                          <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                            {lines.slice(0, 6).map((t, idx) => (
+                              <div key={`${e.eventId}:${idx}`}>{t}</div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {runId ? (
+                          <div className="mt-3">
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`/runs/${runId}`}>查看 Run</Link>
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {historyCursor ? (
+                <Button
+                  variant="outline"
+                  disabled={historyLoading}
+                  onClick={() => void loadHistoryPage({ cursor: historyCursor, replace: false })}
+                >
+                  {historyLoading ? '加载中…' : '加载更多'}
+                </Button>
+              ) : null}
+            </div>
+          </details>
         </div>
 
-        <div className="space-y-6 lg:col-span-4">
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>关系链</CardTitle>
@@ -1013,14 +1072,10 @@ export default function AssetDetailPage() {
                     <Badge variant={asset.status === 'in_service' ? 'default' : 'secondary'}>{asset.status}</Badge>
                   </div>
                   <div className="mt-2 text-sm font-medium">
-                    {asset.displayName ?? (
-                      <span className="font-mono" title={asset.assetUuid}>
-                        {compactId(asset.assetUuid)}
-                      </span>
-                    )}
+                    {asset.displayName ?? <IdText value={asset.assetUuid} className="text-foreground" />}
                   </div>
-                  <div className="mt-1 font-mono text-xs text-muted-foreground" title={asset.assetUuid}>
-                    {compactId(asset.assetUuid)}
+                  <div className="mt-1">
+                    <IdText value={asset.assetUuid} />
                   </div>
                 </div>
 
@@ -1041,7 +1096,7 @@ export default function AssetDetailPage() {
                         className="mt-1 font-mono text-xs text-muted-foreground"
                         title={chainHost?.assetUuid ?? undefined}
                       >
-                        {chainHost?.assetUuid ? compactId(chainHost.assetUuid) : '-'}
+                        <IdText value={chainHost?.assetUuid ?? null} />
                       </div>
                     </div>
 
@@ -1062,7 +1117,7 @@ export default function AssetDetailPage() {
                         className="mt-1 font-mono text-xs text-muted-foreground"
                         title={chainCluster?.assetUuid ?? undefined}
                       >
-                        {chainCluster?.assetUuid ? compactId(chainCluster.assetUuid) : '-'}
+                        <IdText value={chainCluster?.assetUuid ?? null} />
                       </div>
                     </div>
                   </>
@@ -1083,7 +1138,7 @@ export default function AssetDetailPage() {
                         className="mt-1 font-mono text-xs text-muted-foreground"
                         title={directCluster?.assetUuid ?? undefined}
                       >
-                        {directCluster?.assetUuid ? compactId(directCluster.assetUuid) : '-'}
+                        <IdText value={directCluster?.assetUuid ?? null} />
                       </div>
                     </div>
                   </>
@@ -1111,17 +1166,11 @@ export default function AssetDetailPage() {
                             <TableCell>{r.relationType}</TableCell>
                             <TableCell>
                               <div className="text-sm">
-                                {r.toDisplayName ?? (
-                                  <span className="font-mono" title={r.toAssetUuid}>
-                                    {compactId(r.toAssetUuid)}
-                                  </span>
-                                )}
+                                {r.toDisplayName ?? <IdText value={r.toAssetUuid} className="text-foreground" />}
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {r.toAssetType ? `${formatAssetType(r.toAssetType)} · ` : null}
-                                <span className="font-mono" title={r.toAssetUuid}>
-                                  {compactId(r.toAssetUuid)}
-                                </span>
+                                <IdText value={r.toAssetUuid} />
                               </div>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">{r.lastSeenAt}</TableCell>
@@ -1142,58 +1191,135 @@ export default function AssetDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>来源明细（normalized）</CardTitle>
+              <CardTitle>调试</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {sourceRecords.length === 0 ? (
+            <CardContent className="space-y-3">
+              {!asset.latestSnapshot ? (
+                <div className="text-sm text-muted-foreground">暂无 canonical 快照。</div>
+              ) : (
+                <>
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="text-xs text-muted-foreground">Latest Snapshot</div>
+                    <div className="mt-1 space-y-1 text-xs">
+                      <div>
+                        runId: <IdText value={asset.latestSnapshot.runId} className="text-foreground" />
+                      </div>
+                      <div className="text-muted-foreground">createdAt: {asset.latestSnapshot.createdAt}</div>
+                    </div>
+                    <div className="mt-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}>打开 Run</Link>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer select-none text-sm font-medium">
+                      查看原始 canonical JSON
+                    </summary>
+                    <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">
+                      {JSON.stringify(asset.latestSnapshot.canonical, null, 2)}
+                    </pre>
+                  </details>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-3 space-y-0 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <CardTitle>来源明细</CardTitle>
+                <div className="text-xs text-muted-foreground">
+                  默认仅展示 <span className="font-mono">NEW/CHANGED</span>（按来源聚合，取最新一条记录与上一条对比）。
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={!showAllSources ? 'secondary' : 'outline'}
+                  onClick={() => setShowAllSources(false)}
+                >
+                  仅变化
+                </Button>
+                <Button
+                  size="sm"
+                  variant={showAllSources ? 'secondary' : 'outline'}
+                  onClick={() => setShowAllSources(true)}
+                >
+                  全部
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {sourceSummaries.length === 0 ? (
                 <div className="text-sm text-muted-foreground">暂无来源明细。</div>
+              ) : visibleSourceSummaries.length === 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
+                  <div className="text-sm text-muted-foreground">暂无变化来源（全部来源均为 SAME）。</div>
+                  <Button size="sm" variant="outline" onClick={() => setShowAllSources(true)}>
+                    显示全部
+                  </Button>
+                </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>来源</TableHead>
+                      <TableHead className="w-[120px]">状态</TableHead>
                       <TableHead>Collected At</TableHead>
-                      <TableHead>Source</TableHead>
                       <TableHead>External</TableHead>
                       <TableHead>Run</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sourceRecords.map((r) => (
-                      <TableRow key={`${r.recordId}_${r.collectedAt}`}>
-                        <TableCell className="text-xs text-muted-foreground">{r.collectedAt}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground" title={r.sourceId}>
-                          <span className="font-mono">{compactId(r.sourceId)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">{r.externalId}</div>
-                          <div className="text-xs text-muted-foreground">{r.externalKind}</div>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground" title={r.runId}>
-                          <span className="font-mono">{compactId(r.runId)}</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button asChild size="sm" variant="outline">
-                              <Link
-                                href={`/source-records/${encodeURIComponent(r.recordId)}?tab=normalized&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
-                              >
-                                查看 normalized
-                              </Link>
-                            </Button>
-                            {isAdmin ? (
+                    {visibleSourceSummaries.map((s) => {
+                      const tag = s.status === 'changed' ? 'CHANGED' : s.status === 'new' ? 'NEW' : 'SAME';
+                      const variant = s.status === 'changed' ? 'default' : s.status === 'new' ? 'secondary' : 'outline';
+                      return (
+                        <TableRow key={s.sourceId}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="text-sm font-medium">{s.sourceName ?? '-'}</div>
+                              <IdText value={s.sourceId} />
+                              <div className="text-xs text-muted-foreground">历史 {s.recordsCount} 条</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={variant}>{tag}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{s.latest.collectedAt}</TableCell>
+                          <TableCell>
+                            <div className="text-sm">{s.latest.externalId}</div>
+                            <div className="text-xs text-muted-foreground">{s.latest.externalKind}</div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            <IdText value={s.latest.runId} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
                               <Button asChild size="sm" variant="outline">
                                 <Link
-                                  href={`/source-records/${encodeURIComponent(r.recordId)}?tab=raw&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
+                                  href={`/source-records/${encodeURIComponent(s.latest.recordId)}?tab=normalized&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
                                 >
-                                  查看 raw
+                                  查看 normalized
                                 </Link>
                               </Button>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                              {isAdmin ? (
+                                <Button asChild size="sm" variant="outline">
+                                  <Link
+                                    href={`/source-records/${encodeURIComponent(s.latest.recordId)}?tab=raw&assetUuid=${encodeURIComponent(asset.assetUuid)}`}
+                                  >
+                                    查看 raw
+                                  </Link>
+                                </Button>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}

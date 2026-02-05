@@ -7,14 +7,15 @@ import { RequireAdminClient } from '@/components/auth/require-admin-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { compactId } from '@/lib/ui/compact-id';
 
 type SourceItem = {
   sourceId: string;
   name: string;
   sourceType: string;
   enabled: boolean;
+  credential: { credentialId: string; name: string; type: string } | null;
   config?: { endpoint?: string } | null;
   lastRun: { runId: string; status: string; finishedAt: string | null; mode: string } | null;
 };
@@ -79,6 +80,7 @@ export default function SourcesPage() {
                   <TableRow>
                     <TableHead>名称</TableHead>
                     <TableHead>类型</TableHead>
+                    <TableHead>凭据</TableHead>
                     <TableHead>启用</TableHead>
                     <TableHead>Endpoint</TableHead>
                     <TableHead>最新 Run</TableHead>
@@ -90,11 +92,10 @@ export default function SourcesPage() {
                     <TableRow key={item.sourceId}>
                       <TableCell>
                         <div className="font-medium">{item.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground" title={item.sourceId}>
-                          {compactId(item.sourceId)}
-                        </div>
+                        <IdText value={item.sourceId} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">{item.sourceType}</TableCell>
+                      <TableCell className="text-sm">{item.credential?.name ?? '-'}</TableCell>
                       <TableCell>{item.enabled ? '启用' : '停用'}</TableCell>
                       <TableCell className="font-mono text-xs">{item.config?.endpoint ?? '-'}</TableCell>
                       <TableCell className="font-mono text-xs">{item.lastRun?.finishedAt ?? '-'}</TableCell>

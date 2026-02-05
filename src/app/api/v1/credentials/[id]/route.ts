@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import { requireAdmin } from '@/lib/auth/require-admin';
+import { deriveCredentialAccountFromCiphertext } from '@/lib/credentials/credential-account';
 import { encryptJson } from '@/lib/crypto/aes-gcm';
 import { prisma } from '@/lib/db/prisma';
 import { payloadSchemaByType } from '@/lib/credentials/schema';
@@ -39,6 +40,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       credentialId: credential.id,
       name: credential.name,
       type: credential.type,
+      account: deriveCredentialAccountFromCiphertext(credential.type, credential.payloadCiphertext),
       usageCount,
       createdAt: credential.createdAt.toISOString(),
       updatedAt: credential.updatedAt.toISOString(),
@@ -115,6 +117,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         credentialId: updated.id,
         name: updated.name,
         type: updated.type,
+        account: deriveCredentialAccountFromCiphertext(updated.type, updated.payloadCiphertext),
         usageCount,
         createdAt: updated.createdAt.toISOString(),
         updatedAt: updated.updatedAt.toISOString(),

@@ -8,11 +8,11 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/ui/table';
 import { RunIssuesPanel } from '@/components/runs/run-issues-panel';
 import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
 import { getPrimaryRunIssue, sanitizeRedactedContext } from '@/lib/runs/run-issues';
-import { compactId } from '@/lib/ui/compact-id';
 
 type RunDetail = {
   runId: string;
@@ -77,11 +77,7 @@ export default function RunDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title="Run 详情"
-        meta={
-          <span className="font-mono" title={run.runId}>
-            {compactId(run.runId)}
-          </span>
-        }
+        meta={<IdText value={run.runId} className="text-foreground" />}
         description={`${run.sourceName ?? run.sourceId} · ${run.mode} · ${run.triggerType} · ${run.status}`}
         actions={
           <Button asChild size="sm" variant="outline">
@@ -101,18 +97,14 @@ export default function RunDetailPage() {
                 <TableBody>
                   <TableRow>
                     <TableHead>Run ID</TableHead>
-                    <TableCell className="font-mono text-xs" title={run.runId}>
-                      {compactId(run.runId)}
+                    <TableCell>
+                      <IdText value={run.runId} className="text-foreground" />
                     </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>来源</TableHead>
                     <TableCell>
-                      {run.sourceName ?? (
-                        <span className="font-mono text-xs" title={run.sourceId}>
-                          {compactId(run.sourceId)}
-                        </span>
-                      )}
+                      {run.sourceName ?? <IdText value={run.sourceId} className="text-foreground" />}
                     </TableCell>
                   </TableRow>
                   <TableRow>
