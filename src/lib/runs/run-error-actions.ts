@@ -175,6 +175,49 @@ const ERROR_CODE_META: Record<string, RunErrorUiMeta> = {
       },
     ],
   },
+  HYPERV_VM_MAC_UNAVAILABLE: {
+    title: 'VM MAC 未采集（Hyper-V）',
+    actions: [
+      {
+        title: '检查 VM 网卡配置/权限',
+        steps: [
+          '确认 VM 至少存在 1 块网卡（Hyper-V 设置/网络适配器）',
+          '确认采集账号具备读取 VM 网络适配器信息的权限（可在目标宿主机执行 Get-VMNetworkAdapter）',
+          '修复后重新触发 collect（缺 MAC 不影响 inventory complete，但会影响对齐展示/排障）',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
+  HYPERV_VM_DISKS_MISSING: {
+    title: 'VM 磁盘未采集（Hyper-V）',
+    actions: [
+      {
+        title: '检查虚拟磁盘枚举能力',
+        steps: [
+          '确认采集账号可执行 Get-VMHardDiskDrive 并返回 VM 磁盘列表',
+          '若 VM 使用 pass-through 磁盘，确认可读取 Get-Disk（用于容量 best-effort）',
+          '若 VM 使用 VHD/VHDX，确认宿主机可读取对应 VHD 信息（Get-VHD）',
+          '修复后重新触发 collect（缺磁盘不影响 inventory complete，但会影响对齐展示/总分配磁盘统计）',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
+  HYPERV_VM_DISK_SIZE_UNAVAILABLE: {
+    title: 'VM 磁盘容量未采集（Hyper-V）',
+    actions: [
+      {
+        title: '检查 VHD/磁盘容量读取能力',
+        steps: [
+          '确认宿主机上可对该 VM 的每块盘执行 Get-VHD 并返回 Size（虚拟盘容量）',
+          '若 VHD 存放在 CSV/共享存储/SMB 上，确认采集账号具备读取权限',
+          '若持续缺失，可先保留磁盘名称用于对齐展示，再逐步补齐权限/盘型兼容',
+        ],
+        links: [{ label: '打开 Sources', href: '/sources' }],
+      },
+    ],
+  },
   HYPERV_HOST_IP_UNAVAILABLE: {
     title: 'Host IP 未采集（Hyper-V）',
     actions: [

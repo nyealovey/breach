@@ -197,8 +197,8 @@ export function normalizeVm(raw: {
           const sizeRaw = (d as Record<string, unknown>).size_bytes;
           const sizeBytes =
             typeof sizeRaw === 'number' && Number.isFinite(sizeRaw) && sizeRaw >= 0 ? Math.trunc(sizeRaw) : undefined;
-          if (sizeBytes === undefined) return null;
-          return { ...(name ? { name } : {}), size_bytes: sizeBytes };
+          if (!name && sizeBytes === undefined) return null;
+          return { ...(name ? { name } : {}), ...(sizeBytes !== undefined ? { size_bytes: sizeBytes } : {}) };
         })
         .filter((d): d is NonNullable<typeof d> => !!d)
     : [];

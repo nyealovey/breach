@@ -115,8 +115,12 @@ function computeCollectWarnings(assets: NormalizedAsset[]): WarningIssue[] {
     if (asset.external_kind === 'vm') {
       const power = n?.runtime?.power_state;
       const ips = n?.network?.ip_addresses;
+      const macs = n?.network?.mac_addresses;
+      const disks = n?.hardware?.disks;
       const isOn = typeof power === 'string' && power.trim() === 'poweredOn';
       const hasIp = Array.isArray(ips) && ips.length > 0;
+      const hasMac = Array.isArray(macs) && macs.length > 0;
+      const hasDisks = Array.isArray(disks) && disks.length > 0;
 
       if (isOn && !hasIp) {
         warningsCollector.record({
@@ -130,6 +134,53 @@ function computeCollectWarnings(assets: NormalizedAsset[]): WarningIssue[] {
             field: 'network.ip_addresses',
           },
         });
+      }
+
+      if (isOn && !hasMac) {
+        warningsCollector.record({
+          code: 'HYPERV_VM_MAC_UNAVAILABLE',
+          category: 'parse',
+          message: 'vm mac_addresses missing; network.mac_addresses may be empty',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.vm.mac',
+            vm_external_id: asset.external_id,
+            field: 'network.mac_addresses',
+          },
+        });
+      }
+
+      if (!hasDisks) {
+        warningsCollector.record({
+          code: 'HYPERV_VM_DISKS_MISSING',
+          category: 'parse',
+          message: 'vm disks missing; hardware.disks may be empty',
+          retryable: false,
+          redacted_context: {
+            stage: 'collect.vm.disks',
+            vm_external_id: asset.external_id,
+            field: 'hardware.disks',
+          },
+        });
+      } else {
+        const hasAnySize = (disks as unknown[]).some((d) => {
+          if (!d || typeof d !== 'object' || Array.isArray(d)) return false;
+          const size = (d as Record<string, unknown>).size_bytes;
+          return typeof size === 'number' && Number.isFinite(size) && size >= 0;
+        });
+        if (!hasAnySize) {
+          warningsCollector.record({
+            code: 'HYPERV_VM_DISK_SIZE_UNAVAILABLE',
+            category: 'parse',
+            message: 'vm disk sizes missing; hardware.disks[].size_bytes may be empty',
+            retryable: false,
+            redacted_context: {
+              stage: 'collect.vm.disks.size',
+              vm_external_id: asset.external_id,
+              field: 'hardware.disks',
+            },
+          });
+        }
       }
       continue;
     }
@@ -777,16 +828,6 @@ try {
       if (Get-Command Get-VMHardDiskDrive -ErrorAction SilentlyContinue) {
         $drives = Get-VMHardDiskDrive -VMId $_.VMId -ErrorAction Stop
         foreach ($drive in $drives) {
-          if ([string]::IsNullOrWhiteSpace([string]$drive.Path)) { continue }
-          $sizeBytes = $null
-          try {
-            if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
-              $vhd = Get-VHD -Path $drive.Path -ErrorAction Stop
-              $sizeBytes = [int64]$vhd.Size
-            }
-          } catch { $sizeBytes = $null }
-          if ($null -eq $sizeBytes -or $sizeBytes -lt 0) { continue }
-
           $diskName = $null
           try {
             $ct = if ($drive.ControllerType) { $drive.ControllerType.ToString() } else { $null }
@@ -797,9 +838,40 @@ try {
             }
           } catch { $diskName = $null }
 
-          if ($diskName) {
+          $sizeBytes = $null
+          try {
+            $path = $null
+            try { $path = [string]$drive.Path } catch { $path = $null }
+
+            if (-not [string]::IsNullOrWhiteSpace([string]$path)) {
+              if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
+                $vhd = Get-VHD -Path $path -ErrorAction Stop
+                $sizeBytes = [int64]$vhd.Size
+              } else {
+                # Fallback: approximate with file length when Get-VHD is unavailable.
+                try {
+                  $item = Get-Item -LiteralPath $path -ErrorAction Stop
+                  $sizeBytes = [int64]$item.Length
+                } catch { $sizeBytes = $null }
+              }
+            } else {
+              # Pass-through disks may not have Path; try DiskNumber via Get-Disk.
+              $dn = $null
+              try { $dn = $drive.DiskNumber } catch { $dn = $null }
+              if (($null -ne $dn) -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+                $d = Get-Disk -Number $dn -ErrorAction Stop
+                $sizeBytes = [int64]$d.Size
+              }
+            }
+          } catch { $sizeBytes = $null }
+
+          if (($null -ne $sizeBytes) -and ($sizeBytes -lt 0)) { $sizeBytes = $null }
+
+          if ($diskName -and ($null -ne $sizeBytes)) {
             $vmDisks += [pscustomobject]@{ name = $diskName; size_bytes = $sizeBytes }
-          } else {
+          } elseif ($diskName) {
+            $vmDisks += [pscustomobject]@{ name = $diskName }
+          } elseif ($null -ne $sizeBytes) {
             $vmDisks += [pscustomobject]@{ size_bytes = $sizeBytes }
           }
         }
@@ -1021,16 +1093,6 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
     if (Get-Command Get-VMHardDiskDrive -ErrorAction SilentlyContinue) {
       $drives = Get-VMHardDiskDrive -VMId $_.VMId -ErrorAction Stop
       foreach ($drive in $drives) {
-        if ([string]::IsNullOrWhiteSpace([string]$drive.Path)) { continue }
-        $sizeBytes = $null
-        try {
-          if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
-            $vhd = Get-VHD -Path $drive.Path -ErrorAction Stop
-            $sizeBytes = [int64]$vhd.Size
-          }
-        } catch { $sizeBytes = $null }
-        if ($null -eq $sizeBytes -or $sizeBytes -lt 0) { continue }
-
         $diskName = $null
         try {
           $ct = if ($drive.ControllerType) { $drive.ControllerType.ToString() } else { $null }
@@ -1041,9 +1103,40 @@ $vms = Get-VM -ErrorAction Stop | ForEach-Object {
           }
         } catch { $diskName = $null }
 
-        if ($diskName) {
+        $sizeBytes = $null
+        try {
+          $path = $null
+          try { $path = [string]$drive.Path } catch { $path = $null }
+
+          if (-not [string]::IsNullOrWhiteSpace([string]$path)) {
+            if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
+              $vhd = Get-VHD -Path $path -ErrorAction Stop
+              $sizeBytes = [int64]$vhd.Size
+            } else {
+              # Fallback: approximate with file length when Get-VHD is unavailable.
+              try {
+                $item = Get-Item -LiteralPath $path -ErrorAction Stop
+                $sizeBytes = [int64]$item.Length
+              } catch { $sizeBytes = $null }
+            }
+          } else {
+            # Pass-through disks may not have Path; try DiskNumber via Get-Disk.
+            $dn = $null
+            try { $dn = $drive.DiskNumber } catch { $dn = $null }
+            if (($null -ne $dn) -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+              $d = Get-Disk -Number $dn -ErrorAction Stop
+              $sizeBytes = [int64]$d.Size
+            }
+          }
+        } catch { $sizeBytes = $null }
+
+        if (($null -ne $sizeBytes) -and ($sizeBytes -lt 0)) { $sizeBytes = $null }
+
+        if ($diskName -and ($null -ne $sizeBytes)) {
           $vmDisks += [pscustomobject]@{ name = $diskName; size_bytes = $sizeBytes }
-        } else {
+        } elseif ($diskName) {
+          $vmDisks += [pscustomobject]@{ name = $diskName }
+        } elseif ($null -ne $sizeBytes) {
           $vmDisks += [pscustomobject]@{ size_bytes = $sizeBytes }
         }
       }

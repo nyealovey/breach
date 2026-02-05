@@ -67,6 +67,18 @@ describe('hyperv inventory', () => {
     expect(normalized.hardware.disks).toEqual([{ name: 'SCSI 0:0', size_bytes: 100 }]);
   });
 
+  it('keeps vm disk entries even when size_bytes is missing (best-effort)', () => {
+    const res = buildStandaloneInventory({
+      host: { hostname: 'NODE1', host_uuid: 'h-1' },
+      vms: [{ vm_id: 'vm-1', name: 'VM1', state: 'Running', disks: [{ name: 'SCSI 0:0' }] }],
+    });
+
+    const vm = res.assets.find((a) => a.external_kind === 'vm');
+    expect(vm).toBeTruthy();
+    const normalized = (vm as any).normalized;
+    expect(normalized.hardware.disks).toEqual([{ name: 'SCSI 0:0' }]);
+  });
+
   it('dedupes vm network ip/mac addresses', () => {
     const res = buildStandaloneInventory({
       host: { hostname: 'NODE1', host_uuid: 'h-1' },
