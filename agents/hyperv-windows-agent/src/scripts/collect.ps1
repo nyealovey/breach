@@ -66,6 +66,15 @@ $sbInventory = {
     return ($m -replace '(.{2})(?=.)','$1:').TrimEnd(':')
   }
 
+  function Map-VhdTypeToProvisioning([string]$vhdType) {
+    if ([string]::IsNullOrWhiteSpace($vhdType)) { return $null }
+    $t = ([string]$vhdType).Trim().ToLower()
+    if ($t -eq 'dynamic') { return 'thin' }
+    if ($t -eq 'fixed') { return 'thick' }
+    if ($t -eq 'differencing') { return 'thin' }
+    return $null
+  }
+
   $hostName = $env:COMPUTERNAME
   $bios = $null
   try { $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop | Select-Object -First 1 } catch { $bios = $null }
@@ -165,64 +174,118 @@ $sbInventory = {
     disk_total_bytes = $diskTotalBytes
   }
 
-  $vms = @(
-    Get-VM -ErrorAction Stop | ForEach-Object {
-      $vmDisks = @()
-      try {
-        if (Get-Command Get-VMHardDiskDrive -ErrorAction SilentlyContinue) {
-          $drives = Get-VMHardDiskDrive -VMId $_.VMId -ErrorAction Stop
-          foreach ($drive in $drives) {
-            $diskName = $null
-            try {
-              $ct = if ($drive.ControllerType) { $drive.ControllerType.ToString() } else { $null }
-              $cn = $drive.ControllerNumber
-              $cl = $drive.ControllerLocation
-              if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
-                # In PowerShell string interpolation, a colon right after $var can be parsed as a scoped variable (e.g. $env:Path).
-                # Use ${} to delimit variable names.
-                $diskName = "${ct} ${cn}:${cl}"
-              }
-            } catch { $diskName = $null }
+  $vmList = @()
+  $vmList = @(Get-VM -ErrorAction Stop)
 
-            $sizeBytes = $null
-            try {
-              $path = $null
-              try { $path = [string]$drive.Path } catch { $path = $null }
+  $disksByVmId = @{}
+  $diskFileTotalByVmId = @{}
+  try {
+    if (Get-Command Get-VMHardDiskDrive -ErrorAction SilentlyContinue) {
+      $allDrives = @($vmList | Get-VMHardDiskDrive -ErrorAction Stop)
+      foreach ($drive in $allDrives) {
+        $vmIdStr = $null
+        try { $vmIdStr = [string]$drive.VMId } catch { $vmIdStr = $null }
+        if ([string]::IsNullOrWhiteSpace([string]$vmIdStr)) { continue }
 
-              if (-not [string]::IsNullOrWhiteSpace([string]$path)) {
-                if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
-                  $vhd = Get-VHD -Path $path -ErrorAction Stop
-                  $sizeBytes = [int64]$vhd.Size
-                } else {
-                  # Fallback: approximate with file length when Get-VHD is unavailable.
-                  try {
-                    $item = Get-Item -LiteralPath $path -ErrorAction Stop
-                    $sizeBytes = [int64]$item.Length
-                  } catch { $sizeBytes = $null }
-                }
-              } else {
-                # Pass-through disks may not have Path; try DiskNumber via Get-Disk.
-                $dn = $null
-                try { $dn = $drive.DiskNumber } catch { $dn = $null }
-                if (($null -ne $dn) -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
-                  $d = Get-Disk -Number $dn -ErrorAction Stop
-                  $sizeBytes = [int64]$d.Size
-                }
-              }
-            } catch { $sizeBytes = $null }
+        if (-not $disksByVmId.ContainsKey($vmIdStr)) { $disksByVmId[$vmIdStr] = @() }
+        if (-not $diskFileTotalByVmId.ContainsKey($vmIdStr)) { $diskFileTotalByVmId[$vmIdStr] = $null }
 
-            if (($null -ne $sizeBytes) -and ($sizeBytes -lt 0)) { $sizeBytes = $null }
+        $diskName = $null
+        try {
+          $ct = if ($drive.ControllerType) { $drive.ControllerType.ToString() } else { $null }
+          $cn = $drive.ControllerNumber
+          $cl = $drive.ControllerLocation
+          if ($ct -and ($null -ne $cn) -and ($null -ne $cl)) {
+            $diskName = ($ct + ' ' + [string]$cn + ':' + [string]$cl)
+          }
+        } catch { $diskName = $null }
 
-            if ($diskName -and ($null -ne $sizeBytes)) {
-              $vmDisks += [pscustomobject]@{ name = $diskName; size_bytes = $sizeBytes }
-            } elseif ($diskName) {
-              $vmDisks += [pscustomobject]@{ name = $diskName }
-            } elseif ($null -ne $sizeBytes) {
-              $vmDisks += [pscustomobject]@{ size_bytes = $sizeBytes }
+        $sizeBytes = $null
+        $fileSizeBytes = $null
+        $diskType = $null
+        try {
+          $path = $null
+          try { $path = [string]$drive.Path } catch { $path = $null }
+
+          if (-not [string]::IsNullOrWhiteSpace([string]$path)) {
+            if (Get-Command Get-VHD -ErrorAction SilentlyContinue) {
+              try {
+                $vhd = Get-VHD -Path $path -ErrorAction Stop
+                try { $sizeBytes = [int64]$vhd.Size } catch { $sizeBytes = $null }
+                try { $fileSizeBytes = [int64]$vhd.FileSize } catch { $fileSizeBytes = $null }
+                try { $diskType = Map-VhdTypeToProvisioning ([string]$vhd.VhdType) } catch { $diskType = $null }
+              } catch { $sizeBytes = $null; $fileSizeBytes = $null; $diskType = $null }
+            } else {
+              # Fallback: approximate with file length when Get-VHD is unavailable.
+              try {
+                $item = Get-Item -LiteralPath $path -ErrorAction Stop
+                $fileSizeBytes = [int64]$item.Length
+                $sizeBytes = $fileSizeBytes
+              } catch { $sizeBytes = $null; $fileSizeBytes = $null }
+            }
+          } else {
+            # Pass-through disks may not have Path; try DiskNumber via Get-Disk.
+            $dn = $null
+            try { $dn = $drive.DiskNumber } catch { $dn = $null }
+            if (($null -ne $dn) -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+              $d = Get-Disk -Number $dn -ErrorAction Stop
+              $sizeBytes = [int64]$d.Size
             }
           }
+        } catch { }
+
+        if (($null -ne $sizeBytes) -and ($sizeBytes -lt 0)) { $sizeBytes = $null }
+        if (($null -ne $fileSizeBytes) -and ($fileSizeBytes -lt 0)) { $fileSizeBytes = $null }
+
+        $entry = [ordered]@{}
+        if ($diskName) { $entry.name = $diskName }
+        if ($null -ne $sizeBytes) { $entry.size_bytes = $sizeBytes }
+        if ($diskType) { $entry.type = $diskType }
+        if ($null -ne $fileSizeBytes) { $entry.file_size_bytes = $fileSizeBytes }
+
+        if ($entry.Count -gt 0) {
+          $disksByVmId[$vmIdStr] += [pscustomobject]$entry
+          if (($null -ne $fileSizeBytes) -and ($fileSizeBytes -ge 0)) {
+            if ($null -eq $diskFileTotalByVmId[$vmIdStr]) { $diskFileTotalByVmId[$vmIdStr] = [int64]0 }
+            $diskFileTotalByVmId[$vmIdStr] += $fileSizeBytes
+          }
         }
-      } catch { $vmDisks = @() }
+      }
+    }
+  } catch { }
+
+  $vms = @(
+    $vmList | ForEach-Object {
+      $vmIdStr = [string]$_.VMId
+
+      $vmDisks = @()
+      if ($vmIdStr -and $disksByVmId.ContainsKey($vmIdStr)) { $vmDisks = $disksByVmId[$vmIdStr] }
+
+      $diskFileTotal = $null
+      if ($vmIdStr -and $diskFileTotalByVmId.ContainsKey($vmIdStr)) {
+        $v = $diskFileTotalByVmId[$vmIdStr]
+        if ($null -ne $v) { $diskFileTotal = [int64]$v }
+      }
+
+      $toolsRunning = $null
+      $toolsStatus = $null
+      try {
+        if (Get-Command Get-VMIntegrationService -ErrorAction SilentlyContinue) {
+          $kvp = $null
+          try {
+            $kvp = Get-VMIntegrationService -VMId $_.VMId -Name 'Key-Value Pair Exchange' -ErrorAction Stop | Select-Object -First 1
+          } catch {
+            try {
+              $kvp = Get-VMIntegrationService -VMId $_.VMId -ErrorAction Stop | Where-Object { $_.Name -eq 'Key-Value Pair Exchange' } | Select-Object -First 1
+            } catch { $kvp = $null }
+          }
+
+          if ($kvp) {
+            try { $toolsRunning = [bool]$kvp.Enabled } catch { $toolsRunning = $null }
+            try { $toolsStatus = [string]$kvp.PrimaryStatusDescription } catch { $toolsStatus = $null }
+          }
+        }
+      } catch { $toolsRunning = $null; $toolsStatus = $null }
 
       $vmIps = @()
       $vmMacs = @()
@@ -255,7 +318,7 @@ $sbInventory = {
       $vmMacs = @($vmMacs | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
 
       [pscustomobject]@{
-        vm_id = [string]$_.VMId
+        vm_id = $vmIdStr
         name = $_.Name
         state = $_.State.ToString()
         cpu_count = $_.ProcessorCount
@@ -263,6 +326,9 @@ $sbInventory = {
         ip_addresses = $vmIps
         mac_addresses = $vmMacs
         disks = $vmDisks
+        disk_file_size_bytes_total = $diskFileTotal
+        tools_running = $toolsRunning
+        tools_status = $toolsStatus
       }
     }
   )

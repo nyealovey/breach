@@ -41,6 +41,7 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
   // ===== runtime =====
   'runtime.power_state': { labelZh: '电源状态', groupA: 'common', groupB: 'runtime', formatHint: 'enum' },
   'runtime.tools_running': { labelZh: 'Tools 运行', groupA: 'vm', groupB: 'runtime', formatHint: 'boolean' },
+  'runtime.tools_status': { labelZh: 'Tools 状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
 
   // ===== storage =====
   'storage.datastores': { labelZh: 'Datastore 明细', groupA: 'host', groupB: 'storage', formatHint: 'json' },
@@ -54,6 +55,12 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
     formatHint: 'bytes',
   },
   'attributes.disk_total_bytes': { labelZh: '本地盘总容量', groupA: 'host', groupB: 'storage', formatHint: 'bytes' },
+  'attributes.disk_file_size_bytes_total': {
+    labelZh: '磁盘实际占用',
+    groupA: 'vm',
+    groupB: 'hardware',
+    formatHint: 'bytes',
+  },
 };
 
 function fallbackUnknownMeta(): AssetFieldMeta {

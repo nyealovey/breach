@@ -26,6 +26,8 @@ type NormalizedV1 = {
   };
   runtime?: {
     power_state?: 'poweredOn' | 'poweredOff' | 'suspended';
+    tools_running?: boolean;
+    tools_status?: string;
   };
   storage?: {
     datastores?: Array<{ name: string; capacity_bytes: number }>;
@@ -83,6 +85,10 @@ function mapHostPowerState(state?: string | null): 'poweredOn' | 'poweredOff' | 
   if (lower === 'down' || lower.includes('down')) return 'poweredOff';
   if (lower.includes('paused') || lower.includes('pause')) return 'suspended';
   return undefined;
+}
+
+function isDiskProvisioningType(value: unknown): value is 'thin' | 'thick' | 'eagerZeroedThick' {
+  return value === 'thin' || value === 'thick' || value === 'eagerZeroedThick';
 }
 
 export function normalizeHost(raw: {
@@ -180,7 +186,15 @@ export function normalizeVm(raw: {
   machine_uuid?: string | null;
   ip_addresses?: string[] | null;
   mac_addresses?: string[] | null;
-  disks?: Array<{ name?: string | null; size_bytes?: number | null }> | null;
+  disks?: Array<{
+    name?: string | null;
+    size_bytes?: number | null;
+    type?: 'thin' | 'thick' | 'eagerZeroedThick' | string | null;
+    file_size_bytes?: number | null;
+  }> | null;
+  disk_file_size_bytes_total?: number | null;
+  tools_running?: boolean | null;
+  tools_status?: string | null;
 }): NormalizedAsset {
   const cpuCount = toFiniteNumber(raw.cpu_count ?? undefined);
   const memoryBytes = toFiniteNumber(raw.memory_bytes ?? undefined);
@@ -198,10 +212,23 @@ export function normalizeVm(raw: {
           const sizeBytes =
             typeof sizeRaw === 'number' && Number.isFinite(sizeRaw) && sizeRaw >= 0 ? Math.trunc(sizeRaw) : undefined;
           if (!name && sizeBytes === undefined) return null;
-          return { ...(name ? { name } : {}), ...(sizeBytes !== undefined ? { size_bytes: sizeBytes } : {}) };
+          const typeRaw = (d as Record<string, unknown>).type;
+          const type = isDiskProvisioningType(typeRaw) ? typeRaw : undefined;
+
+          const out: { name?: string; size_bytes?: number; type?: 'thin' | 'thick' | 'eagerZeroedThick' } = {};
+          if (name) out.name = name;
+          if (sizeBytes !== undefined) out.size_bytes = sizeBytes;
+          if (type) out.type = type;
+          return out;
         })
         .filter((d): d is NonNullable<typeof d> => !!d)
     : [];
+
+  const attributes: Record<string, string | number | boolean | null> = {};
+  const diskFileTotalRaw = raw.disk_file_size_bytes_total;
+  if (typeof diskFileTotalRaw === 'number' && Number.isFinite(diskFileTotalRaw) && diskFileTotalRaw >= 0)
+    attributes.disk_file_size_bytes_total = Math.trunc(diskFileTotalRaw);
+  const hasAttributes = Object.keys(attributes).length > 0;
 
   return {
     external_kind: 'vm',
@@ -219,10 +246,21 @@ export function normalizeVm(raw: {
         : disks.length > 0
           ? { hardware: { disks } }
           : {}),
-      ...(powerState ? { runtime: { power_state: powerState } } : {}),
+      ...(powerState ||
+      typeof raw.tools_running === 'boolean' ||
+      (raw.tools_status && raw.tools_status.trim().length > 0)
+        ? {
+            runtime: {
+              ...(powerState ? { power_state: powerState } : {}),
+              ...(typeof raw.tools_running === 'boolean' ? { tools_running: raw.tools_running } : {}),
+              ...(raw.tools_status && raw.tools_status.trim().length > 0 ? { tools_status: raw.tools_status } : {}),
+            },
+          }
+        : {}),
       ...(ipAddresses.length > 0 || macAddresses.length > 0
         ? { network: { ip_addresses: ipAddresses, mac_addresses: macAddresses } }
         : {}),
+      ...(hasAttributes ? { attributes } : {}),
     },
     raw_payload: raw,
   };

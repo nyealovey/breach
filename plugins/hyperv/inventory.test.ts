@@ -79,6 +79,32 @@ describe('hyperv inventory', () => {
     expect(normalized.hardware.disks).toEqual([{ name: 'SCSI 0:0' }]);
   });
 
+  it('maps hyperv vm disk type + tools status into normalized fields (vcenter-aligned)', () => {
+    const res = buildStandaloneInventory({
+      host: { hostname: 'NODE1', host_uuid: 'h-1' },
+      vms: [
+        {
+          vm_id: 'vm-1',
+          name: 'VM1',
+          state: 'Running',
+          tools_running: true,
+          tools_status: 'OK',
+          disks: [{ name: 'SCSI 0:0', size_bytes: 100, type: 'thin', file_size_bytes: 50 }],
+          disk_file_size_bytes_total: 50,
+        },
+      ],
+    });
+
+    const vm = res.assets.find((a) => a.external_kind === 'vm');
+    expect(vm).toBeTruthy();
+    const normalized = (vm as any).normalized;
+    expect(normalized).toMatchObject({
+      runtime: { power_state: 'poweredOn', tools_running: true, tools_status: 'OK' },
+      hardware: { disks: [{ name: 'SCSI 0:0', size_bytes: 100, type: 'thin' }] },
+      attributes: { disk_file_size_bytes_total: 50 },
+    });
+  });
+
   it('dedupes vm network ip/mac addresses', () => {
     const res = buildStandaloneInventory({
       host: { hostname: 'NODE1', host_uuid: 'h-1' },
