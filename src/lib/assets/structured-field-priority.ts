@@ -28,6 +28,9 @@ const HOST_PRIORITY_PATHS: string[] = [
   'network.ip_addresses',
   'hardware.cpu_count',
   'hardware.memory_bytes',
+  'attributes.datastore_total_bytes',
+  'attributes.disk_total_bytes',
+  'storage.datastores',
   'runtime.power_state',
 ];
 

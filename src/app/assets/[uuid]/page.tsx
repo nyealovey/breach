@@ -459,6 +459,38 @@ export default function AssetDetailPage() {
     };
   }, [asset?.assetType, asset?.machineNameOverride, canonicalFields]);
 
+  const vmDisks = useMemo(() => {
+    if (asset?.assetType !== 'vm') return null;
+    const value = pickLatestFieldValue(canonicalFields, 'hardware.disks');
+    if (!Array.isArray(value)) return null;
+
+    return value
+      .filter((v) => v && typeof v === 'object' && !Array.isArray(v))
+      .map((v) => v as Record<string, unknown>)
+      .map((v) => ({
+        name: typeof v.name === 'string' ? v.name.trim() : '',
+        sizeBytes:
+          typeof v.size_bytes === 'number' && Number.isFinite(v.size_bytes) && v.size_bytes >= 0 ? v.size_bytes : null,
+        type: typeof v.type === 'string' && v.type.trim().length > 0 ? v.type.trim() : null,
+      }))
+      .filter((d) => d.name.length > 0 || d.sizeBytes !== null || d.type !== null);
+  }, [asset?.assetType, canonicalFields]);
+
+  const vmDiskTotals = useMemo(() => {
+    if (asset?.assetType !== 'vm') return null;
+    const hasList = vmDisks !== null;
+
+    let sumBytes = 0;
+    let seen = false;
+    for (const d of vmDisks ?? []) {
+      if (typeof d.sizeBytes !== 'number') continue;
+      sumBytes += d.sizeBytes;
+      seen = true;
+    }
+
+    return { hasList, sumBytes: seen ? sumBytes : null };
+  }, [asset?.assetType, vmDisks]);
+
   const hostDatastores = useMemo(() => {
     if (asset?.assetType !== 'host') return null;
     const value = pickLatestFieldValue(canonicalFields, 'storage.datastores');
@@ -482,6 +514,27 @@ export default function AssetDetailPage() {
     const hasList = hostDatastores !== null;
     const mismatch = totalBytes !== null && hasList && totalBytes !== sumBytes;
     return { totalBytes, sumBytes, hasList, mismatch };
+  }, [asset?.assetType, canonicalFields, hostDatastores]);
+
+  const hostAllocatedDiskText = useMemo(() => {
+    if (asset?.assetType !== 'host') return null;
+
+    const datastoreTotal = pickLatestFieldValue(canonicalFields, 'attributes.datastore_total_bytes');
+    if (typeof datastoreTotal === 'number' && Number.isFinite(datastoreTotal) && datastoreTotal >= 0) {
+      return formatAssetFieldValue(datastoreTotal, { formatHint: 'bytes' });
+    }
+
+    const diskTotal = pickLatestFieldValue(canonicalFields, 'attributes.disk_total_bytes');
+    if (typeof diskTotal === 'number' && Number.isFinite(diskTotal) && diskTotal >= 0) {
+      return formatAssetFieldValue(diskTotal, { formatHint: 'bytes' });
+    }
+
+    if (hostDatastores !== null && hostDatastores.length > 0) {
+      const sum = hostDatastores.reduce((acc, ds) => acc + ds.capacityBytes, 0);
+      return formatAssetFieldValue(sum, { formatHint: 'bytes' });
+    }
+
+    return null;
   }, [asset?.assetType, canonicalFields, hostDatastores]);
 
   const sourceSummaries = useMemo<SourceSummary[]>(() => {
@@ -638,10 +691,12 @@ export default function AssetDetailPage() {
                     <TableHead>内存</TableHead>
                     <TableCell>{summary.memoryText ?? '-'}</TableCell>
                   </TableRow>
-                  {asset.assetType === 'vm' ? (
+                  {asset.assetType === 'vm' || asset.assetType === 'host' ? (
                     <TableRow>
                       <TableHead>总分配磁盘</TableHead>
-                      <TableCell>{summary.diskText ?? '-'}</TableCell>
+                      <TableCell>
+                        {asset.assetType === 'vm' ? (summary.diskText ?? '-') : (hostAllocatedDiskText ?? '-')}
+                      </TableCell>
                     </TableRow>
                   ) : null}
                   {asset.assetType === 'vm' || asset.assetType === 'host' ? (
@@ -665,9 +720,84 @@ export default function AssetDetailPage() {
                 </TableBody>
               </Table>
 
+              {asset.assetType === 'vm' ? (
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer select-none text-sm font-medium">磁盘（可选）</summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">明细求和：</span>
+                      <span className="font-medium">
+                        {vmDiskTotals?.hasList
+                          ? vmDiskTotals.sumBytes === null
+                            ? '-'
+                            : formatAssetFieldValue(vmDiskTotals.sumBytes, { formatHint: 'bytes' })
+                          : '-'}
+                      </span>
+                    </div>
+
+                    {vmDisks === null ? (
+                      <div className="text-sm text-muted-foreground">
+                        暂无磁盘明细（可能无权限/未采集到/采集异常）。建议查看该资产最近一次 Run 的 warnings/errors。
+                        {asset.latestSnapshot?.runId ? (
+                          <>
+                            {' '}
+                            <Link
+                              href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}
+                              className="underline"
+                            >
+                              打开 Run
+                            </Link>
+                            。
+                          </>
+                        ) : null}
+                      </div>
+                    ) : vmDisks.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        磁盘明细为空（该 VM 可能无磁盘，或已被过滤，或权限不足）。建议查看 Run 的 warnings/errors。
+                        {asset.latestSnapshot?.runId ? (
+                          <>
+                            {' '}
+                            <Link
+                              href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}
+                              className="underline"
+                            >
+                              打开 Run
+                            </Link>
+                            。
+                          </>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>名称</TableHead>
+                            <TableHead className="text-right">容量</TableHead>
+                            <TableHead className="text-right">类型</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {vmDisks.map((d, idx) => (
+                            <TableRow key={`${d.name || '-'}:${idx}`}>
+                              <TableCell className="font-mono text-xs">{d.name || '-'}</TableCell>
+                              <TableCell className="text-right text-sm">
+                                {typeof d.sizeBytes === 'number'
+                                  ? formatAssetFieldValue(d.sizeBytes, { formatHint: 'bytes' })
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="text-right text-sm">{d.type ?? '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </details>
+              ) : null}
+
               {asset.assetType === 'host' ? (
                 <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer select-none text-sm font-medium">Datastores（可选）</summary>
+                  <summary className="cursor-pointer select-none text-sm font-medium">磁盘（可选）</summary>
                   <div className="mt-3 space-y-3">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="text-muted-foreground">总容量：</span>
@@ -687,8 +817,7 @@ export default function AssetDetailPage() {
 
                     {hostDatastores === null ? (
                       <div className="text-sm text-muted-foreground">
-                        暂无 Datastore 明细（可能无权限/未采集到/采集异常）。建议查看该资产最近一次 Run 的
-                        warnings/errors。
+                        暂无磁盘明细（可能无权限/未采集到/采集异常）。建议查看该资产最近一次 Run 的 warnings/errors。
                         {asset.latestSnapshot?.runId ? (
                           <>
                             {' '}
@@ -704,8 +833,7 @@ export default function AssetDetailPage() {
                       </div>
                     ) : hostDatastores.length === 0 ? (
                       <div className="text-sm text-muted-foreground">
-                        Datastore 明细为空（该 Host 可能无 datastore，或已被过滤，或权限不足）。建议查看 Run 的
-                        warnings/errors。
+                        磁盘明细为空（该 Host 可能无磁盘，或已被过滤，或权限不足）。建议查看 Run 的 warnings/errors。
                         {asset.latestSnapshot?.runId ? (
                           <>
                             {' '}

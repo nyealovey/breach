@@ -48,12 +48,12 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
   'runtime.tools_status': { labelZh: 'Tools / Guest 服务状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
 
   // ===== storage =====
-  'storage.datastores': { labelZh: 'Datastore 明细', groupA: 'host', groupB: 'storage', formatHint: 'json' },
+  'storage.datastores': { labelZh: '磁盘明细', groupA: 'host', groupB: 'storage', formatHint: 'json' },
 
   // ===== common attributes (best-effort localizations) =====
   'attributes.cpu_threads': { labelZh: 'CPU 线程数', groupA: 'host', groupB: 'hardware', formatHint: 'json' },
   'attributes.datastore_total_bytes': {
-    labelZh: 'Datastore 总容量',
+    labelZh: '磁盘总容量',
     groupA: 'host',
     groupB: 'storage',
     formatHint: 'bytes',

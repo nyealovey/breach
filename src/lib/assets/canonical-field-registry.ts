@@ -93,7 +93,7 @@ export const CANONICAL_FIELD_REGISTRY: Record<string, CanonicalFieldMeta> = {
   // ========== known attributes.* keys (non-schema, but widely used) ==========
   'attributes.cpu_threads': { labelZh: 'CPU 线程数', groupA: 'host', groupB: 'attributes', formatHint: 'number' },
   'attributes.datastore_total_bytes': {
-    labelZh: 'Datastore 总容量',
+    labelZh: '磁盘总容量',
     groupA: 'host',
     groupB: 'attributes',
     formatHint: 'bytes',

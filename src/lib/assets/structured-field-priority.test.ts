@@ -63,4 +63,33 @@ describe('prioritizeStructuredFieldRows', () => {
 
     expect(out.at(-1)?.path).toBe('attributes.foo');
   });
+
+  it('prioritizes key host fields in the same order as 盘点摘要, and injects placeholders', () => {
+    const inputRows: Row[] = [row('identity.hostname', 'host-01'), row('attributes.foo', 'bar')];
+
+    const out = prioritizeStructuredFieldRows({
+      assetType: 'host',
+      displayName: 'host-01',
+      assetUuid: '550e8400-e29b-41d4-a716-446655440000',
+      rows: inputRows as any,
+    }) as Row[];
+
+    expect(out.slice(0, 12).map((r) => r.path)).toEqual([
+      'asset.display_name',
+      'identity.hostname',
+      'os.name',
+      'os.version',
+      'os.fingerprint',
+      'network.ip_addresses',
+      'hardware.cpu_count',
+      'hardware.memory_bytes',
+      'attributes.datastore_total_bytes',
+      'attributes.disk_total_bytes',
+      'storage.datastores',
+      'runtime.power_state',
+    ]);
+
+    expect(out.find((r) => r.path === 'os.name')?.value).toBeNull();
+    expect(out.at(-1)?.path).toBe('attributes.foo');
+  });
 });

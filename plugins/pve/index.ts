@@ -192,9 +192,25 @@ function toFiniteNumber(value: unknown): number | undefined {
 function extractNodeDatastores(storage: unknown): Array<{ name: string; capacity_bytes: number }> {
   if (!Array.isArray(storage)) return [];
   const out: Array<{ name: string; capacity_bytes: number }> = [];
+
+  // PVE node storages may include remote/shared backends (e.g. NFS/CIFS/iSCSI/CephFS).
+  // For host "磁盘/存储"展示，我们只保留本地口径（过滤 shared 或远程类型）。
+  const REMOTE_TYPES = new Set(['nfs', 'cifs', 'iscsi', 'iscsidirect', 'cephfs', 'glusterfs', 'rbd', 'pbs']);
+
   for (const row of storage) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
     const obj = row as Record<string, unknown>;
+
+    const sharedRaw = obj.shared;
+    const shared =
+      sharedRaw === 1 ||
+      sharedRaw === true ||
+      (typeof sharedRaw === 'string' && ['1', 'true', 'yes'].includes(sharedRaw.trim().toLowerCase()));
+    if (shared) continue;
+
+    const type = typeof obj.type === 'string' ? obj.type.trim().toLowerCase() : '';
+    if (type && REMOTE_TYPES.has(type)) continue;
+
     const name = typeof obj.storage === 'string' ? obj.storage.trim() : '';
     const total = toFiniteNumber(obj.total);
     if (!name || total === undefined || total < 0) continue;

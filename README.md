@@ -170,7 +170,7 @@ List of websites that started off with Next.js TypeScript Starter:
   - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
   - 分页：每页条数选择在列表底部左侧
-  - 详情：左右等宽两列；左侧为盘点摘要（机器名/虚拟机名/操作系统/IP/CPU/内存/总分配磁盘/电源/Tools 等）/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
+  - 详情：左右等宽两列；左侧为盘点摘要（机器名/虚拟机名/操作系统/IP/CPU/内存/总分配磁盘/电源/Tools 等）+「磁盘（可选）」明细（Host 来自 `storage.datastores`；VM 来自 `hardware.disks`，展示名称/容量/类型）/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
   - 清单/详情：当 VM 上电且 Tools / Guest 服务未运行导致 guest 信息缺失时，机器名/操作系统/IP 会显示 `- (Tools 未运行)`（vCenter≈VMware Tools；PVE≈QEMU Guest Agent；Hyper-V≈来宾集成服务，best-effort）
 - `/exports`：导出台账 CSV 任务列表与下载（admin-only；创建入口在 `/assets`；下载即失效）
 - `/schedule-groups`：调度组配置（admin-only）
@@ -198,6 +198,7 @@ List of websites that started off with Next.js TypeScript Starter:
   - VM MAC 为 best-effort：来自 `Get-VMNetworkAdapter` 的 `MacAddress`；若 VM 无网卡或读取受限，会在 Run warnings 中输出 `HYPERV_VM_MAC_UNAVAILABLE`。
 - `ASSET_LEDGER_PVE_DEBUG`：PVE 采集 debug 开关（默认关闭）。开启后：会在本地输出调试文件 `logs/pve-rest-debug-YYYY-MM-DD.log`（可能包含敏感基础设施信息；`logs/` 已加入 `.gitignore`，请勿提交）。调试日志会记录每次 PVE API 请求的 HTTP status/URL/耗时，以及网络/TLS/解析错误；不会记录密码、`api_token_secret` 或登录 ticket。
   - 字段说明（PVE）：Host（node）会采集 `network.ip_addresses / network.management_ip / storage.datastores / runtime.power_state` 等；VM 会采集 `hardware.disks / runtime.power_state / network.mac_addresses`，以及（best-effort）`network.ip_addresses`。
+  - Host 存储口径：`storage.datastores` 会过滤远程/共享存储（例如 `shared=1`，或 `type` 属于 `nfs/cifs/iscsi/cephfs/glusterfs/rbd/pbs/...`），仅保留本地口径；因此 `attributes.datastore_total_bytes` 也仅统计过滤后的明细求和。
   - VM IP 依赖 QEMU Guest Agent：仅对 **running 的 QEMU VM** 调用 guest agent 接口；若 guest agent 未安装/未启用/未运行，会保留空 IP 并在 Run warnings 中输出 `PVE_GUEST_AGENT_UNAVAILABLE`（不影响 inventory complete）。
   - VM 机器名/OS/Tools（best-effort）：若 guest agent 可用，会尝试采集 `identity.hostname`（guest hostname）、`os.*`（操作系统信息）与 `runtime.tools_running`（映射为 QGA 可用性）；仅对 **running 的 QEMU VM** 生效。
   - 兼容 guest agent 返回形态差异：部分环境下 `network-get-interfaces` 的 `data` 可能是数组，也可能是 `{ result: [...] }` / `{ return: [...] }` 包裹（插件已兼容）。

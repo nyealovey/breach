@@ -126,8 +126,8 @@ describe('pve plugin integration (mock PVE API)', () => {
       res.end(
         JSON.stringify({
           data: [
-            { storage: 'local-lvm', total: 1000, used: 100, avail: 900 },
-            { storage: 'nfs-share', total: 2000, used: 400, avail: 1600 },
+            { storage: 'local-lvm', type: 'lvmthin', shared: 0, total: 1000, used: 100, avail: 900 },
+            { storage: 'nfs-share', type: 'nfs', shared: 1, total: 2000, used: 400, avail: 1600 },
           ],
         }),
       );
@@ -358,12 +358,9 @@ describe('pve plugin integration (mock PVE API)', () => {
       network: { ip_addresses: ['192.0.2.10'], management_ip: '192.0.2.10' },
       runtime: { power_state: 'poweredOn' },
       storage: {
-        datastores: [
-          { name: 'local-lvm', capacity_bytes: 1000 },
-          { name: 'nfs-share', capacity_bytes: 2000 },
-        ],
+        datastores: [{ name: 'local-lvm', capacity_bytes: 1000 }],
       },
-      attributes: { datastore_total_bytes: 3000 },
+      attributes: { datastore_total_bytes: 1000 },
     });
 
     const vm = parsed.assets.find((a) => a.external_kind === 'vm' && a.external_id === 'node1:100');
