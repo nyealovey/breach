@@ -100,6 +100,12 @@ function pickToolsRunning(fields: unknown): boolean | null {
   return null;
 }
 
+function pickTrimmedString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
@@ -171,6 +177,10 @@ export async function GET(request: Request) {
         assetUuid: asset.uuid,
         assetType: asset.assetType,
         status: asset.status,
+        brand:
+          asset.assetType === 'host' ? pickTrimmedString(getCanonicalFieldValue(fields, ['identity', 'vendor'])) : null,
+        model:
+          asset.assetType === 'host' ? pickTrimmedString(getCanonicalFieldValue(fields, ['identity', 'model'])) : null,
         machineName,
         machineNameOverride,
         machineNameCollected,

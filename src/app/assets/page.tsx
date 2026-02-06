@@ -41,6 +41,8 @@ type AssetListItem = {
   assetUuid: string;
   assetType: string;
   status: string;
+  brand: string | null;
+  model: string | null;
   machineName: string | null;
   machineNameOverride: string | null;
   machineNameCollected: string | null;
@@ -75,14 +77,19 @@ type LedgerFieldFilterOptions = {
   systemLevels: string[];
   bizOwners: string[];
   osNames: string[];
+  brands: string[];
+  models: string[];
 };
 
 type AssetListColumnId =
+  | 'status'
   | 'machineName'
   | 'vmName'
   | 'hostName'
   | 'os'
   | 'ip'
+  | 'brand'
+  | 'model'
   | 'recordedAt'
   | 'cpuCount'
   | 'memoryBytes'
@@ -90,7 +97,7 @@ type AssetListColumnId =
   | 'vmPowerState'
   | `ledger.${LedgerFieldKey}`;
 
-const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v1' as const;
+const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v2' as const;
 
 const BASE_ASSET_LIST_COLUMNS: Array<{
   id: AssetListColumnId;
@@ -98,10 +105,13 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   description?: string;
 }> = [
   { id: 'machineName', label: '机器名', description: '支持“覆盖显示”，并标记覆盖≠采集。' },
+  { id: 'status', label: '状态' },
   { id: 'vmName', label: '虚拟机名', description: '仅 VM。' },
   { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
   { id: 'ip', label: 'IP', description: 'VM 若 Tools / Guest 服务未运行可能缺失。' },
+  { id: 'brand', label: '品牌' },
+  { id: 'model', label: '型号' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
@@ -110,6 +120,9 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
 ];
 
 const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
+const LEDGER_HOST_ONLY_KEY_SET = new Set<LedgerFieldKey>(
+  LEDGER_FIELD_METAS.filter((m) => m.scope === 'host_only').map((m) => m.key),
+);
 const LEDGER_FIELD_COLUMNS: Array<{ id: AssetListColumnId; label: string; description?: string }> =
   LEDGER_FIELD_METAS.map((m) => ({
     id: `ledger.${m.key}` as const,
@@ -134,6 +147,7 @@ const ASSET_LIST_COLUMN_ORDER_INDEX = new Map<AssetListColumnId, number>(
 
 const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['machineName', 'ip'];
 const VM_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'vmName' | 'hostName'>> = ['vmName', 'hostName'];
+const HOST_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'brand' | 'model'>> = ['brand', 'model'];
 
 const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
   regions: [],
@@ -143,6 +157,8 @@ const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
   systemLevels: [],
   bizOwners: [],
   osNames: [],
+  brands: [],
+  models: [],
 };
 
 function ensureCoreVisibleColumns(columns: AssetListColumnId[]): AssetListColumnId[] {
@@ -191,6 +207,19 @@ function powerStateBadgeVariant(powerState: string): React.ComponentProps<typeof
   if (normalized === 'poweredOn') return 'default';
   if (normalized === 'poweredOff') return 'secondary';
   if (normalized === 'suspended') return 'outline';
+  return 'outline';
+}
+
+function assetStatusLabel(status: string): string {
+  if (status === 'in_service') return '在服';
+  if (status === 'offline') return '离线';
+  if (status === 'merged') return '已合并';
+  return status;
+}
+
+function assetStatusBadgeVariant(status: string): React.ComponentProps<typeof Badge>['variant'] {
+  if (status === 'in_service') return 'default';
+  if (status === 'offline') return 'secondary';
   return 'outline';
 }
 
@@ -260,11 +289,14 @@ export default function AssetsPage() {
   const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host'>('all');
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
   const [sourceTypeInput, setSourceTypeInput] = useState<'all' | 'vcenter' | 'pve' | 'hyperv'>('all');
+  const [statusInput, setStatusInput] = useState<'all' | 'in_service' | 'offline'>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
   const [machineNameMissingInput, setMachineNameMissingInput] = useState(false);
   const [machineNameVmNameMismatchInput, setMachineNameVmNameMismatchInput] = useState(false);
   const [recentAddedInput, setRecentAddedInput] = useState(false);
+  const [brandInput, setBrandInput] = useState('');
+  const [modelInput, setModelInput] = useState('');
   const [regionInput, setRegionInput] = useState('');
   const [companyInput, setCompanyInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
@@ -284,15 +316,22 @@ export default function AssetsPage() {
   const query = useMemo(() => {
     const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
     const sourceType = sourceTypeInput === 'all' ? undefined : sourceTypeInput;
+    const status = statusInput === 'all' ? undefined : statusInput;
     const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
     const ipMissing = ipMissingInput ? true : undefined;
     const machineNameMissing = machineNameMissingInput ? true : undefined;
     const machineNameVmNameMismatch = machineNameVmNameMismatchInput ? true : undefined;
     const createdWithinDays = recentAddedInput ? 7 : undefined;
+    const brand = brandInput.trim() ? brandInput.trim() : undefined;
+    const model = modelInput.trim() ? modelInput.trim() : undefined;
 
     // VM-only filters imply `asset_type=vm`.
     const impliedAssetType =
-      vmPowerState || ipMissing || machineNameMissing || machineNameVmNameMismatch ? ('vm' as const) : assetType;
+      vmPowerState || ipMissing || machineNameMissing || machineNameVmNameMismatch
+        ? ('vm' as const)
+        : brand || model
+          ? ('host' as const)
+          : assetType;
 
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
@@ -301,6 +340,9 @@ export default function AssetsPage() {
       excludeAssetType: 'cluster' as const,
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
       sourceType,
+      status,
+      brand,
+      model,
       region: regionInput.trim() ? regionInput.trim() : undefined,
       company: companyInput.trim() ? companyInput.trim() : undefined,
       department: departmentInput.trim() ? departmentInput.trim() : undefined,
@@ -318,12 +360,14 @@ export default function AssetsPage() {
     };
   }, [
     assetTypeInput,
+    brandInput,
     bizOwnerInput,
     companyInput,
     machineNameMissingInput,
     machineNameVmNameMismatchInput,
     departmentInput,
     ipMissingInput,
+    modelInput,
     osInput,
     page,
     pageSize,
@@ -332,6 +376,7 @@ export default function AssetsPage() {
     regionInput,
     sourceIdInput,
     sourceTypeInput,
+    statusInput,
     systemCategoryInput,
     systemLevelInput,
     vmPowerStateInput,
@@ -339,9 +384,20 @@ export default function AssetsPage() {
 
   const visibleColumnsForTable = useMemo(() => {
     const cols = ensureCoreVisibleColumns(visibleColumns);
-    return assetTypeInput === 'host'
-      ? cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]))
-      : cols;
+    if (assetTypeInput === 'host') {
+      return cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]));
+    }
+    if (assetTypeInput === 'vm') {
+      return cols.filter((id) => {
+        if (HOST_ONLY_COLUMNS.includes(id as (typeof HOST_ONLY_COLUMNS)[number])) return false;
+        if (id.startsWith('ledger.')) {
+          const key = id.slice('ledger.'.length) as LedgerFieldKey;
+          if (LEDGER_HOST_ONLY_KEY_SET.has(key)) return false;
+        }
+        return true;
+      });
+    }
+    return cols;
   }, [assetTypeInput, visibleColumns]);
 
   useEffect(() => {
@@ -353,6 +409,9 @@ export default function AssetsPage() {
     setAssetTypeInput(parsed.assetType ?? 'all');
     setSourceIdInput(parsed.sourceId ?? 'all');
     setSourceTypeInput(parsed.sourceType ?? 'all');
+    setStatusInput(parsed.status ?? 'all');
+    setBrandInput(parsed.brand ?? '');
+    setModelInput(parsed.model ?? '');
     setRegionInput(parsed.region ?? '');
     setCompanyInput(parsed.company ?? '');
     setDepartmentInput(parsed.department ?? '');
@@ -383,6 +442,9 @@ export default function AssetsPage() {
       excludeAssetType: query.excludeAssetType,
       sourceId: query.sourceId,
       sourceType: query.sourceType,
+      status: query.status,
+      brand: query.brand,
+      model: query.model,
       region: query.region,
       company: query.company,
       department: query.department,
@@ -491,6 +553,9 @@ export default function AssetsPage() {
         excludeAssetType: query.excludeAssetType,
         sourceId: query.sourceId,
         sourceType: query.sourceType,
+        status: query.status,
+        brand: query.brand,
+        model: query.model,
         region: query.region,
         company: query.company,
         department: query.department,
@@ -539,6 +604,67 @@ export default function AssetsPage() {
   const canPrev = (pagination?.page ?? 1) > 1;
   const canNext = (pagination?.page ?? 1) < (pagination?.totalPages ?? 1);
 
+  const renderColumnSettingItem = (col: { id: AssetListColumnId; label: string }) => {
+    const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
+    const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
+    const hostOnlyAsset = HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]);
+    const hostOnlyLedger =
+      col.id.startsWith('ledger.') && LEDGER_HOST_ONLY_KEY_SET.has(col.id.slice('ledger.'.length) as LedgerFieldKey);
+    const hostOnly = hostOnlyAsset || hostOnlyLedger;
+
+    const disabled = locked || (vmOnly && assetTypeInput === 'host') || (hostOnly && assetTypeInput === 'vm');
+    const checked = locked ? true : columnDraft.includes(col.id);
+
+    return (
+      <div
+        key={col.id}
+        className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
+          disabled ? 'bg-muted/40 opacity-70' : ''
+        }`}
+      >
+        <div className="min-w-0 text-sm font-medium leading-snug">{col.label}</div>
+        <Switch
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(next) => {
+            setColumnDraft((prev) => {
+              const draft = next
+                ? prev.includes(col.id)
+                  ? prev
+                  : [...prev, col.id]
+                : prev.filter((id) => id !== col.id);
+              return ensureCoreVisibleColumns(draft);
+            });
+          }}
+        />
+      </div>
+    );
+  };
+
+  const assetFieldCommonColumns = ASSET_LIST_COLUMNS.filter(
+    (col) =>
+      !col.id.startsWith('ledger.') &&
+      !VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]) &&
+      !HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+  );
+  const assetFieldVmOnlyColumns = ASSET_LIST_COLUMNS.filter(
+    (col) => !col.id.startsWith('ledger.') && VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]),
+  );
+  const assetFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter(
+    (col) => !col.id.startsWith('ledger.') && HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+  );
+
+  const ledgerFieldCommonColumns = ASSET_LIST_COLUMNS.filter((col) => {
+    if (!col.id.startsWith('ledger.')) return false;
+    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+    return !LEDGER_HOST_ONLY_KEY_SET.has(key);
+  });
+  const ledgerFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter((col) => {
+    if (!col.id.startsWith('ledger.')) return false;
+    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+    return LEDGER_HOST_ONLY_KEY_SET.has(key);
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader title="资产" description="统一视图（canonical）。支持搜索/筛选/列设置与台账字段批量维护。" />
@@ -567,7 +693,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setIpMissingInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -582,7 +712,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setMachineNameMissingInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -597,7 +731,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setMachineNameVmNameMismatchInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -634,6 +772,12 @@ export default function AssetsPage() {
                     setMachineNameMissingInput(false);
                     setMachineNameVmNameMismatchInput(false);
                   }
+
+                  // Host-only filters don't apply to other types; reset them to avoid confusing empty results.
+                  if (value !== 'host') {
+                    setBrandInput('');
+                    setModelInput('');
+                  }
                 }}
               >
                 <SelectTrigger className="w-full md:w-[150px]">
@@ -643,6 +787,23 @@ export default function AssetsPage() {
                   <SelectItem value="all">全部类型</SelectItem>
                   <SelectItem value="vm">VM</SelectItem>
                   <SelectItem value="host">Host</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={statusInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setStatusInput(value as typeof statusInput);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[160px]">
+                  <SelectValue placeholder="状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="in_service">在服</SelectItem>
+                  <SelectItem value="offline">离线</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -685,12 +846,78 @@ export default function AssetsPage() {
               </Select>
 
               <Select
+                value={brandInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setBrandInput(value === 'all' ? '' : value);
+
+                  if (value !== 'all') {
+                    setAssetTypeInput('host');
+                    setVmPowerStateInput('all');
+                    setIpMissingInput(false);
+                    setMachineNameMissingInput(false);
+                    setMachineNameVmNameMismatchInput(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[200px]">
+                  <SelectValue placeholder="品牌" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部品牌</SelectItem>
+                  {brandInput && !ledgerFieldFilterOptions.brands.includes(brandInput) ? (
+                    <SelectItem value={brandInput}>{brandInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.brands.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={modelInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setModelInput(value === 'all' ? '' : value);
+
+                  if (value !== 'all') {
+                    setAssetTypeInput('host');
+                    setVmPowerStateInput('all');
+                    setIpMissingInput(false);
+                    setMachineNameMissingInput(false);
+                    setMachineNameVmNameMismatchInput(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[200px]">
+                  <SelectValue placeholder="型号" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部型号</SelectItem>
+                  {modelInput && !ledgerFieldFilterOptions.models.includes(modelInput) ? (
+                    <SelectItem value={modelInput}>{modelInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.models.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
                 value={vmPowerStateInput}
                 onValueChange={(value) => {
                   setPage(1);
                   setVmPowerStateInput(value as typeof vmPowerStateInput);
 
-                  if (value !== 'all') setAssetTypeInput('vm');
+                  if (value !== 'all') {
+                    setAssetTypeInput('vm');
+                    setBrandInput('');
+                    setModelInput('');
+                  }
                 }}
               >
                 <SelectTrigger className="w-full md:w-[160px]">
@@ -1025,6 +1252,16 @@ export default function AssetsPage() {
                           );
                         }
 
+                        if (colId === 'status') {
+                          return (
+                            <TableCell key={colId}>
+                              <Badge variant={assetStatusBadgeVariant(item.status)}>
+                                {assetStatusLabel(item.status)}
+                              </Badge>
+                            </TableCell>
+                          );
+                        }
+
                         if (colId === 'vmName') {
                           return (
                             <TableCell key={colId} className="font-medium">
@@ -1056,6 +1293,22 @@ export default function AssetsPage() {
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
                               {item.ip ? item.ip : (toolsNotRunningNode ?? '-')}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'brand') {
+                          return (
+                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                              {item.brand ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'model') {
+                          return (
+                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                              {item.model ?? '-'}
                             </TableCell>
                           );
                         }
@@ -1199,53 +1452,51 @@ export default function AssetsPage() {
               }
             }}
           >
-            <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
+            <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col">
               <DialogHeader>
                 <DialogTitle>列设置</DialogTitle>
                 <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
               </DialogHeader>
 
-              <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                {ASSET_LIST_COLUMNS.map((col) => {
-                  const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
-                  const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
-                  const disabled = locked || (vmOnly && assetTypeInput === 'host');
-                  const checked = locked ? true : columnDraft.includes(col.id);
-                  return (
-                    <div
-                      key={col.id}
-                      className={`flex items-center justify-between gap-4 rounded-md border p-3 ${
-                        disabled ? 'bg-muted/40 opacity-70' : ''
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium">{col.label}</div>
-                        {col.description ? (
-                          <div className="mt-0.5 text-xs text-muted-foreground">{col.description}</div>
-                        ) : null}
-                      </div>
-                      <Switch
-                        checked={checked}
-                        disabled={disabled}
-                        onCheckedChange={(next) => {
-                          setColumnDraft((prev) => {
-                            const draft = next
-                              ? prev.includes(col.id)
-                                ? prev
-                                : [...prev, col.id]
-                              : prev.filter((id) => id !== col.id);
-                            return ensureCoreVisibleColumns(draft);
-                          });
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto pr-1 md:grid-cols-2">
+                <div className="min-w-0 space-y-4">
+                  <div className="text-sm font-semibold">资产字段</div>
 
-              <div className="text-xs text-muted-foreground">
-                机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host 时不展示）；其余列可选（当前：
-                {columnDraft.length} 列）。
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">通用字段</div>
+                    <div className="space-y-2">{assetFieldCommonColumns.map(renderColumnSettingItem)}</div>
+                  </div>
+
+                  {assetFieldVmOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">VM 专属</div>
+                      <div className="space-y-2">{assetFieldVmOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+
+                  {assetFieldHostOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Host 专属</div>
+                      <div className="space-y-2">{assetFieldHostOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 space-y-4">
+                  <div className="text-sm font-semibold">台账字段</div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">通用字段</div>
+                    <div className="space-y-2">{ledgerFieldCommonColumns.map(renderColumnSettingItem)}</div>
+                  </div>
+
+                  {ledgerFieldHostOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Host 专属</div>
+                      <div className="space-y-2">{ledgerFieldHostOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <DialogFooter>

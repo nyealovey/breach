@@ -17,6 +17,9 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: 'src_1',
       q: 'host-01',
+      status: undefined,
+      brand: undefined,
+      model: undefined,
       region: undefined,
       company: undefined,
       department: undefined,
@@ -45,6 +48,9 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: undefined,
       q: undefined,
+      status: undefined,
+      brand: undefined,
+      model: undefined,
       region: undefined,
       company: undefined,
       department: undefined,
@@ -60,6 +66,36 @@ describe('asset list query', () => {
     });
   });
 
+  it('parses status/brand/model', () => {
+    const params = new URLSearchParams({
+      status: 'offline',
+      brand: '  Dell  ',
+      model: ' R740 ',
+    });
+
+    expect(parseAssetListQuery(params)).toEqual({
+      assetType: undefined,
+      excludeAssetType: undefined,
+      sourceId: undefined,
+      q: undefined,
+      status: 'offline',
+      brand: 'Dell',
+      model: 'R740',
+      region: undefined,
+      company: undefined,
+      department: undefined,
+      systemCategory: undefined,
+      systemLevel: undefined,
+      bizOwner: undefined,
+      os: undefined,
+      vmPowerState: undefined,
+      ipMissing: undefined,
+      machineNameMissing: undefined,
+      machineNameVmNameMismatch: undefined,
+      createdWithinDays: undefined,
+    });
+  });
+
   it('treats unknown asset_type as undefined', () => {
     const params = new URLSearchParams({ asset_type: 'nope' });
     expect(parseAssetListQuery(params)).toEqual({
@@ -67,6 +103,9 @@ describe('asset list query', () => {
       excludeAssetType: undefined,
       sourceId: undefined,
       q: undefined,
+      status: undefined,
+      brand: undefined,
+      model: undefined,
       region: undefined,
       company: undefined,
       department: undefined,
@@ -89,6 +128,9 @@ describe('asset list query', () => {
       excludeAssetType: 'cluster',
       sourceId: undefined,
       q: undefined,
+      status: undefined,
+      brand: undefined,
+      model: undefined,
       region: undefined,
       company: undefined,
       department: undefined,
@@ -142,6 +184,45 @@ describe('asset list query', () => {
   it('builds where with exclude_asset_type', () => {
     const where = buildAssetListWhere({ excludeAssetType: 'cluster' });
     expect(where).toEqual({ AND: [{ status: { not: 'merged' } }, { assetType: { not: 'cluster' } }] });
+  });
+
+  it('builds where with status', () => {
+    const where = buildAssetListWhere({ status: 'offline' });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([{ status: { not: 'merged' } }, { status: 'offline' }]),
+    });
+  });
+
+  it('builds where with host-only brand/model filters', () => {
+    const where = buildAssetListWhere({ brand: 'Dell', model: 'R740' });
+    expect(where).toMatchObject({
+      AND: expect.arrayContaining([
+        { status: { not: 'merged' } },
+        { assetType: 'host' },
+        {
+          runSnapshots: {
+            some: {
+              canonical: {
+                path: ['fields', 'identity', 'vendor', 'value'],
+                string_contains: 'Dell',
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+        {
+          runSnapshots: {
+            some: {
+              canonical: {
+                path: ['fields', 'identity', 'model', 'value'],
+                string_contains: 'R740',
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+      ]),
+    });
   });
 
   it('builds where with vm_power_state (only when assetType=vm)', () => {

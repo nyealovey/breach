@@ -11,6 +11,9 @@ export type AssetListUrlState = {
   excludeAssetType?: ExcludeAssetTypeParam;
   sourceId?: string;
   sourceType?: SourceTypeParam;
+  status?: 'in_service' | 'offline';
+  brand?: string;
+  model?: string;
   region?: string;
   company?: string;
   department?: string;
@@ -48,6 +51,11 @@ function parseSourceType(input: string | null): SourceTypeParam | undefined {
 
 function parseVmPowerState(input: string | null): VmPowerStateParam | undefined {
   if (input === 'poweredOn' || input === 'poweredOff' || input === 'suspended') return input;
+  return undefined;
+}
+
+function parseAssetStatus(input: string | null): AssetListUrlState['status'] | undefined {
+  if (input === 'in_service' || input === 'offline') return input;
   return undefined;
 }
 
@@ -92,6 +100,9 @@ export function parseAssetListUrlState(params: URLSearchParams): AssetListUrlSta
     excludeAssetType: parseExcludeAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
     sourceType: parseSourceType(params.get('source_type')),
+    status: parseAssetStatus(params.get('status')),
+    brand: parseOptionalString(params.get('brand')),
+    model: parseOptionalString(params.get('model')),
     region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
     department: parseOptionalString(params.get('department')),
@@ -119,6 +130,9 @@ export function buildAssetListUrlSearchParams(state: AssetListUrlState): URLSear
   if (state.excludeAssetType) params.set('exclude_asset_type', state.excludeAssetType);
   if (state.sourceId) params.set('source_id', state.sourceId);
   if (state.sourceType) params.set('source_type', state.sourceType);
+  if (state.status) params.set('status', state.status);
+  if (state.brand) params.set('brand', state.brand);
+  if (state.model) params.set('model', state.model);
   if (state.region) params.set('region', state.region);
   if (state.company) params.set('company', state.company);
   if (state.department) params.set('department', state.department);

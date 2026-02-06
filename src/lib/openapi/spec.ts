@@ -45,6 +45,8 @@ const AssetListItemSchema = z.object({
   assetUuid: z.string(),
   assetType: z.string(),
   status: z.string(),
+  brand: z.string().nullable(),
+  model: z.string().nullable(),
   machineName: z.string().nullable(),
   machineNameOverride: z.string().nullable(),
   machineNameCollected: z.string().nullable(),
@@ -166,6 +168,9 @@ registry.registerPath({
       pageSize: z.coerce.number().int().positive().optional(),
       q: z.string().optional(),
       asset_type: z.string().optional(),
+      status: z.enum(['in_service', 'offline']).optional(),
+      brand: z.string().optional(),
+      model: z.string().optional(),
       source_id: z.string().optional(),
       exclude_asset_type: z.string().optional(),
       region: z.string().optional(),
@@ -268,7 +273,7 @@ registry.registerPath({
   },
 });
 
-const PreferenceKeySchema = z.literal('assets.table.columns.v1');
+const PreferenceKeySchema = z.enum(['assets.table.columns.v1', 'assets.table.columns.v2']);
 const AssetsTableColumnsPreferenceValueSchema = z.object({
   visibleColumns: z.array(z.string()).min(1),
 });

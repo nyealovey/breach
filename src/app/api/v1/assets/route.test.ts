@@ -100,6 +100,8 @@ describe('GET /api/v1/assets', () => {
         assetUuid: '550e8400-e29b-41d4-a716-446655440000',
         assetType: 'vm',
         status: 'in_service',
+        brand: null,
+        model: null,
         machineName: 'vm-guest-override',
         machineNameOverride: 'vm-guest-override',
         machineNameCollected: 'vm-guest-collected',
@@ -161,6 +163,8 @@ describe('GET /api/v1/assets', () => {
               fields: {
                 identity: {
                   hostname: { value: 'esxi-01', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  vendor: { value: 'Dell', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
+                  model: { value: 'R740', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
                 },
                 os: {
                   name: { value: 'ESXi', sources: [{ source_id: 'src_1', run_id: 'run_1' }] },
@@ -200,6 +204,8 @@ describe('GET /api/v1/assets', () => {
       vmName: null,
       hostName: null,
       os: 'ESXi 7.0.3',
+      brand: 'Dell',
+      model: 'R740',
       cpuCount: 64,
       memoryBytes: 274877906944,
       totalDiskBytes: 1234,

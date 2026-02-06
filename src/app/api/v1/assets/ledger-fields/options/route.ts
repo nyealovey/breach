@@ -17,52 +17,63 @@ export async function GET(request: Request) {
 
   try {
     type OsNameRow = { osName: string | null };
+    type BrandRow = { brand: string | null };
+    type ModelRow = { model: string | null };
 
-    const [regionsRows, companiesRows, departmentsRows, systemCategoryRows, systemLevelRows, bizOwnerRows, osNameRows] =
-      await Promise.all([
-        prisma.assetLedgerFields.findMany({
-          distinct: ['region'],
-          where: { asset: { status: { not: 'merged' } }, region: { not: null } },
-          select: { region: true },
-          orderBy: { region: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.assetLedgerFields.findMany({
-          distinct: ['company'],
-          where: { asset: { status: { not: 'merged' } }, company: { not: null } },
-          select: { company: true },
-          orderBy: { company: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.assetLedgerFields.findMany({
-          distinct: ['department'],
-          where: { asset: { status: { not: 'merged' } }, department: { not: null } },
-          select: { department: true },
-          orderBy: { department: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.assetLedgerFields.findMany({
-          distinct: ['systemCategory'],
-          where: { asset: { status: { not: 'merged' } }, systemCategory: { not: null } },
-          select: { systemCategory: true },
-          orderBy: { systemCategory: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.assetLedgerFields.findMany({
-          distinct: ['systemLevel'],
-          where: { asset: { status: { not: 'merged' } }, systemLevel: { not: null } },
-          select: { systemLevel: true },
-          orderBy: { systemLevel: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.assetLedgerFields.findMany({
-          distinct: ['bizOwner'],
-          where: { asset: { status: { not: 'merged' } }, bizOwner: { not: null } },
-          select: { bizOwner: true },
-          orderBy: { bizOwner: 'asc' },
-          take: TAKE_LIMIT,
-        }),
-        prisma.$queryRaw<OsNameRow[]>`
+    const [
+      regionsRows,
+      companiesRows,
+      departmentsRows,
+      systemCategoryRows,
+      systemLevelRows,
+      bizOwnerRows,
+      osNameRows,
+      brandRows,
+      modelRows,
+    ] = await Promise.all([
+      prisma.assetLedgerFields.findMany({
+        distinct: ['region'],
+        where: { asset: { status: { not: 'merged' } }, region: { not: null } },
+        select: { region: true },
+        orderBy: { region: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.assetLedgerFields.findMany({
+        distinct: ['company'],
+        where: { asset: { status: { not: 'merged' } }, company: { not: null } },
+        select: { company: true },
+        orderBy: { company: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.assetLedgerFields.findMany({
+        distinct: ['department'],
+        where: { asset: { status: { not: 'merged' } }, department: { not: null } },
+        select: { department: true },
+        orderBy: { department: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.assetLedgerFields.findMany({
+        distinct: ['systemCategory'],
+        where: { asset: { status: { not: 'merged' } }, systemCategory: { not: null } },
+        select: { systemCategory: true },
+        orderBy: { systemCategory: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.assetLedgerFields.findMany({
+        distinct: ['systemLevel'],
+        where: { asset: { status: { not: 'merged' } }, systemLevel: { not: null } },
+        select: { systemLevel: true },
+        orderBy: { systemLevel: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.assetLedgerFields.findMany({
+        distinct: ['bizOwner'],
+        where: { asset: { status: { not: 'merged' } }, bizOwner: { not: null } },
+        select: { bizOwner: true },
+        orderBy: { bizOwner: 'asc' },
+        take: TAKE_LIMIT,
+      }),
+      prisma.$queryRaw<OsNameRow[]>`
         SELECT DISTINCT os_name AS "osName"
         FROM (
           SELECT DISTINCT ON (ars."assetUuid")
@@ -76,7 +87,35 @@ export async function GET(request: Request) {
         ORDER BY os_name
         LIMIT ${TAKE_LIMIT}
       `,
-      ]);
+      prisma.$queryRaw<BrandRow[]>`
+        SELECT DISTINCT brand AS "brand"
+        FROM (
+          SELECT DISTINCT ON (ars."assetUuid")
+            ars.canonical #>> '{fields,identity,vendor,value}' AS brand
+          FROM "AssetRunSnapshot" ars
+          JOIN "Asset" a ON a.uuid = ars."assetUuid"
+          WHERE a.status <> 'merged' AND a."assetType" = 'host'
+          ORDER BY ars."assetUuid", ars."createdAt" DESC
+        ) t
+        WHERE brand IS NOT NULL AND btrim(brand) <> ''
+        ORDER BY brand
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<ModelRow[]>`
+        SELECT DISTINCT model AS "model"
+        FROM (
+          SELECT DISTINCT ON (ars."assetUuid")
+            ars.canonical #>> '{fields,identity,model,value}' AS model
+          FROM "AssetRunSnapshot" ars
+          JOIN "Asset" a ON a.uuid = ars."assetUuid"
+          WHERE a.status <> 'merged' AND a."assetType" = 'host'
+          ORDER BY ars."assetUuid", ars."createdAt" DESC
+        ) t
+        WHERE model IS NOT NULL AND btrim(model) <> ''
+        ORDER BY model
+        LIMIT ${TAKE_LIMIT}
+      `,
+    ]);
 
     const regions = cleanDistinctStrings(regionsRows.map((r) => r.region));
     const companies = cleanDistinctStrings(companiesRows.map((r) => r.company));
@@ -85,9 +124,11 @@ export async function GET(request: Request) {
     const systemLevels = cleanDistinctStrings(systemLevelRows.map((r) => r.systemLevel));
     const bizOwners = cleanDistinctStrings(bizOwnerRows.map((r) => r.bizOwner));
     const osNames = cleanDistinctStrings(osNameRows.map((r) => r.osName));
+    const brands = cleanDistinctStrings(brandRows.map((r) => r.brand));
+    const models = cleanDistinctStrings(modelRows.map((r) => r.model));
 
     return ok(
-      { regions, companies, departments, systemCategories, systemLevels, bizOwners, osNames },
+      { regions, companies, departments, systemCategories, systemLevels, bizOwners, osNames, brands, models },
       { requestId: auth.requestId },
     );
   } catch {

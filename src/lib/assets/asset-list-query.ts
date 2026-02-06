@@ -6,6 +6,9 @@ export type AssetListQuery = {
   sourceId: string | undefined;
   sourceType: SourceType | undefined;
   q: string | undefined;
+  status: 'in_service' | 'offline' | undefined;
+  brand: string | undefined;
+  model: string | undefined;
   region: string | undefined;
   company: string | undefined;
   department: string | undefined;
@@ -36,6 +39,11 @@ function parseOptionalString(input: string | null): string | undefined {
   if (!input) return undefined;
   const trimmed = input.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseAssetStatus(input: string | null): AssetListQuery['status'] {
+  if (input === 'in_service' || input === 'offline') return input;
+  return undefined;
 }
 
 function parseVmPowerState(input: string | null): AssetListQuery['vmPowerState'] {
@@ -72,6 +80,9 @@ export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
     sourceId: parseOptionalString(params.get('source_id')),
     sourceType: parseSourceType(params.get('source_type')),
     q: parseOptionalString(params.get('q')),
+    status: parseAssetStatus(params.get('status')),
+    brand: parseOptionalString(params.get('brand')),
+    model: parseOptionalString(params.get('model')),
     region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
     department: parseOptionalString(params.get('department')),
@@ -114,6 +125,9 @@ export function buildAssetListWhere(query: {
   sourceId?: string;
   sourceType?: SourceType;
   q?: string;
+  status?: AssetListQuery['status'];
+  brand?: string;
+  model?: string;
   region?: string;
   company?: string;
   department?: string;
@@ -137,9 +151,42 @@ export function buildAssetListWhere(query: {
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
   if (query.sourceType) and.push({ sourceLinks: { some: { source: { sourceType: query.sourceType } } } });
 
+  if (query.status) and.push({ status: query.status });
+
   if (query.createdWithinDays && query.createdWithinDays > 0) {
     const cutoffMs = Date.now() - query.createdWithinDays * 24 * 60 * 60 * 1000;
     and.push({ createdAt: { gte: new Date(cutoffMs) } });
+  }
+
+  // Host-only filters (from canonical fields).
+  if (query.brand || query.model) {
+    and.push({ assetType: AssetType.host });
+  }
+  if (query.brand) {
+    and.push({
+      runSnapshots: {
+        some: {
+          canonical: {
+            path: ['fields', 'identity', 'vendor', 'value'],
+            string_contains: query.brand,
+            mode: 'insensitive',
+          },
+        },
+      },
+    });
+  }
+  if (query.model) {
+    and.push({
+      runSnapshots: {
+        some: {
+          canonical: {
+            path: ['fields', 'identity', 'model', 'value'],
+            string_contains: query.model,
+            mode: 'insensitive',
+          },
+        },
+      },
+    });
   }
 
   // Ledger-fields-v1 filters (case-insensitive substring).
