@@ -30,7 +30,7 @@
 
 - Run 状态：Succeeded
 - `detect` 输出 best-effort 包含（字段名可按实现略有差异）：
-  - `target_version`（应能体现 `6.5.x` 与 build 信息，若接口不可用则至少有 fallback）
+  - `target_version`（应能体现 `6.5.x` 与 build 信息；若接口不可用则可能为 `unknown`，但应仍能给出 driver/recommended）
   - `driver`（例如：`vcenter-6.5-6.7@v1`）
   - `recommended_preferred_version`（应为 `6.5-6.7`）
 - 若版本范围不匹配（例如：配置 `7.0-8.x` 但实际为 6.5）：

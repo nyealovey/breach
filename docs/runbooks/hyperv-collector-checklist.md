@@ -60,7 +60,7 @@ Windows 侧（部署 Agent 的机器）：
 
 ### 1.3 Kerberos（WinRM 模式推荐，默认路径）
 
-本项目默认 `auth_method=auto`，会优先走 Kerberos/Negotiate（不要求改服务器默认 WinRM 配置；WinRM 默认通常禁用 Basic）。
+本项目在 `healthcheck/detect` 阶段允许 `auth_method=auto`（best-effort 优先 Kerberos/Negotiate）；但 **collect 阶段禁止 `auto`**，必须显式配置 `auth_method=kerberos|ntlm|basic`，且不再自动降级/回退链路。
 
 要求：
 
@@ -84,7 +84,7 @@ Windows 侧（部署 Agent 的机器）：
   - 必填：`{ auth: 'winrm', username, password }`
   - 可选：`domain`
     - 当 Source 选择 `auto/kerberos` 时：`domain` 可用于 Kerberos realm 推导
-    - 当 Source 选择 `ntlm/basic`（legacy）或 `auto` 降级时：会以 `DOMAIN\username` 形式走 NTLM（legacy）
+    - 当 Source 选择 `ntlm/basic`（legacy）或（`healthcheck/detect`）`auto` 降级时：会以 `DOMAIN\username` 形式走 NTLM（legacy）
   - 建议：如已知 UPN，直接在 `username` 填写 `user@upnSuffix`（多域环境更稳定）
 
 ### 2.2 Source（hyperv）
@@ -102,7 +102,7 @@ Windows 侧（部署 Agent 的机器）：
   - `tlsVerify`：默认 `true`（仅 https 生效；自签名/内网才考虑关闭）
   - `timeoutMs`：默认 `60000`（群集/慢环境可适当调大）
 - 来源（Source）：
-  - `scope`：`auto|standalone|cluster`（默认 `auto`；生产建议显式填写以减少误判）
+  - `scope`：`standalone|cluster`（collect 必填；`healthcheck/detect` 可用 `auto`）
   - `max_parallel_nodes`：默认 `5`（群集并发上限；由 Agent 在域内并发调用节点）
 
 最小必填（WinRM / legacy）：
@@ -112,7 +112,7 @@ Windows 侧（部署 Agent 的机器）：
 
 推荐配置（WinRM / legacy）：
 
-- `auth_method`：`auto`（默认，优先 Kerberos）或 `kerberos`（强制）
+- `auth_method`：`kerberos|ntlm|basic`（collect 必填；`healthcheck/detect` 可用 `auto`）
 - `kerberos_service_name`：Kerberos SPN service class（默认 `WSMAN`；多数 WinRM 环境为 `WSMAN/<host>`）
 - `kerberos_spn_fallback`：是否启用兼容 fallback（默认 `false`；仅在少数环境排障时再开启）
 - `kerberos_hostname_override`：高级选项（默认不填；仅当 URL host 与 Kerberos SPN hostname 不一致时使用，例如 CNAME）
@@ -120,7 +120,7 @@ Windows 侧（部署 Agent 的机器）：
 - `port`：默认 `http=5985`、`https=5986`
 - `tls_verify`：默认 `true`（仅自签名/内网才考虑关闭）
 - `timeout_ms`：默认 `60000`
-- `scope`：`auto|standalone|cluster`（默认 `auto`；生产建议显式填写以减少误判）
+- `scope`：`standalone|cluster`（collect 必填；`healthcheck/detect` 可用 `auto`）
 - `max_parallel_nodes`：默认 `5`（群集并发上限）
 
 ## 3. 手工验收步骤（UI / API）
@@ -155,6 +155,11 @@ Windows 侧（部署 Agent 的机器）：
 ### 3.3 collect（清单 + 关系）
 
 触发方式同上（`mode=collect`）。
+
+前置要求（严格模式）：
+
+- **必须显式配置** `scope=standalone|cluster`（禁止 `auto`）
+- 若 `connection_method=winrm`：还必须显式配置 `auth_method=kerberos|ntlm|basic`
 
 期望（成功时）：
 
@@ -193,10 +198,10 @@ Windows 侧（部署 Agent 的机器）：
    - `ASSET_LEDGER_HYPERV_DEBUG=1`
 2. 复现一次 `healthcheck`
 3. 查看 `logs/hyperv-winrm-debug-YYYY-MM-DD.log`：
-   - 若走 Kerberos（`auth_method=auto|kerberos`）：优先看 `winrm.pywinrm.*` 事件
+   - 若走 Kerberos（`auth_method=kerberos`；或在 `healthcheck/detect` 下 `auth_method=auto` 命中 Kerberos 路径）：优先看 `winrm.pywinrm.*` 事件
      - `winrm.pywinrm.debug` 的 `python_stderr` 会包含 `[pywinrm-debug]` 行（`kinit.*` / `session.create` / `error`）
      - 若出现 `authGSSClientInit()` 失败：通常表示凭据缓存（ccache）不可用/不可读，或 principal/realm 归一化不一致；优先使用 UPN（`user@REALM`）+ FQDN endpoint 复现
-   - 仅当 `auth_method=auto` 且发生降级时，才会出现 `winrm.curl` 事件：
+   - 仅当（`healthcheck/detect`）`auth_method=auto` 且发生降级时，才会出现 `winrm.curl` 事件（collect 禁止 `auto`，因此 collect 不会出现该事件）：
      - 关注 `headers.www_authenticate_schemes`（只记录 scheme，不记录 token）
      - 若 401：对照 `service_name`（SPN service class）与 `stderr_excerpt` 判断是 Kerberos 协商失败还是服务器仅支持 NTLM/Basic
 

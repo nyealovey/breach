@@ -27,6 +27,38 @@ function hasVcenterPreferredVersion(config: unknown): boolean {
   return value === '6.5-6.7' || value === '7.0-8.x';
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function hasExplicitCollectScope(config: unknown): boolean {
+  if (!isRecord(config)) return false;
+  const scope = (config as Record<string, unknown>).scope;
+  return scope === 'standalone' || scope === 'cluster';
+}
+
+function getHypervConnectionMethod(config: unknown): 'agent' | 'winrm' {
+  if (!isRecord(config)) return 'winrm';
+  return (config as Record<string, unknown>).connection_method === 'agent' ? 'agent' : 'winrm';
+}
+
+function hasExplicitHypervAuthMethod(config: unknown): boolean {
+  if (!isRecord(config)) return false;
+  const auth = (config as Record<string, unknown>).auth_method;
+  return auth === 'kerberos' || auth === 'ntlm' || auth === 'basic';
+}
+
+function hasValidCollectConfig(params: { sourceType: string; config: unknown }): boolean {
+  if (params.sourceType === 'vcenter') return hasVcenterPreferredVersion(params.config);
+  if (params.sourceType === 'pve') return hasExplicitCollectScope(params.config);
+  if (params.sourceType === 'hyperv') {
+    if (!hasExplicitCollectScope(params.config)) return false;
+    if (getHypervConnectionMethod(params.config) === 'agent') return true;
+    return hasExplicitHypervAuthMethod(params.config);
+  }
+  return true;
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
@@ -101,13 +133,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const skipped_missing_credential = sources.filter((s) => s.credentialId === null).length;
     const isCollectMode = requestedMode === 'collect';
-    const skipped_missing_config = isCollectMode
-      ? sources.filter((s) => s.sourceType === 'vcenter' && !hasVcenterPreferredVersion(s.config)).length
-      : 0;
+    const skipped_missing_config = isCollectMode ? sources.filter((s) => !hasValidCollectConfig(s)).length : 0;
 
     const eligibleSources = sources.filter((s) => {
       if (s.credentialId === null) return false;
-      if (isCollectMode && s.sourceType === 'vcenter') return hasVcenterPreferredVersion(s.config);
+      if (isCollectMode) return hasValidCollectConfig(s);
       return true;
     });
     const eligibleSourceIds = eligibleSources.map((s) => s.id);

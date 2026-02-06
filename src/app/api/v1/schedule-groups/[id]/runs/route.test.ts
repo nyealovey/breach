@@ -37,7 +37,14 @@ describe('POST /api/v1/schedule-groups/:id/runs', () => {
     (prisma.scheduleGroup.findUnique as any).mockResolvedValue({ id: 'g1' } as any);
 
     const { tx, createMany } = makeTxMock({
-      sources: [{ id: 's1', credentialId: 'c1', sourceType: 'hyperv', config: { endpoint: 'host.example.com' } }],
+      sources: [
+        {
+          id: 's1',
+          credentialId: 'c1',
+          sourceType: 'hyperv',
+          config: { endpoint: 'host.example.com', scope: 'standalone', auth_method: 'kerberos' },
+        },
+      ],
       active: [],
     });
     (prisma.$transaction as any).mockImplementation(async (fn: any) => await fn(tx));
@@ -98,7 +105,12 @@ describe('POST /api/v1/schedule-groups/:id/runs', () => {
           sourceType: 'vcenter',
           config: { preferred_vcenter_version: '7.0-8.x' },
         },
-        { id: 'h1', credentialId: 'c2', sourceType: 'hyperv', config: { endpoint: 'host.example.com' } },
+        {
+          id: 'h1',
+          credentialId: 'c2',
+          sourceType: 'hyperv',
+          config: { endpoint: 'host.example.com', scope: 'standalone', auth_method: 'kerberos' },
+        },
       ],
       active: [],
     });
@@ -144,5 +156,48 @@ describe('POST /api/v1/schedule-groups/:id/runs', () => {
     expect(body.data.queued).toBe(1);
     expect(createMany).toHaveBeenCalledTimes(1);
     expect(createMany.mock.calls[0]?.[0]?.data?.[0]?.mode).toBe('healthcheck');
+  });
+
+  it('skips collect runs when required explicit config is missing', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+    (prisma.scheduleGroup.findUnique as any).mockResolvedValue({ id: 'g1' } as any);
+
+    const { tx, createMany } = makeTxMock({
+      sources: [
+        { id: 'v_bad', credentialId: 'c1', sourceType: 'vcenter', config: {} },
+        { id: 'p_bad', credentialId: 'c2', sourceType: 'pve', config: { endpoint: 'host.example.com' } },
+        {
+          id: 'h_bad',
+          credentialId: 'c3',
+          sourceType: 'hyperv',
+          config: { endpoint: 'host.example.com', scope: 'auto', auth_method: 'kerberos' },
+        },
+        {
+          id: 'h_ok',
+          credentialId: 'c4',
+          sourceType: 'hyperv',
+          config: { endpoint: 'host.example.com', scope: 'standalone', auth_method: 'kerberos' },
+        },
+      ],
+      active: [],
+    });
+    (prisma.$transaction as any).mockImplementation(async (fn: any) => await fn(tx));
+
+    const req = new Request('http://localhost/api/v1/schedule-groups/g1/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'collect' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: 'g1' }) } as any);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+
+    expect(body.data).toMatchObject({ queued: 1, skipped_missing_config: 3, skipped_missing_credential: 0 });
+    expect(createMany).toHaveBeenCalledTimes(1);
+    expect(createMany.mock.calls[0]?.[0]?.data?.[0]?.mode).toBe('collect');
   });
 });

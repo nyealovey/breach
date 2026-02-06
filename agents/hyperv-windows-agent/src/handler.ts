@@ -235,6 +235,28 @@ export function createHandler(config: { token: string; deps: HypervAgentDeps; lo
       return res;
     }
 
+    // Strict mode: collect must have an explicit scope (no auto). Detect should be used to get a recommendation.
+    if (routeMode === 'collect' && parsed.value.scope === 'auto') {
+      const res = json(400, {
+        ok: false,
+        error: {
+          code: 'AGENT_INVALID_REQUEST',
+          message: 'scope must be explicit for collect',
+          context: {
+            stage: 'collect',
+            ...(requestId ? { request_id: requestId } : {}),
+            hint: 'run detect to get recommended_scope, then set scope=standalone|cluster',
+          },
+        },
+      });
+      wideEvent.mode = routeMode;
+      wideEvent.status_code = 400;
+      wideEvent.outcome = 'invalid_request';
+      wideEvent.duration_ms = Date.now() - start;
+      config.logger?.info(wideEvent);
+      return res;
+    }
+
     try {
       const data = await config.deps.run(routeMode, parsed.value);
       const res = json(200, { ok: true, data });

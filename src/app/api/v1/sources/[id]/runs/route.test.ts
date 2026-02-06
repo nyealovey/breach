@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { POST } from '@/app/api/v1/sources/[id]/runs/route';
 import { requireAdmin } from '@/lib/auth/require-admin';
@@ -14,6 +14,10 @@ vi.mock('@/lib/db/prisma', () => ({
 }));
 
 describe('POST /api/v1/sources/:id/runs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('accepts mode=detect and enqueues a run', async () => {
     (requireAdmin as any).mockResolvedValue({
       ok: true,
@@ -48,5 +52,63 @@ describe('POST /api/v1/sources/:id/runs', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as any;
     expect(body.data).toMatchObject({ sourceId: 'src_1', mode: 'detect', triggerType: 'manual', status: 'Queued' });
+  });
+
+  it('rejects pve collect when scope is missing/auto', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.source.findFirst as any).mockResolvedValue({
+      id: 'src_pve',
+      scheduleGroupId: 'sg_1',
+      sourceType: 'pve',
+      config: { endpoint: 'host.example.com', scope: 'auto' },
+    } as any);
+
+    const req = new Request('http://localhost/api/v1/sources/src_pve/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'collect' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: 'src_pve' }) } as any);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error?.code).toBe('CONFIG_INVALID_REQUEST');
+    expect(body.error?.message).toContain('scope is required for pve collect runs');
+    expect(prisma.run.findFirst).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects hyperv winrm collect when auth_method is missing/auto', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.source.findFirst as any).mockResolvedValue({
+      id: 'src_hyperv',
+      scheduleGroupId: 'sg_1',
+      sourceType: 'hyperv',
+      config: { endpoint: 'host.example.com', scope: 'standalone', auth_method: 'auto' },
+    } as any);
+
+    const req = new Request('http://localhost/api/v1/sources/src_hyperv/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'collect' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: 'src_hyperv' }) } as any);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error?.code).toBe('CONFIG_INVALID_REQUEST');
+    expect(body.error?.message).toContain('auth_method is required for hyperv winrm collect runs');
+    expect(prisma.run.findFirst).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
   });
 });
