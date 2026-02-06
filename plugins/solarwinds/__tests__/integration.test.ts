@@ -34,6 +34,8 @@ function runCollector(request: unknown): Promise<PluginResult> {
 
 describe('solarwinds plugin integration (mock SWIS API)', () => {
   let endpoint = '';
+  let collectedNodeQueries: string[] = [];
+  let detectCountQueries: string[] = [];
 
   const server = createServer((req, res) => {
     const url = req.url ?? '';
@@ -64,10 +66,64 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
       const parsed = JSON.parse(body) as { query?: string; parameters?: Record<string, unknown> };
       const q = parsed.query ?? '';
 
+      const rows = [
+        {
+          NodeID: 1,
+          SysName: 'host-01.example.com',
+          DNS: 'host-01.example.com',
+          IPAddress: '192.0.2.10',
+          Status: 1,
+          StatusDescription: 'Up',
+          UnManaged: false,
+          IsServer: true,
+          LastSync: '/Date(1760000000000)/',
+        },
+        {
+          NodeID: 2,
+          SysName: 'sw-core-01.example.com',
+          DNS: 'sw-core-01.example.com',
+          IPAddress: '192.0.2.20',
+          Status: 1,
+          StatusDescription: 'Up',
+          UnManaged: false,
+          IsServer: false,
+          LastSync: '/Date(1760000000000)/',
+        },
+        {
+          NodeID: 3,
+          SysName: 'host-02.example.com',
+          DNS: 'host-02.example.com',
+          IPAddress: '198.51.100.10',
+          Status: 2,
+          StatusDescription: 'Down',
+          UnManaged: true,
+          IsServer: true,
+          LastSync: '/Date(1760000000000)/',
+        },
+        {
+          NodeID: 4,
+          SysName: 'fw-edge-01.example.com',
+          DNS: 'fw-edge-01.example.com',
+          IPAddress: '198.51.100.20',
+          Status: 1,
+          StatusDescription: 'Up',
+          UnManaged: false,
+          IsServer: false,
+          LastSync: '/Date(1760000000000)/',
+        },
+      ];
+
+      const includeServerOnly = /\bIsServer\s*=\s*true\b/i.test(q);
+      const includeUnmanaged = !/\bUnManaged\s*=\s*false\b/i.test(q);
+
       if (q.includes('COUNT(*)')) {
+        if (q.includes('FROM Orion.Nodes')) detectCountQueries.push(q);
+        const filtered = rows
+          .filter((row) => (includeServerOnly ? row.IsServer : true))
+          .filter((row) => (includeUnmanaged ? true : row.UnManaged === false));
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ results: [{ total: 3 }], totalRows: 1 }));
+        res.end(JSON.stringify({ results: [{ total: filtered.length }], totalRows: 1 }));
         return;
       }
 
@@ -81,43 +137,15 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
       // collect pagination
       const lastIdRaw = parsed.parameters?.lastId;
       const lastId = typeof lastIdRaw === 'number' ? lastIdRaw : Number(lastIdRaw ?? 0);
+      const topMatch = /SELECT\s+TOP\s+(\d+)/i.exec(q);
+      const pageSize = Number(topMatch?.[1] ?? 500);
+      if (q.includes('FROM Orion.Nodes')) collectedNodeQueries.push(q);
 
-      const page1 = [
-        {
-          NodeID: 1,
-          SysName: 'vm-01.example.com',
-          DNS: 'vm-01.example.com',
-          IPAddress: '192.0.2.10',
-          Status: 1,
-          StatusDescription: 'Up',
-          UnManaged: false,
-          LastSync: '/Date(1760000000000)/',
-        },
-        {
-          NodeID: 2,
-          SysName: 'vm-02.example.com',
-          DNS: 'vm-02.example.com',
-          IPAddress: '192.0.2.11',
-          Status: 3,
-          StatusDescription: 'Warning',
-          UnManaged: true,
-          LastSync: '/Date(1760000000000)/',
-        },
-      ];
-      const page2 = [
-        {
-          NodeID: 3,
-          SysName: 'vm-03.example.com',
-          DNS: 'vm-03.example.com',
-          IPAddress: '198.51.100.10',
-          Status: 2,
-          StatusDescription: 'Down',
-          UnManaged: false,
-          LastSync: '/Date(1760000000000)/',
-        },
-      ];
-
-      const results = lastId < 2 ? page1 : lastId < 3 ? page2 : [];
+      const results = rows
+        .filter((row) => row.NodeID > lastId)
+        .filter((row) => (includeServerOnly ? row.IsServer : true))
+        .filter((row) => (includeUnmanaged ? true : row.UnManaged === false))
+        .slice(0, pageSize);
 
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
@@ -157,7 +185,39 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
     expect(parsed.response.errors?.length ?? 0).toBe(0);
   });
 
+  it('detect returns server-only nodes_total count', async () => {
+    detectCountQueries = [];
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_sw',
+        source_type: 'solarwinds',
+        config: { endpoint, tls_verify: true, timeout_ms: 10_000, include_unmanaged: false },
+        credential: { username: 'user', password: 'pass' },
+      },
+      request: { run_id: 'run_detect_1', mode: 'detect', now: new Date('2026-02-06T00:00:00.000Z').toISOString() },
+    };
+
+    const { exitCode, stdout } = await runCollector(request);
+    expect(exitCode).toBe(0);
+
+    const parsed = parseCollectorResponse(stdout);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const detect = parsed.response.detect as {
+      capabilities?: { nodes_total?: number; include_unmanaged?: boolean };
+    };
+
+    expect(detect.capabilities?.include_unmanaged).toBe(false);
+    expect(detect.capabilities?.nodes_total).toBe(1);
+    expect(detectCountQueries.length).toBeGreaterThan(0);
+    expect(detectCountQueries.every((q) => /\bIsServer\s*=\s*true\b/i.test(q))).toBe(true);
+    expect(detectCountQueries.some((q) => /\bUnManaged\s*=\s*false\b/i.test(q))).toBe(true);
+  });
+
   it('collect enumerates nodes with inventory_complete=true', async () => {
+    collectedNodeQueries = [];
     const request = {
       schema_version: 'collector-request-v1',
       source: {
@@ -180,8 +240,34 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
     expect(validate.ok).toBe(true);
 
     expect((parsed.response.stats as any)?.inventory_complete).toBe(true);
-    expect(parsed.response.assets?.length).toBe(3);
+    expect(parsed.response.assets?.length).toBe(2);
+    expect(parsed.response.assets?.map((a) => a.external_id)).toEqual(['1', '3']);
+    expect(collectedNodeQueries.length).toBeGreaterThan(0);
+    expect(collectedNodeQueries.every((q) => /\bIsServer\s*=\s*true\b/i.test(q))).toBe(true);
     const first = parsed.response.assets?.[0]?.normalized as any;
     expect(first?.os?.fingerprint).toBeUndefined();
+  });
+
+  it('collect with include_unmanaged=false excludes unmanaged servers', async () => {
+    collectedNodeQueries = [];
+    const request = {
+      schema_version: 'collector-request-v1',
+      source: {
+        source_id: 'src_sw',
+        source_type: 'solarwinds',
+        config: { endpoint, tls_verify: true, timeout_ms: 10_000, page_size: 10, include_unmanaged: false },
+        credential: { username: 'user', password: 'pass' },
+      },
+      request: { run_id: 'run_2', mode: 'collect', now: new Date('2026-02-06T00:00:00.000Z').toISOString() },
+    };
+
+    const { exitCode, stdout } = await runCollector(request);
+    expect(exitCode).toBe(0);
+
+    const parsed = parseCollectorResponse(stdout);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.response.assets?.map((a) => a.external_id)).toEqual(['1']);
   });
 });

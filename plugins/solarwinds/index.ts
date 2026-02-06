@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { createSwisClient } from './client';
+import { buildCollectNodesSwql, buildDetectNodesCountSwql } from './collect-query';
 import { normalizeNode } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1, SolarWindsConfig } from './types';
 
@@ -158,7 +159,7 @@ async function detect(request: CollectorRequestV1): Promise<{ response: Collecto
       password,
     });
 
-    const nodeCount = await client.query('SELECT COUNT(*) AS total FROM Orion.Nodes');
+    const nodeCount = await client.query(buildDetectNodesCountSwql({ includeUnmanaged: cfg.includeUnmanaged }));
     const total =
       nodeCount.results.length > 0 && typeof nodeCount.results[0]?.total === 'number'
         ? Math.trunc(nodeCount.results[0]!.total as number)
@@ -213,8 +214,10 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     let lastId = 0;
     for (;;) {
-      const where = cfg.includeUnmanaged ? 'NodeID > @lastId' : 'NodeID > @lastId AND UnManaged = false';
-      const swql = `SELECT TOP ${cfg.pageSize}\n        NodeID,\n        Caption,\n        SysName,\n        DNS,\n        IPAddress,\n        Status,\n        StatusDescription,\n        UnManaged,\n        LastSync\n      FROM Orion.Nodes\n      WHERE ${where}\n      ORDER BY NodeID`;
+      const swql = buildCollectNodesSwql({
+        pageSize: cfg.pageSize,
+        includeUnmanaged: cfg.includeUnmanaged,
+      });
 
       const page = await client.query(swql, { lastId });
       if (page.results.length === 0) break;

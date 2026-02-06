@@ -199,6 +199,19 @@ GET /api/vcenter/vm?hosts={host_id}
 - TLS：v1 允许自签名；实现侧可跳过证书校验（与 Web 侧策略一致）。
 - 超时：30s；失败不重试，直接降级为字段缺失并写 warning（不影响 inventory complete）。
 
+#### 2.1.D SolarWinds Source（服务器台账口径）
+
+当 Source 用于“服务器台账”时，SolarWinds 插件的查询口径固定如下：
+
+- `collect`：仅采集 `Orion.Nodes.IsServer = true` 的节点。
+- `include_unmanaged = false` 时，额外约束 `UnManaged = false`。
+- `detect.capabilities.nodes_total` 必须与 `collect` 使用同一过滤口径（仅服务器；必要时叠加 unmanaged 过滤）。
+
+说明：
+
+- 该口径用于默认排除交换机、防火墙、路由器等非服务器设备，避免污染服务器台账。
+- 若后续需要网络设备台账，应通过独立 Source/插件策略实现，不应混用同一服务器口径。
+
 ### 2.2 输出（插件 → 核心）
 
 插件通过 **stdout** 输出 JSON 响应，包含四块：
