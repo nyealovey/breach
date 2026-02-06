@@ -214,7 +214,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     let lastId = 0;
     for (;;) {
       const where = cfg.includeUnmanaged ? 'NodeID > @lastId' : 'NodeID > @lastId AND UnManaged = false';
-      const swql = `SELECT TOP ${cfg.pageSize}\n        NodeID,\n        Caption,\n        SysName,\n        DNS,\n        IPAddress,\n        MachineType,\n        Status,\n        StatusDescription,\n        UnManaged,\n        LastSync\n      FROM Orion.Nodes\n      WHERE ${where}\n      ORDER BY NodeID`;
+      const swql = `SELECT TOP ${cfg.pageSize}\n        NodeID,\n        Caption,\n        SysName,\n        DNS,\n        IPAddress,\n        Status,\n        StatusDescription,\n        UnManaged,\n        LastSync\n      FROM Orion.Nodes\n      WHERE ${where}\n      ORDER BY NodeID`;
 
       const page = await client.query(swql, { lastId });
       if (page.results.length === 0) break;

@@ -88,7 +88,6 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
           SysName: 'vm-01.example.com',
           DNS: 'vm-01.example.com',
           IPAddress: '192.0.2.10',
-          MachineType: 'Windows Server 2019',
           Status: 1,
           StatusDescription: 'Up',
           UnManaged: false,
@@ -99,7 +98,6 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
           SysName: 'vm-02.example.com',
           DNS: 'vm-02.example.com',
           IPAddress: '192.0.2.11',
-          MachineType: 'Linux (Generic)',
           Status: 3,
           StatusDescription: 'Warning',
           UnManaged: true,
@@ -112,7 +110,6 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
           SysName: 'vm-03.example.com',
           DNS: 'vm-03.example.com',
           IPAddress: '198.51.100.10',
-          MachineType: 'VMware ESXi',
           Status: 2,
           StatusDescription: 'Down',
           UnManaged: false,
@@ -185,6 +182,6 @@ describe('solarwinds plugin integration (mock SWIS API)', () => {
     expect((parsed.response.stats as any)?.inventory_complete).toBe(true);
     expect(parsed.response.assets?.length).toBe(3);
     const first = parsed.response.assets?.[0]?.normalized as any;
-    expect(first?.os?.fingerprint).toBe('Windows Server 2019');
+    expect(first?.os?.fingerprint).toBeUndefined();
   });
 });

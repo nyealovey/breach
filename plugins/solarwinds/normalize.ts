@@ -29,6 +29,18 @@ function cleanString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function parseNodeId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    // SWIS should return NodeID as a number, but be defensive: accept numeric strings.
+    const n = Number(trimmed);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return null;
+}
+
 function parseSwisDateToIso(value: unknown): string | null {
   if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
@@ -76,14 +88,13 @@ function mapMonitorStatus(raw: {
 
 export function normalizeNode(row: Record<string, unknown>): NormalizedAsset | null {
   const nodeIdRaw = row.NodeID ?? row.nodeId ?? row.node_id;
-  const nodeId = typeof nodeIdRaw === 'number' && Number.isFinite(nodeIdRaw) ? Math.trunc(nodeIdRaw) : null;
+  const nodeId = parseNodeId(nodeIdRaw);
   if (nodeId === null) return null;
 
   const caption = cleanString(row.Caption ?? row.caption);
   const sysName = cleanString(row.SysName ?? row.sysName ?? row.systemName);
   const dns = cleanString(row.DNS ?? row.dns);
   const ip = cleanString(row.IPAddress ?? row.ipAddress ?? row.ip);
-  const machineType = cleanString(row.MachineType ?? row.machineType);
 
   const hostname = sysName ?? dns ?? null;
   const displayCaption = caption ?? sysName ?? dns ?? null;
@@ -120,11 +131,6 @@ export function normalizeNode(row: Record<string, unknown>): NormalizedAsset | n
       ...(ip
         ? {
             network: { ip_addresses: [ip] },
-          }
-        : {}),
-      ...(machineType
-        ? {
-            os: { fingerprint: machineType },
           }
         : {}),
       attributes,

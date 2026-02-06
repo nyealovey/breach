@@ -354,6 +354,8 @@ export default function AssetsPage() {
     matchReasons: string[];
   }> | null>(null);
   const [swSelectedNodeId, setSwSelectedNodeId] = useState<string>('');
+  const hasOverrideDraft =
+    editMachineNameValue.trim().length > 0 || editIpValue.trim().length > 0 || editOsValue.trim().length > 0;
 
   const query = useMemo(() => {
     const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
@@ -728,6 +730,12 @@ export default function AssetsPage() {
     setSwCandidates(null);
     setSwSelectedNodeId('');
     setEditAssetOpen(true);
+  };
+
+  const clearOverrideDraft = () => {
+    setEditMachineNameValue('');
+    setEditIpValue('');
+    setEditOsValue('');
   };
 
   const mapSolarWindsMonitorState = (node: { status?: unknown; unmanaged?: unknown }): string => {
@@ -1441,12 +1449,41 @@ export default function AssetsPage() {
 
                         if (colId === 'machineName') {
                           const hasOverride = Boolean(item.machineNameOverride);
-                          const title = hasOverride ? (item.machineNameMismatch ? '覆盖≠采集' : '覆盖') : undefined;
-                          const lineClassName = hasOverride
-                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 font-medium ${
-                                item.machineNameMismatch ? 'border-destructive' : 'border-primary'
-                              }`
-                            : 'flex flex-wrap items-center gap-2 font-medium';
+                          const collectedEmpty = !item.machineNameCollected;
+                          const collectedMatches =
+                            hasOverride &&
+                            Boolean(item.machineNameCollected) &&
+                            item.machineNameOverride?.trim() === item.machineNameCollected;
+
+                          const title = hasOverride
+                            ? item.machineNameMismatch
+                              ? '覆盖≠采集'
+                              : collectedEmpty
+                                ? '覆盖空值'
+                                : collectedMatches
+                                  ? '覆盖=采集'
+                                  : '覆盖'
+                            : '未覆盖';
+
+                          // Color semantics:
+                          // - 灰：未覆盖
+                          // - 红：覆盖≠采集
+                          // - 蓝：覆盖（采集为空时也归为蓝）
+                          // - 绿：覆盖值=采集值
+                          const borderClassName = hasOverride
+                            ? item.machineNameMismatch
+                              ? 'border-destructive'
+                              : 'border-blue-600 dark:border-blue-500'
+                            : 'border-slate-300 dark:border-slate-600';
+                          const finalBorderClassName =
+                            hasOverride && !item.machineNameMismatch && !collectedEmpty
+                              ? collectedMatches
+                                ? 'border-emerald-600 dark:border-emerald-500'
+                                : borderClassName
+                              : borderClassName;
+
+                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 font-medium ${finalBorderClassName}`;
+
                           return (
                             <TableCell key={colId}>
                               <div className="space-y-1">
@@ -1487,19 +1524,41 @@ export default function AssetsPage() {
 
                         if (colId === 'os') {
                           const hasOverride = Boolean(item.osOverrideText);
+                          const collectedEmpty = !item.osCollected;
                           const mismatch =
                             hasOverride &&
                             Boolean(item.osCollected) &&
                             item.osOverrideText?.trim() !== item.osCollected;
-                          const title = hasOverride ? (mismatch ? '覆盖≠采集' : '覆盖') : undefined;
-                          const lineClassName = hasOverride
-                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${
-                                mismatch ? 'border-destructive' : 'border-primary'
-                              }`
-                            : 'flex flex-wrap items-center gap-2';
+                          const collectedMatches =
+                            hasOverride &&
+                            Boolean(item.osCollected) &&
+                            item.osOverrideText?.trim() === item.osCollected;
+                          const title = hasOverride
+                            ? mismatch
+                              ? '覆盖≠采集'
+                              : collectedEmpty
+                                ? '覆盖空值'
+                                : collectedMatches
+                                  ? '覆盖=采集'
+                                  : '覆盖'
+                            : '未覆盖';
+                          const borderClassName = hasOverride
+                            ? mismatch
+                              ? 'border-destructive'
+                              : 'border-blue-600 dark:border-blue-500'
+                            : 'border-slate-300 dark:border-slate-600';
+                          const finalBorderClassName =
+                            hasOverride && !mismatch && !collectedEmpty
+                              ? collectedMatches
+                                ? 'border-emerald-600 dark:border-emerald-500'
+                                : borderClassName
+                              : borderClassName;
                           return (
                             <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
-                              <div className={lineClassName} title={title}>
+                              <div
+                                className={`flex flex-wrap items-center gap-2 border-l-2 pl-2 ${finalBorderClassName}`}
+                                title={title}
+                              >
                                 <span>{item.os ? item.os : (toolsNotRunningNode ?? '-')}</span>
                               </div>
                             </TableCell>
@@ -1508,16 +1567,36 @@ export default function AssetsPage() {
 
                         if (colId === 'ip') {
                           const hasOverride = Boolean(item.ipOverrideText);
+                          const collectedEmpty = !item.ipCollected;
                           const mismatch =
                             hasOverride &&
                             Boolean(item.ipCollected) &&
                             item.ipOverrideText?.trim() !== item.ipCollected;
-                          const title = hasOverride ? (mismatch ? '覆盖≠采集' : '覆盖') : undefined;
-                          const lineClassName = hasOverride
-                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${
-                                mismatch ? 'border-destructive' : 'border-primary'
-                              }`
-                            : 'flex flex-wrap items-center gap-2';
+                          const collectedMatches =
+                            hasOverride &&
+                            Boolean(item.ipCollected) &&
+                            item.ipOverrideText?.trim() === item.ipCollected;
+                          const title = hasOverride
+                            ? mismatch
+                              ? '覆盖≠采集'
+                              : collectedEmpty
+                                ? '覆盖空值'
+                                : collectedMatches
+                                  ? '覆盖=采集'
+                                  : '覆盖'
+                            : '未覆盖';
+                          const borderClassName = hasOverride
+                            ? mismatch
+                              ? 'border-destructive'
+                              : 'border-blue-600 dark:border-blue-500'
+                            : 'border-slate-300 dark:border-slate-600';
+                          const finalBorderClassName =
+                            hasOverride && !mismatch && !collectedEmpty
+                              ? collectedMatches
+                                ? 'border-emerald-600 dark:border-emerald-500'
+                                : borderClassName
+                              : borderClassName;
+                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${finalBorderClassName}`;
                           return (
                             <TableCell
                               key={colId}
@@ -1664,31 +1743,17 @@ export default function AssetsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {isAdmin ? (
-                            <>
-                              <Button
-                                size="icon"
-                                variant="outline"
-                                title="从 SolarWinds 采集"
-                                aria-label="从 SolarWinds 采集"
-                                onClick={() => {
-                                  openEditForItem(item);
-                                  void runSolarWindsCollect({ assetUuid: item.assetUuid });
-                                }}
-                              >
-                                <RefreshCw />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="outline"
-                                title="编辑/覆盖字段"
-                                aria-label="编辑/覆盖字段"
-                                onClick={() => {
-                                  openEditForItem(item);
-                                }}
-                              >
-                                <Pencil />
-                              </Button>
-                            </>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              title="编辑/覆盖字段"
+                              aria-label="编辑/覆盖字段"
+                              onClick={() => {
+                                openEditForItem(item);
+                              }}
+                            >
+                              <Pencil />
+                            </Button>
                           ) : null}
                           <Button asChild size="icon" variant="outline" title="查看详情" aria-label="查看详情">
                             <Link href={`/assets/${item.assetUuid}`}>
@@ -1987,65 +2052,65 @@ export default function AssetsPage() {
               <DialogHeader>
                 <DialogTitle>编辑资产字段</DialogTitle>
                 <DialogDescription>
-                  可覆盖机器名 / IP / 操作系统；点击“从 SolarWinds
-                  采集”会对当前资产触发一次定向采集并填充到覆盖字段（不会自动保存）。
+                  可覆盖机器名 / IP / 操作系统。打开编辑后，可手动点击采集图标把 SolarWinds
+                  采集值填充到覆盖字段（不会自动保存）。
                 </DialogDescription>
               </DialogHeader>
 
               <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="asset-machineNameOverride">机器名（覆盖）</Label>
-                    <Input
-                      id="asset-machineNameOverride"
-                      value={editMachineNameValue}
-                      placeholder="留空表示不覆盖"
-                      onChange={(e) => setEditMachineNameValue(e.target.value)}
-                    />
-                  </div>
+                <div className="flex h-full flex-col rounded-md border bg-muted/30 p-3 text-xs">
+                  <div className="font-medium">覆盖值（草稿）</div>
+                  <div className="mt-3 flex-1 space-y-3 text-sm">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="asset-machineNameOverride">机器名（覆盖）</Label>
+                      <Input
+                        id="asset-machineNameOverride"
+                        value={editMachineNameValue}
+                        placeholder="留空表示不覆盖"
+                        onChange={(e) => setEditMachineNameValue(e.target.value)}
+                      />
+                    </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="asset-ipOverrideText">IP（覆盖）</Label>
-                    <Input
-                      id="asset-ipOverrideText"
-                      value={editIpValue}
-                      placeholder="多个用逗号分隔；留空表示不覆盖"
-                      onChange={(e) => setEditIpValue(e.target.value)}
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      支持多个 IP（逗号分隔）；资产清单展示/搜索/筛选会优先使用覆盖值。
+                    <div className="space-y-1.5">
+                      <Label htmlFor="asset-ipOverrideText">IP（覆盖）</Label>
+                      <Input
+                        id="asset-ipOverrideText"
+                        value={editIpValue}
+                        placeholder="多个用逗号分隔；留空表示不覆盖"
+                        onChange={(e) => setEditIpValue(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="asset-osOverrideText">操作系统（覆盖）</Label>
+                      <Input
+                        id="asset-osOverrideText"
+                        value={editOsValue}
+                        placeholder="留空表示不覆盖"
+                        onChange={(e) => setEditOsValue(e.target.value)}
+                      />
                     </div>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="asset-osOverrideText">操作系统（覆盖）</Label>
-                    <Input
-                      id="asset-osOverrideText"
-                      value={editOsValue}
-                      placeholder="留空表示不覆盖"
-                      onChange={(e) => setEditOsValue(e.target.value)}
-                    />
+                  <div className="text-[11px] text-muted-foreground">
+                    支持多个 IP（逗号分隔）；资产清单展示/搜索/筛选会优先使用覆盖值。
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={editSaving || swCollecting || !hasOverrideDraft}
+                      onClick={clearOverrideDraft}
+                    >
+                      清空覆盖值
+                    </Button>
+                    <div className="text-[11px] text-muted-foreground">清空后需点击“保存”才会生效。</div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium">采集值（当前）</div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!editTarget || swCollecting}
-                        onClick={() => {
-                          if (!editTarget) return;
-                          void runSolarWindsCollect({ assetUuid: editTarget.assetUuid });
-                        }}
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />从 SolarWinds 采集
-                      </Button>
-                    </div>
-
-                    <div className="mt-3 space-y-3">
+                  <div className="flex h-full flex-col rounded-md border bg-muted/30 p-3 text-xs">
+                    <div className="font-medium">采集值（当前）</div>
+                    <div className="mt-3 flex-1 space-y-3">
                       <div>
                         <div className="text-muted-foreground">机器名</div>
                         <div className="mt-1 font-mono break-all">{editTarget?.machineNameCollected ?? '暂无'}</div>
@@ -2058,6 +2123,23 @@ export default function AssetsPage() {
                         <div className="text-muted-foreground">操作系统</div>
                         <div className="mt-1 break-words">{editTarget?.osCollected ?? '暂无'}</div>
                       </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        title="从 SolarWinds 采集"
+                        aria-label="从 SolarWinds 采集"
+                        disabled={!editTarget || swCollecting}
+                        onClick={() => {
+                          if (!editTarget) return;
+                          void runSolarWindsCollect({ assetUuid: editTarget.assetUuid });
+                        }}
+                      >
+                        <RefreshCw className={swCollecting ? 'animate-spin' : undefined} />
+                      </Button>
+                      <div className="text-[11px] text-muted-foreground">手动采集并填充覆盖字段（不会自动保存）。</div>
                     </div>
                   </div>
 

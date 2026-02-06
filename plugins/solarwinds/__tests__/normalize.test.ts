@@ -10,7 +10,6 @@ describe('solarwinds normalizeNode', () => {
       SysName: 'vm-01.example.com',
       DNS: 'vm-01.example.com',
       IPAddress: '192.0.2.10',
-      MachineType: 'Windows Server 2022',
       Status: 1,
       StatusDescription: 'Up',
       UnManaged: false,
@@ -26,11 +25,24 @@ describe('solarwinds normalizeNode', () => {
     expect(normalized.kind).toBe('host');
     expect(normalized.identity?.hostname).toBe('vm-01.example.com');
     expect(normalized.network?.ip_addresses).toEqual(['192.0.2.10']);
-    expect(normalized.os?.fingerprint).toBe('Windows Server 2022');
+    expect(normalized.os?.fingerprint).toBeUndefined();
     expect(normalized.attributes?.monitor_covered).toBe(true);
     expect(normalized.attributes?.monitor_status).toBe('up');
     expect(normalized.attributes?.monitor_node_id).toBe('123');
     expect(typeof normalized.attributes?.monitor_last_seen_at).toBe('string');
+  });
+
+  it('accepts NodeID as a numeric string', () => {
+    const node = normalizeNode({
+      NodeID: '123',
+      SysName: 'vm-01.example.com',
+      IPAddress: '192.0.2.10',
+      Status: 1,
+      UnManaged: false,
+    });
+
+    expect(node).not.toBeNull();
+    expect(node!.external_id).toBe('123');
   });
 
   it('marks unmanaged nodes as unmanaged status', () => {
