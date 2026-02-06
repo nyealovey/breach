@@ -16,6 +16,11 @@ import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
 import { formatOsForDisplay } from '@/lib/assets/os-display';
+import {
+  getOverrideVisualMeta,
+  normalizeOptionalText,
+  resolveOverrideAndCurrentValue,
+} from '@/lib/assets/override-visual';
 import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
@@ -27,6 +32,8 @@ import {
   TOOLS_NOT_RUNNING_TOOLTIP,
 } from '@/lib/assets/tools-not-running';
 import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
+
+import type { ReactNode } from 'react';
 
 import type { AssetFieldRow } from '@/lib/assets/asset-field-display';
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
@@ -170,6 +177,30 @@ function CanonicalValueCell({ value, formatHint }: { value: unknown; formatHint?
       </summary>
       <pre className="mt-2 max-h-52 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(value, null, 2)}</pre>
     </details>
+  );
+}
+
+function OverrideAwareCurrentValue(props: {
+  currentValue: string | null;
+  overrideText: string | null;
+  collectedText: string | null;
+  mismatch?: boolean;
+  fallback: ReactNode;
+  className?: string;
+}) {
+  const visualMeta = getOverrideVisualMeta({
+    overrideText: props.overrideText,
+    collectedText: props.collectedText,
+    mismatch: props.mismatch,
+  });
+  const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${visualMeta.borderClassName}${
+    props.className ? ` ${props.className}` : ''
+  }`;
+
+  return (
+    <div className={lineClassName} title={visualMeta.title}>
+      {props.currentValue ? <span>{props.currentValue}</span> : props.fallback}
+    </div>
   );
 }
 
@@ -405,19 +436,11 @@ export default function AssetDetailPage() {
 
   const summary = useMemo(() => {
     const assetType = asset?.assetType ?? '';
-    const normalizeOverride = (value: unknown): string | null => {
-      if (typeof value !== 'string') return null;
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    };
-
-    const machineNameCollectedRaw = pickLatestFieldValue(canonicalFields, 'identity.hostname');
-    const machineNameCollected =
-      typeof machineNameCollectedRaw === 'string' && machineNameCollectedRaw.trim().length > 0
-        ? machineNameCollectedRaw.trim()
-        : null;
-    const machineNameOverride = normalizeOverride(asset?.machineNameOverride);
-    const machineName = machineNameOverride ?? machineNameCollected;
+    const machineNameCollected = normalizeOptionalText(pickLatestFieldValue(canonicalFields, 'identity.hostname'));
+    const machineNameValue = resolveOverrideAndCurrentValue({
+      overrideText: asset?.machineNameOverride,
+      collectedText: machineNameCollected,
+    });
 
     const vmName = pickLatestFieldValue(canonicalFields, 'identity.caption');
     const osName = pickLatestFieldValue(canonicalFields, 'os.name');
@@ -430,12 +453,14 @@ export default function AssetDetailPage() {
     const powerState = pickLatestFieldValue(canonicalFields, 'runtime.power_state');
     const toolsRunning = pickLatestFieldValue(canonicalFields, 'runtime.tools_running');
 
-    const osCollected = formatOsForDisplay({ assetType, name: osName, version: osVersion, fingerprint: osFingerprint });
-    const ipCollected = formatIpAddressesForDisplay(ipAddresses);
-    const osOverride = normalizeOverride(asset?.osOverrideText);
-    const ipOverride = normalizeOverride(asset?.ipOverrideText);
-    const osCurrent = osOverride ?? osCollected;
-    const ipCurrent = ipOverride ?? ipCollected;
+    const osValue = resolveOverrideAndCurrentValue({
+      overrideText: asset?.osOverrideText,
+      collectedText: formatOsForDisplay({ assetType, name: osName, version: osVersion, fingerprint: osFingerprint }),
+    });
+    const ipValue = resolveOverrideAndCurrentValue({
+      overrideText: asset?.ipOverrideText,
+      collectedText: formatIpAddressesForDisplay(ipAddresses),
+    });
 
     const diskTotalBytes = (() => {
       if (!Array.isArray(disks)) return null;
@@ -451,27 +476,24 @@ export default function AssetDetailPage() {
       return seen ? sum : null;
     })();
 
-    const machineNameMismatch =
-      machineNameOverride !== null && machineNameCollected !== null && machineNameOverride !== machineNameCollected;
-
     return {
       assetType,
-      machineName,
-      machineNameOverride,
-      machineNameCollected,
-      machineNameMismatch,
-      vmName: assetType === 'vm' ? (typeof vmName === 'string' ? vmName.trim() : null) : null,
-      osCollected,
-      osOverride,
-      osCurrent,
-      ipCollected,
-      ipOverride,
-      ipCurrent,
+      machineName: machineNameValue.currentText,
+      machineNameOverride: machineNameValue.overrideText,
+      machineNameCollected: machineNameValue.collectedText,
+      machineNameMismatch: machineNameValue.mismatch,
+      vmName: assetType === 'vm' ? normalizeOptionalText(vmName) : null,
+      osCollected: osValue.collectedText,
+      osOverride: osValue.overrideText,
+      osCurrent: osValue.currentText,
+      ipCollected: ipValue.collectedText,
+      ipOverride: ipValue.overrideText,
+      ipCurrent: ipValue.currentText,
       cpuText: typeof cpuCount === 'number' ? String(cpuCount) : null,
       memoryText: typeof memoryBytes === 'number' ? formatAssetFieldValue(memoryBytes, { formatHint: 'bytes' }) : null,
       diskText:
         typeof diskTotalBytes === 'number' ? formatAssetFieldValue(diskTotalBytes, { formatHint: 'bytes' }) : null,
-      powerState: typeof powerState === 'string' ? powerState.trim() : null,
+      powerState: normalizeOptionalText(powerState),
       toolsRunning: typeof toolsRunning === 'boolean' ? toolsRunning : null,
     };
   }, [asset?.assetType, asset?.machineNameOverride, asset?.osOverrideText, asset?.ipOverrideText, canonicalFields]);
@@ -680,25 +702,14 @@ export default function AssetDetailPage() {
                   <TableRow>
                     <TableCell className="font-medium">机器名</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {summary.machineName ? (
-                          <span className="font-medium">{summary.machineName}</span>
-                        ) : (
-                          (toolsNotRunningNode ?? <span className="font-medium">-</span>)
-                        )}
-                        {summary.machineNameOverride ? (
-                          summary.machineNameMismatch ? (
-                            <Badge variant="destructive">覆盖≠采集</Badge>
-                          ) : (
-                            <Badge variant="secondary">覆盖</Badge>
-                          )
-                        ) : null}
-                      </div>
-                      {summary.machineNameOverride && summary.machineNameCollected ? (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          采集值：<span className="font-mono">{summary.machineNameCollected}</span>
-                        </div>
-                      ) : null}
+                      <OverrideAwareCurrentValue
+                        currentValue={summary.machineName}
+                        overrideText={summary.machineNameOverride}
+                        collectedText={summary.machineNameCollected}
+                        mismatch={summary.machineNameMismatch}
+                        fallback={toolsNotRunningNode ?? '-'}
+                        className="font-medium"
+                      />
                     </TableCell>
                     <TableCell>{summary.machineNameOverride ?? '-'}</TableCell>
                   </TableRow>
@@ -711,13 +722,25 @@ export default function AssetDetailPage() {
                   ) : null}
                   <TableRow>
                     <TableCell className="font-medium">操作系统</TableCell>
-                    <TableCell>{summary.osCurrent ? summary.osCurrent : (toolsNotRunningNode ?? '-')}</TableCell>
+                    <TableCell>
+                      <OverrideAwareCurrentValue
+                        currentValue={summary.osCurrent}
+                        overrideText={summary.osOverride}
+                        collectedText={summary.osCollected}
+                        fallback={toolsNotRunningNode ?? '-'}
+                      />
+                    </TableCell>
                     <TableCell>{summary.osOverride ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium">IP</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {summary.ipCurrent ? summary.ipCurrent : (toolsNotRunningNode ?? '-')}
+                      <OverrideAwareCurrentValue
+                        currentValue={summary.ipCurrent}
+                        overrideText={summary.ipOverride}
+                        collectedText={summary.ipCollected}
+                        fallback={toolsNotRunningNode ?? '-'}
+                      />
                     </TableCell>
                     <TableCell className="font-mono text-xs">{summary.ipOverride ?? '-'}</TableCell>
                   </TableRow>

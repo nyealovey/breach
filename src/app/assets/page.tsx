@@ -40,6 +40,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
 import { monitorStateDisplay } from '@/lib/assets/monitor-state';
+import { getOverrideVisualMeta, normalizeOptionalText } from '@/lib/assets/override-visual';
 import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
 import {
   shouldShowToolsNotRunning,
@@ -1452,45 +1453,18 @@ export default function AssetsPage() {
                         ) : null;
 
                         if (colId === 'machineName') {
-                          const hasOverride = Boolean(item.machineNameOverride);
-                          const collectedEmpty = !item.machineNameCollected;
-                          const collectedMatches =
-                            hasOverride &&
-                            Boolean(item.machineNameCollected) &&
-                            item.machineNameOverride?.trim() === item.machineNameCollected;
-
-                          const title = hasOverride
-                            ? item.machineNameMismatch
-                              ? '覆盖≠采集'
-                              : collectedEmpty
-                                ? '覆盖空值'
-                                : collectedMatches
-                                  ? '覆盖=采集'
-                                  : '覆盖'
-                            : '未覆盖';
-
-                          // Color semantics:
-                          // - 灰：未覆盖
-                          // - 红：覆盖≠采集
-                          // - 蓝：覆盖（采集为空时也归为蓝）
-                          // - 绿：覆盖值=采集值
-                          const borderClassName = hasOverride
-                            ? item.machineNameMismatch
-                              ? 'border-destructive'
-                              : 'border-blue-600 dark:border-blue-500'
-                            : 'border-slate-300 dark:border-slate-600';
-                          const finalBorderClassName =
-                            hasOverride && !item.machineNameMismatch && !collectedEmpty
-                              ? collectedMatches
-                                ? 'border-emerald-600 dark:border-emerald-500'
-                                : borderClassName
-                              : borderClassName;
-
-                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 font-medium ${finalBorderClassName}`;
+                          const machineNameOverride = normalizeOptionalText(item.machineNameOverride);
+                          const machineNameCollected = normalizeOptionalText(item.machineNameCollected);
+                          const visualMeta = getOverrideVisualMeta({
+                            overrideText: machineNameOverride,
+                            collectedText: machineNameCollected,
+                            mismatch: item.machineNameMismatch,
+                          });
+                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 font-medium ${visualMeta.borderClassName}`;
 
                           return (
                             <TableCell key={colId}>
-                              <div className={lineClassName} title={title}>
+                              <div className={lineClassName} title={visualMeta.title}>
                                 {item.machineName ? <span>{item.machineName}</span> : (toolsNotRunningNode ?? '-')}
                               </div>
                             </TableCell>
@@ -1524,41 +1498,15 @@ export default function AssetsPage() {
                         }
 
                         if (colId === 'os') {
-                          const hasOverride = Boolean(item.osOverrideText);
-                          const collectedEmpty = !item.osCollected;
-                          const mismatch =
-                            hasOverride &&
-                            Boolean(item.osCollected) &&
-                            item.osOverrideText?.trim() !== item.osCollected;
-                          const collectedMatches =
-                            hasOverride &&
-                            Boolean(item.osCollected) &&
-                            item.osOverrideText?.trim() === item.osCollected;
-                          const title = hasOverride
-                            ? mismatch
-                              ? '覆盖≠采集'
-                              : collectedEmpty
-                                ? '覆盖空值'
-                                : collectedMatches
-                                  ? '覆盖=采集'
-                                  : '覆盖'
-                            : '未覆盖';
-                          const borderClassName = hasOverride
-                            ? mismatch
-                              ? 'border-destructive'
-                              : 'border-blue-600 dark:border-blue-500'
-                            : 'border-slate-300 dark:border-slate-600';
-                          const finalBorderClassName =
-                            hasOverride && !mismatch && !collectedEmpty
-                              ? collectedMatches
-                                ? 'border-emerald-600 dark:border-emerald-500'
-                                : borderClassName
-                              : borderClassName;
+                          const visualMeta = getOverrideVisualMeta({
+                            overrideText: normalizeOptionalText(item.osOverrideText),
+                            collectedText: normalizeOptionalText(item.osCollected),
+                          });
                           return (
                             <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
                               <div
-                                className={`flex flex-wrap items-center gap-2 border-l-2 pl-2 ${finalBorderClassName}`}
-                                title={title}
+                                className={`flex flex-wrap items-center gap-2 border-l-2 pl-2 ${visualMeta.borderClassName}`}
+                                title={visualMeta.title}
                               >
                                 <span>{item.os ? item.os : (toolsNotRunningNode ?? '-')}</span>
                               </div>
@@ -1567,43 +1515,17 @@ export default function AssetsPage() {
                         }
 
                         if (colId === 'ip') {
-                          const hasOverride = Boolean(item.ipOverrideText);
-                          const collectedEmpty = !item.ipCollected;
-                          const mismatch =
-                            hasOverride &&
-                            Boolean(item.ipCollected) &&
-                            item.ipOverrideText?.trim() !== item.ipCollected;
-                          const collectedMatches =
-                            hasOverride &&
-                            Boolean(item.ipCollected) &&
-                            item.ipOverrideText?.trim() === item.ipCollected;
-                          const title = hasOverride
-                            ? mismatch
-                              ? '覆盖≠采集'
-                              : collectedEmpty
-                                ? '覆盖空值'
-                                : collectedMatches
-                                  ? '覆盖=采集'
-                                  : '覆盖'
-                            : '未覆盖';
-                          const borderClassName = hasOverride
-                            ? mismatch
-                              ? 'border-destructive'
-                              : 'border-blue-600 dark:border-blue-500'
-                            : 'border-slate-300 dark:border-slate-600';
-                          const finalBorderClassName =
-                            hasOverride && !mismatch && !collectedEmpty
-                              ? collectedMatches
-                                ? 'border-emerald-600 dark:border-emerald-500'
-                                : borderClassName
-                              : borderClassName;
-                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${finalBorderClassName}`;
+                          const visualMeta = getOverrideVisualMeta({
+                            overrideText: normalizeOptionalText(item.ipOverrideText),
+                            collectedText: normalizeOptionalText(item.ipCollected),
+                          });
+                          const lineClassName = `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${visualMeta.borderClassName}`;
                           return (
                             <TableCell
                               key={colId}
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
-                              <div className={lineClassName} title={title}>
+                              <div className={lineClassName} title={visualMeta.title}>
                                 <span>{item.ip ? item.ip : (toolsNotRunningNode ?? '-')}</span>
                               </div>
                             </TableCell>
