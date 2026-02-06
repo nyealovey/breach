@@ -16,6 +16,7 @@ import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
 import { formatOsForDisplay } from '@/lib/assets/os-display';
+import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
@@ -39,6 +40,12 @@ type AssetDetail = {
   displayName: string | null;
   machineNameOverride?: string | null;
   lastSeenAt: string | null;
+  operationalState: {
+    monitorCovered: boolean | null;
+    monitorState: string | null;
+    monitorStatus: string | null;
+    monitorUpdatedAt: string | null;
+  };
   ledgerFields: LedgerFieldsV1;
   latestSnapshot: { runId: string; createdAt: string; canonical: unknown } | null;
 };
@@ -600,6 +607,16 @@ export default function AssetDetailPage() {
       {TOOLS_NOT_RUNNING_TEXT}
     </span>
   ) : null;
+  const monitorDisplay = monitorStateDisplay({
+    monitorCovered: asset.operationalState.monitorCovered,
+    monitorState: asset.operationalState.monitorState,
+  });
+  const monitorTooltipParts: string[] = [];
+  if (asset.operationalState.monitorStatus)
+    monitorTooltipParts.push(`SolarWinds: ${asset.operationalState.monitorStatus}`);
+  if (asset.operationalState.monitorUpdatedAt)
+    monitorTooltipParts.push(`更新：${asset.operationalState.monitorUpdatedAt}`);
+  const monitorTooltip = monitorTooltipParts.length > 0 ? monitorTooltipParts.join(' · ') : undefined;
 
   return (
     <div className="space-y-6">
@@ -681,6 +698,18 @@ export default function AssetDetailPage() {
                     <TableHead>IP</TableHead>
                     <TableCell className="font-mono text-xs">
                       {summary.ipText ? summary.ipText : (toolsNotRunningNode ?? '-')}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableHead>监控</TableHead>
+                    <TableCell>
+                      {monitorDisplay ? (
+                        <Badge variant={monitorDisplay.variant} title={monitorTooltip}>
+                          {monitorDisplay.labelZh}
+                        </Badge>
+                      ) : (
+                        '-'
+                      )}
                     </TableCell>
                   </TableRow>
                   <TableRow>

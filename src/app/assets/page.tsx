@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
+import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
 import {
   shouldShowToolsNotRunning,
@@ -51,6 +52,10 @@ type AssetListItem = {
   vmPowerState: string | null;
   toolsRunning: boolean | null;
   ip: string | null;
+  monitorCovered: boolean | null;
+  monitorState: string | null;
+  monitorStatus: string | null;
+  monitorUpdatedAt: string | null;
   recordedAt: string;
   ledgerFields: LedgerFieldsV1;
   cpuCount: number | null;
@@ -83,6 +88,7 @@ type AssetListColumnId =
   | 'hostName'
   | 'os'
   | 'ip'
+  | 'monitorState'
   | 'recordedAt'
   | 'cpuCount'
   | 'memoryBytes'
@@ -102,6 +108,7 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
   { id: 'ip', label: 'IP', description: 'VM 若 Tools / Guest 服务未运行可能缺失。' },
+  { id: 'monitorState', label: '监控', description: 'SolarWinds 监控覆盖与状态（信号来源；不影响库存）。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
@@ -1056,6 +1063,28 @@ export default function AssetsPage() {
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
                               {item.ip ? item.ip : (toolsNotRunningNode ?? '-')}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'monitorState') {
+                          const display = monitorStateDisplay({
+                            monitorCovered: item.monitorCovered,
+                            monitorState: item.monitorState,
+                          });
+                          if (!display) return <TableCell key={colId}>-</TableCell>;
+
+                          const tooltipParts: string[] = [];
+                          if (item.monitorStatus) tooltipParts.push(`SolarWinds: ${item.monitorStatus}`);
+                          if (item.monitorUpdatedAt)
+                            tooltipParts.push(`更新：${formatDateTime(item.monitorUpdatedAt)}`);
+                          const tooltip = tooltipParts.length > 0 ? tooltipParts.join(' · ') : undefined;
+
+                          return (
+                            <TableCell key={colId}>
+                              <Badge variant={display.variant} title={tooltip}>
+                                {display.labelZh}
+                              </Badge>
                             </TableCell>
                           );
                         }

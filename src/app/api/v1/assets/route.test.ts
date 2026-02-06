@@ -35,6 +35,12 @@ describe('GET /api/v1/assets', () => {
         status: 'in_service',
         displayName: 'vm-01',
         machineNameOverride: 'vm-guest-override',
+        operationalState: {
+          monitorCovered: true,
+          monitorState: 'up',
+          monitorStatus: 'Up',
+          monitorUpdatedAt: new Date('2026-02-06T00:00:00.000Z'),
+        },
         ledgerFields: null,
         createdAt: new Date('2026-01-28T00:00:00.000Z'),
         runSnapshots: [
@@ -111,6 +117,10 @@ describe('GET /api/v1/assets', () => {
         toolsRunning: null,
         ip: '10.10.100.106',
         recordedAt: '2026-01-28T00:00:00.000Z',
+        monitorCovered: true,
+        monitorState: 'up',
+        monitorStatus: 'Up',
+        monitorUpdatedAt: '2026-02-06T00:00:00.000Z',
         ledgerFields: {
           region: null,
           company: null,

@@ -22,6 +22,7 @@ export function deriveCredentialAccount(type: SourceType, payload: unknown): str
   const data = parsed.data as any;
 
   if (type === SourceType.vcenter) return cleanString(data?.username);
+  if (type === SourceType.solarwinds) return cleanString(data?.username);
 
   if (type === SourceType.hyperv) {
     const auth = cleanString(data?.auth);

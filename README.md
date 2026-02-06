@@ -212,6 +212,7 @@ List of websites that started off with Next.js TypeScript Starter:
 - `ASSET_LEDGER_VCENTER_PLUGIN_PATH`：vCenter 采集插件可执行文件路径（子进程调用；默认 `plugins/vcenter/index.ts`）
 - `ASSET_LEDGER_PVE_PLUGIN_PATH`：PVE 采集插件可执行文件路径（子进程调用；默认 `plugins/pve/index.ts`）
 - `ASSET_LEDGER_HYPERV_PLUGIN_PATH`：Hyper-V 采集插件可执行文件路径（子进程调用；默认 `plugins/hyperv/index.ts`）
+- `ASSET_LEDGER_SOLARWINDS_PLUGIN_PATH`：SolarWinds（SWIS）采集插件可执行文件路径（子进程调用；默认 `plugins/solarwinds/index.ts`）
 - `ASSET_LEDGER_ASSET_LIST_IP_PRIVATE_PREFIXES`：资产列表（`/assets`）IP 列的展示策略配置：逗号分隔的“私网 IP 前缀”列表（如 `169.,172.`）。配置后：若同一资产同时存在“私网 + 非私网”IP，将优先仅展示非私网；若全部为私网，则仍展示私网作为兜底。未配置/为空：不做过滤，保持原展示行为不变。
 - `ASSET_LEDGER_SCHEDULER_TICK_MS`：调度器 tick 间隔（默认 30000）
 - `ASSET_LEDGER_WORKER_POLL_MS`：worker 空转轮询间隔（默认 2000）
@@ -238,6 +239,39 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 - `bun run db:setup`：一键初始化（`db:migrate` + `db:seed:dev`）
 - `bun run scheduler`：启动调度器（按“调度组固定时间”创建 Run；错过触发点不补跑）
 - `bun run worker`：启动 worker（消费 Queued Run，子进程调用插件）
+
+### SolarWinds（监控信号；非库存）
+
+SolarWinds Source 是“信号来源”（`role=signal`）：不会创建/合并资产，不影响 `Asset.status` 与 `AssetSourceLink.presenceStatus`；仅用于补充资产的监控覆盖与状态（写入 `operationalState.monitor*`），并在资产列表/详情页展示“监控”列/行。
+
+配置步骤：
+
+1. 新建 Credential：`type=solarwinds`（用户名/密码，用于 SWIS / InformationService）。
+2. 新建 Source：`sourceType=solarwinds` + `role=signal`（SolarWinds 强制为 signal），并填写 config：
+
+```json
+{
+  "endpoint": "https://solarwinds.example.com:17778/SolarWinds/InformationService/v3/Json/Query",
+  "tls_verify": true,
+  "timeout_ms": 10000,
+  "page_size": 200,
+  "include_unmanaged": true
+}
+```
+
+匹配规则（无 IP 也可）：
+
+- 自动匹配：仅当“唯一命中”才会绑定到 `assetUuid`，命中条件为「IP」或「名称」。
+  - 名称支持 FQDN：`host01.example.com` 会同时尝试 `host01.example.com` 与 `host01`。
+- 自动匹配依赖资产的派生字段（`collectedHostname/collectedVmCaption/collectedIpText`）：建议先对库存来源跑一轮 collect（或执行 `bun src/bin/backfill-asset-derived-fields.ts` 回填历史数据）。
+- 多命中：进入 `ambiguous`；零命中：`unmatched`。两者都不会自动绑定，需要人工绑定。
+
+治理接口（admin-only）：
+
+- `GET /api/v1/signals/solarwinds/unmatched`
+- `GET /api/v1/signals/solarwinds/ambiguous`
+- `POST /api/v1/signals/solarwinds/links/:linkId/bind`（body：`{ "assetUuid": "..." }`）
+- `POST /api/v1/signals/solarwinds/links/:linkId/unbind`
 
 ### Requirements
 

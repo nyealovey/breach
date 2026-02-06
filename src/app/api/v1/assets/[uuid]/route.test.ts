@@ -46,6 +46,12 @@ describe('GET /api/v1/assets/:uuid', () => {
       displayName: 'vm-01',
       machineNameOverride: null,
       lastSeenAt: new Date('2026-01-28T00:00:00.000Z'),
+      operationalState: {
+        monitorCovered: true,
+        monitorState: 'up',
+        monitorStatus: 'Up',
+        monitorUpdatedAt: new Date('2026-02-06T00:00:00.000Z'),
+      },
       ledgerFields: null,
     } as any);
 
@@ -82,6 +88,12 @@ describe('GET /api/v1/assets/:uuid', () => {
         rackPosition: null,
         managementCode: null,
         fixedAssetNo: null,
+      },
+      operationalState: {
+        monitorCovered: true,
+        monitorState: 'up',
+        monitorStatus: 'Up',
+        monitorUpdatedAt: '2026-02-06T00:00:00.000Z',
       },
       latestSnapshot: {
         runId: 'run_1',

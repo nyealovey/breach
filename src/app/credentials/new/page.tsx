@@ -15,7 +15,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 
 import type { FormEvent } from 'react';
 
-type CredentialType = 'vcenter' | 'pve' | 'hyperv' | 'aliyun' | 'third_party';
+type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'aliyun' | 'third_party';
 
 export default function NewCredentialPage() {
   const router = useRouter();
@@ -83,7 +83,8 @@ export default function NewCredentialPage() {
       if (hypervAuth === 'winrm' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
       return null;
     }
-    if (type === 'vcenter' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
+    if ((type === 'vcenter' || type === 'solarwinds') && (!username.trim() || !password.trim()))
+      return '请填写用户名/密码';
     return null;
   };
 
@@ -151,6 +152,7 @@ export default function NewCredentialPage() {
                   }}
                 >
                   <option value="vcenter">vCenter</option>
+                  <option value="solarwinds">SolarWinds（Orion）</option>
                   <option value="pve">PVE</option>
                   <option value="hyperv">Hyper-V</option>
                   <option value="aliyun">阿里云</option>
@@ -158,7 +160,7 @@ export default function NewCredentialPage() {
                 </NativeSelect>
               </div>
 
-              {(type === 'vcenter' || type === 'hyperv') && (
+              {(type === 'vcenter' || type === 'solarwinds' || type === 'hyperv') && (
                 <>
                   {type === 'hyperv' ? (
                     <div className="space-y-2">

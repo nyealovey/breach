@@ -118,6 +118,14 @@ export async function GET(request: Request) {
       skip,
       take,
       include: {
+        operationalState: {
+          select: {
+            monitorCovered: true,
+            monitorState: true,
+            monitorStatus: true,
+            monitorUpdatedAt: true,
+          },
+        },
         ledgerFields: {
           select: {
             region: true,
@@ -183,6 +191,10 @@ export async function GET(request: Request) {
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
         ip: pickPrimaryIp(fields, privateIpPrefixes),
         recordedAt,
+        monitorCovered: asset.operationalState?.monitorCovered ?? null,
+        monitorState: asset.operationalState?.monitorState ?? null,
+        monitorStatus: asset.operationalState?.monitorStatus ?? null,
+        monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
         ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
         cpuCount:
           asset.assetType === 'host' && typeof osName === 'string' && osName.trim() === 'ESXi'

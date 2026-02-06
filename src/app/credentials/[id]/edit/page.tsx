@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
 
-type CredentialType = 'vcenter' | 'pve' | 'hyperv' | 'aliyun' | 'third_party';
+type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'aliyun' | 'third_party';
 
 type CredentialDetail = {
   credentialId: string;
@@ -126,7 +126,8 @@ export default function EditCredentialPage() {
       if (hypervAuth === 'winrm' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
       return null;
     }
-    if (type === 'vcenter' && (!username.trim() || !password.trim())) return '请填写用户名/密码';
+    if ((type === 'vcenter' || type === 'solarwinds') && (!username.trim() || !password.trim()))
+      return '请填写用户名/密码';
 
     return null;
   };
@@ -216,7 +217,7 @@ export default function EditCredentialPage() {
                 <Switch checked={updateSecret} onCheckedChange={setUpdateSecret} />
               </div>
 
-              {updateSecret && (type === 'vcenter' || type === 'hyperv') && (
+              {updateSecret && (type === 'vcenter' || type === 'solarwinds' || type === 'hyperv') && (
                 <>
                   {type === 'hyperv' ? (
                     <div className="space-y-2">

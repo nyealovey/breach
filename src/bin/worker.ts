@@ -11,6 +11,7 @@ import {
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
+import { ingestSignalRun } from '@/lib/ingest/ingest-signal-run';
 import { logEvent } from '@/lib/logging/logger';
 import { recycleStaleRuns } from '@/lib/runs/recycle-stale-runs';
 import { processAssetLedgerExport } from '@/lib/exports/asset-ledger-export-job';
@@ -113,6 +114,7 @@ function getPluginPath(source: Source): string | null {
   if (source.sourceType === 'vcenter') return serverEnv.ASSET_LEDGER_VCENTER_PLUGIN_PATH ?? null;
   if (source.sourceType === 'pve') return serverEnv.ASSET_LEDGER_PVE_PLUGIN_PATH ?? null;
   if (source.sourceType === 'hyperv') return serverEnv.ASSET_LEDGER_HYPERV_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'solarwinds') return serverEnv.ASSET_LEDGER_SOLARWINDS_PLUGIN_PATH ?? null;
   return null;
 }
 
@@ -540,32 +542,45 @@ async function processRun(run: Run): Promise<ProcessResult> {
     }
 
     try {
-      const ingestResult = await ingestCollectRun({
-        prisma,
-        runId: run.id,
-        sourceId: source.id,
-        runMode: run.mode,
-        collectedAt: finishedAt,
-        assets,
-        relations,
-      });
+      const ingestResult =
+        source.role === 'signal'
+          ? await ingestSignalRun({
+              prisma,
+              runId: run.id,
+              sourceId: source.id,
+              sourceType: source.sourceType,
+              collectedAt: finishedAt,
+              assets,
+            })
+          : await ingestCollectRun({
+              prisma,
+              runId: run.id,
+              sourceId: source.id,
+              runMode: run.mode,
+              collectedAt: finishedAt,
+              assets,
+              relations,
+            });
 
       const mergedWarnings = [...warningsValue, ...ingestResult.warnings];
 
-      try {
-        await enqueueDuplicateCandidateJob({ prisma, runId: run.id });
-      } catch (err) {
-        mergedWarnings.push({
-          type: 'duplicate_candidates.enqueue_failed',
-          error: err instanceof Error ? err.message : String(err),
-        });
-        logEvent({
-          level: 'error',
-          service: 'worker',
-          event_type: 'duplicate_candidate_job.enqueue_failed',
-          run_id: run.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      // Signal sources are not inventory: do not enqueue dedup jobs (they don't create/merge assets).
+      if (source.role !== 'signal') {
+        try {
+          await enqueueDuplicateCandidateJob({ prisma, runId: run.id });
+        } catch (err) {
+          mergedWarnings.push({
+            type: 'duplicate_candidates.enqueue_failed',
+            error: err instanceof Error ? err.message : String(err),
+          });
+          logEvent({
+            level: 'error',
+            service: 'worker',
+            event_type: 'duplicate_candidate_job.enqueue_failed',
+            run_id: run.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       await prisma.run.update({

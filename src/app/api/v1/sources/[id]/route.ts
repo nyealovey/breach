@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { getOrCreateRequestId } from '@/lib/http/request-id';
 import { fail, ok } from '@/lib/http/response';
-import { AgentType, SourceType } from '@prisma/client';
+import { AgentType, SourceRole, SourceType } from '@prisma/client';
 
 import type { Prisma } from '@prisma/client';
 
@@ -36,6 +36,7 @@ const SourceConfigSchema = z
 const SourceUpdateSchema = z.object({
   name: z.string().min(1),
   sourceType: z.nativeEnum(SourceType),
+  role: z.nativeEnum(SourceRole).optional(),
   enabled: z.boolean().optional(),
   scheduleGroupId: z.string().min(1).nullable().optional(),
   agentId: z.string().min(1).nullable().optional(),
@@ -69,6 +70,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       sourceId: source.id,
       name: source.name,
       sourceType: source.sourceType,
+      role: source.role,
       enabled: source.enabled,
       scheduleGroupId: source.scheduleGroupId,
       scheduleGroupName: source.scheduleGroup?.name ?? null,
@@ -208,6 +210,38 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
+  const role =
+    body.role ??
+    (body.sourceType === SourceType.solarwinds
+      ? SourceRole.signal
+      : existing.role === SourceRole.signal
+        ? SourceRole.inventory
+        : existing.role);
+  if (body.sourceType === SourceType.solarwinds && role !== SourceRole.signal) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'solarwinds sources must use role=signal',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+  if (role === SourceRole.signal && body.sourceType !== SourceType.solarwinds) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'role=signal is only supported for solarwinds sources',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+
   if (body.sourceType === SourceType.hyperv && body.config.connection_method === 'agent') {
     // New path: bind to an Agent record (recommended).
     if (agent) {
@@ -269,6 +303,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     data: {
       name: body.name,
       sourceType: body.sourceType,
+      role,
       enabled: body.enabled ?? true,
       scheduleGroupId: scheduleGroupId ?? null,
       agentId: agentId ?? null,
@@ -287,6 +322,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       sourceId: source.id,
       name: source.name,
       sourceType: source.sourceType,
+      role: source.role,
       enabled: source.enabled,
       scheduleGroupId: source.scheduleGroupId,
       credential: source.credential

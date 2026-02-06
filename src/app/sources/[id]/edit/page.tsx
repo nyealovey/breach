@@ -35,6 +35,8 @@ type SourceDetail = {
     preferred_vcenter_version?: string;
     tls_verify?: boolean;
     timeout_ms?: number;
+    page_size?: number;
+    include_unmanaged?: boolean;
     scope?: 'auto' | 'standalone' | 'cluster';
     max_parallel_nodes?: number;
     auth_type?: 'api_token' | 'user_password';
@@ -68,6 +70,10 @@ export default function EditSourcePage() {
   const [pveScope, setPveScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [solarwindsTlsVerify, setSolarwindsTlsVerify] = useState(true);
+  const [solarwindsTimeoutMs, setSolarwindsTimeoutMs] = useState(60_000);
+  const [solarwindsPageSize, setSolarwindsPageSize] = useState(500);
+  const [solarwindsIncludeUnmanaged, setSolarwindsIncludeUnmanaged] = useState(true);
   const [hypervConnectionMethod, setHypervConnectionMethod] = useState<'winrm' | 'agent'>('winrm');
   const [hypervAgentId, setHypervAgentId] = useState('');
   const [hypervAgents, setHypervAgents] = useState<AgentItem[]>([]);
@@ -115,6 +121,20 @@ export default function EditSourcePage() {
                 : 5,
             );
             setPveAuthType(source.config?.auth_type ?? 'api_token');
+          }
+          if (source.sourceType === 'solarwinds') {
+            setSolarwindsTlsVerify(source.config?.tls_verify ?? true);
+            setSolarwindsTimeoutMs(
+              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+                ? source.config.timeout_ms
+                : 60_000,
+            );
+            setSolarwindsPageSize(
+              typeof source.config?.page_size === 'number' && Number.isFinite(source.config.page_size)
+                ? source.config.page_size
+                : 500,
+            );
+            setSolarwindsIncludeUnmanaged(source.config?.include_unmanaged ?? true);
           }
           if (source.sourceType === 'hyperv') {
             const connectionMethod = source.config?.connection_method === 'agent' ? 'agent' : 'winrm';
@@ -239,6 +259,7 @@ export default function EditSourcePage() {
         body: JSON.stringify({
           name,
           sourceType,
+          role: sourceType === 'solarwinds' ? 'signal' : 'inventory',
           enabled,
           agentId:
             sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && hypervAgentId ? hypervAgentId : null,
@@ -252,6 +273,14 @@ export default function EditSourcePage() {
                   scope: pveScope,
                   max_parallel_nodes: pveMaxParallelNodes,
                   auth_type: pveAuthType,
+                }
+              : {}),
+            ...(sourceType === 'solarwinds'
+              ? {
+                  tls_verify: solarwindsTlsVerify,
+                  timeout_ms: solarwindsTimeoutMs,
+                  page_size: solarwindsPageSize,
+                  include_unmanaged: solarwindsIncludeUnmanaged,
                 }
               : {}),
             ...(sourceType === 'hyperv'
@@ -377,6 +406,10 @@ export default function EditSourcePage() {
                     setPveScope('auto');
                     setPveMaxParallelNodes(5);
                     setPveAuthType('api_token');
+                    setSolarwindsTlsVerify(true);
+                    setSolarwindsTimeoutMs(60_000);
+                    setSolarwindsPageSize(500);
+                    setSolarwindsIncludeUnmanaged(true);
                     setHypervConnectionMethod('winrm');
                     setHypervAgentId('');
                     setHypervAgents([]);
@@ -393,6 +426,7 @@ export default function EditSourcePage() {
                   }}
                 >
                   <option value="vcenter">vCenter</option>
+                  <option value="solarwinds">SolarWinds（Orion）</option>
                   <option value="pve">PVE</option>
                   <option value="hyperv">Hyper-V</option>
                   <option value="aliyun">阿里云</option>
@@ -476,6 +510,48 @@ export default function EditSourcePage() {
                       <option value="user_password">user_password</option>
                     </NativeSelect>
                     <div className="text-xs text-muted-foreground">说明：该字段用于指导凭据结构（credential）。</div>
+                  </div>
+                </div>
+              ) : null}
+              {sourceType === 'solarwinds' ? (
+                <div className="space-y-3 rounded-md border bg-background p-3">
+                  <div className="text-sm font-medium">SolarWinds 配置</div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">TLS 校验</div>
+                      <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
+                    </div>
+                    <Switch checked={solarwindsTlsVerify} onCheckedChange={setSolarwindsTlsVerify} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="solarwindsTimeoutMs">timeout_ms</Label>
+                    <Input
+                      id="solarwindsTimeoutMs"
+                      type="number"
+                      value={String(solarwindsTimeoutMs)}
+                      onChange={(e) => setSolarwindsTimeoutMs(Number(e.target.value))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="solarwindsPageSize">page_size</Label>
+                    <Input
+                      id="solarwindsPageSize"
+                      type="number"
+                      value={String(solarwindsPageSize)}
+                      onChange={(e) => setSolarwindsPageSize(Number(e.target.value))}
+                    />
+                    <div className="text-xs text-muted-foreground">说明：分页大小，过大会增加 SWIS 压力。</div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">include_unmanaged</div>
+                      <div className="text-xs text-muted-foreground">unmanaged 节点也计入“已纳入监控”。</div>
+                    </div>
+                    <Switch checked={solarwindsIncludeUnmanaged} onCheckedChange={setSolarwindsIncludeUnmanaged} />
                   </div>
                 </div>
               ) : null}

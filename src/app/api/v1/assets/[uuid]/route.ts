@@ -27,6 +27,14 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       displayName: true,
       machineNameOverride: true,
       lastSeenAt: true,
+      operationalState: {
+        select: {
+          monitorCovered: true,
+          monitorState: true,
+          monitorStatus: true,
+          monitorUpdatedAt: true,
+        },
+      },
       ledgerFields: {
         select: {
           region: true,
@@ -70,6 +78,12 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       machineNameOverride: asset.machineNameOverride,
       lastSeenAt: asset.lastSeenAt?.toISOString() ?? null,
       ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
+      operationalState: {
+        monitorCovered: asset.operationalState?.monitorCovered ?? null,
+        monitorState: asset.operationalState?.monitorState ?? null,
+        monitorStatus: asset.operationalState?.monitorStatus ?? null,
+        monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
+      },
       latestSnapshot: snapshot
         ? { runId: snapshot.runId, createdAt: snapshot.createdAt.toISOString(), canonical: snapshot.canonical }
         : null,

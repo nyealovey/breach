@@ -13,6 +13,17 @@ enum SourceType {
   hyperv
   aliyun
   third_party
+  solarwinds
+}
+
+enum SourceRole {
+  inventory
+  signal
+}
+
+enum SignalMatchType {
+  auto
+  manual
 }
 
 enum AgentType {
@@ -133,6 +144,7 @@ model Source {
   id              String         @id @default(cuid())
   name            String
   sourceType      SourceType
+  role            SourceRole     @default(inventory)
   enabled         Boolean        @default(true)
   scheduleGroupId String?
   scheduleGroup   ScheduleGroup? @relation(fields: [scheduleGroupId], references: [id])
@@ -155,6 +167,8 @@ model Source {
   sourceRecords  SourceRecord[]
   relationRecords RelationRecord[]
   relations      Relation[]
+  signalLinks    AssetSignalLink[]
+  signalRecords  SignalRecord[]
 
   @@index([enabled])
   @@index([scheduleGroupId])
@@ -207,7 +221,9 @@ model Run {
   relationRecords RelationRecord[]
   assetSnapshots  AssetRunSnapshot[]
   lastSeenLinks   AssetSourceLink[] @relation("AssetSourceLinkLastSeenRun")
+  lastSeenSignalLinks AssetSignalLink[] @relation("AssetSignalLinkLastSeenRun")
   duplicateCandidateJob DuplicateCandidateJob?
+  signalRecords SignalRecord[]
 
   @@index([status, createdAt])
   @@index([sourceId, status, createdAt])
@@ -348,9 +364,12 @@ model Asset {
   mergedAssets    Asset[] @relation("AssetMerge")
 
   ledgerFields  AssetLedgerFields?
+  operationalState AssetOperationalState?
   historyEvents AssetHistoryEvent[]
   sourceLinks   AssetSourceLink[]
+  signalLinks   AssetSignalLink[]
   sourceRecords SourceRecord[]
+  signalRecords SignalRecord[]
   runSnapshots  AssetRunSnapshot[]
 
   outgoingRelations Relation[] @relation("RelationFrom")
@@ -364,6 +383,33 @@ model Asset {
   @@index([assetType, machineNameVmNameMismatch])
   @@index([status])
   @@index([lastSeenAt])
+}
+
+model AssetOperationalState {
+  assetUuid String @id @db.Uuid
+
+  // ===== backup (reserved for veeam, etc.) =====
+  backupCovered       Boolean?
+  backupState         String?
+  backupLastSuccessAt DateTime?
+  backupLastResult    String?
+  backupUpdatedAt     DateTime?
+
+  // ===== monitor (solarwinds) =====
+  monitorCovered   Boolean?
+  monitorState     String?
+  monitorStatus    String?
+  monitorUpdatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset Asset @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
+
+  @@index([backupCovered])
+  @@index([monitorCovered])
+  @@index([backupUpdatedAt])
+  @@index([monitorUpdatedAt])
 }
 
 model AssetLedgerFields {
@@ -418,6 +464,68 @@ model AssetSourceLink {
   @@index([assetUuid])
   @@index([sourceId])
   @@index([presenceStatus, lastSeenAt(sort: Desc)])
+}
+
+model AssetSignalLink {
+  id           String   @id @default(cuid())
+  assetUuid    String?  @db.Uuid
+  sourceId     String
+  externalKind AssetType
+  externalId   String
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  lastSeenRunId String?
+
+  matchType       SignalMatchType?
+  matchConfidence Int?
+  matchReason     String?
+  matchEvidence   Json?
+  ambiguous       Boolean @default(false)
+  ambiguousCandidates Json?
+
+  asset  Asset? @relation(fields: [assetUuid], references: [uuid], onDelete: SetNull)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  lastSeenRun Run? @relation("AssetSignalLinkLastSeenRun", fields: [lastSeenRunId], references: [id], onDelete: SetNull)
+
+  signalRecords SignalRecord[]
+
+  @@unique([sourceId, externalKind, externalId])
+  @@index([assetUuid])
+  @@index([sourceId])
+  @@index([lastSeenAt(sort: Desc)])
+}
+
+model SignalRecord {
+  id          String   @default(cuid())
+  collectedAt DateTime @default(now())
+
+  runId      String
+  sourceId   String
+  linkId     String
+  assetUuid  String?   @db.Uuid
+  externalKind AssetType
+  externalId   String
+
+  normalized      Json
+  raw             Bytes
+  rawCompression  String
+  rawSizeBytes    Int
+  rawHash         String
+  rawMimeType     String?
+  rawInlineExcerpt String?
+  createdAt       DateTime @default(now())
+
+  run    Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  link   AssetSignalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  asset  Asset?        @relation(fields: [assetUuid], references: [uuid], onDelete: SetNull)
+
+  @@id([id, collectedAt])
+  @@index([runId])
+  @@index([linkId])
+  @@index([assetUuid, collectedAt(sort: Desc)])
+  @@index([sourceId, collectedAt(sort: Desc)])
 }
 
 model SourceRecord {

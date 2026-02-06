@@ -55,14 +55,41 @@ const AssetListItemSchema = z.object({
   vmPowerState: z.string().nullable(),
   toolsRunning: z.boolean().nullable(),
   ip: z.string().nullable(),
+  monitorCovered: z.boolean().nullable(),
+  monitorState: z.string().nullable(),
+  monitorStatus: z.string().nullable(),
+  monitorUpdatedAt: z.string().nullable(),
   cpuCount: z.number().int().nullable(),
   memoryBytes: z.number().int().nullable(),
   totalDiskBytes: z.number().int().nullable(),
 });
 
-const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party']);
+const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party', 'solarwinds']);
 const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const ScheduleGroupRunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
+
+const LedgerFieldsV1Schema = z.object({
+  region: z.string().nullable(),
+  company: z.string().nullable(),
+  department: z.string().nullable(),
+  systemCategory: z.string().nullable(),
+  systemLevel: z.string().nullable(),
+  bizOwner: z.string().nullable(),
+  maintenanceDueDate: z.string().nullable(),
+  purchaseDate: z.string().nullable(),
+  bmcIp: z.string().nullable(),
+  cabinetNo: z.string().nullable(),
+  rackPosition: z.string().nullable(),
+  managementCode: z.string().nullable(),
+  fixedAssetNo: z.string().nullable(),
+});
+
+const AssetOperationalStateSchema = z.object({
+  monitorCovered: z.boolean().nullable(),
+  monitorState: z.string().nullable(),
+  monitorStatus: z.string().nullable(),
+  monitorUpdatedAt: z.string().nullable(),
+});
 
 const CredentialListItemSchema = z.object({
   credentialId: z.string(),
@@ -490,9 +517,12 @@ registry.registerPath({
               assetUuid: z.string(),
               assetType: z.string(),
               status: z.string(),
+              mergedIntoAssetUuid: z.string().nullable(),
               displayName: z.string().nullable(),
               machineNameOverride: z.string().nullable(),
               lastSeenAt: z.string().nullable(),
+              ledgerFields: LedgerFieldsV1Schema,
+              operationalState: AssetOperationalStateSchema,
               latestSnapshot: z
                 .object({
                   runId: z.string(),

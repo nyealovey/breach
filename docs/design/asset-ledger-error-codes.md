@@ -149,7 +149,7 @@
 ```typescript
 /**
  * 资产台账系统错误码枚举
- * @version v1.3
+ * @version v1.4
  */
 export const ErrorCode = {
   // ========== Web 层（AUTH_* / CONFIG_*）==========
@@ -167,6 +167,7 @@ export const ErrorCode = {
   CONFIG_INVALID_HHMM: 'CONFIG_INVALID_HHMM',
   CONFIG_SOURCE_NOT_FOUND: 'CONFIG_SOURCE_NOT_FOUND',
   CONFIG_CREDENTIAL_NOT_FOUND: 'CONFIG_CREDENTIAL_NOT_FOUND',
+  CONFIG_AGENT_NOT_FOUND: 'CONFIG_AGENT_NOT_FOUND',
   CONFIG_RUN_NOT_FOUND: 'CONFIG_RUN_NOT_FOUND',
   CONFIG_ASSET_NOT_FOUND: 'CONFIG_ASSET_NOT_FOUND',
   CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH: 'CONFIG_ASSET_MERGE_ASSET_TYPE_MISMATCH',
@@ -178,6 +179,7 @@ export const ErrorCode = {
   CONFIG_EXPORT_EXPIRED: 'CONFIG_EXPORT_EXPIRED',
   CONFIG_SCHEDULE_GROUP_NOT_FOUND: 'CONFIG_SCHEDULE_GROUP_NOT_FOUND',
   CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND: 'CONFIG_DUPLICATE_CANDIDATE_NOT_FOUND',
+  CONFIG_SIGNAL_LINK_NOT_FOUND: 'CONFIG_SIGNAL_LINK_NOT_FOUND',
   CONFIG_DUPLICATE_NAME: 'CONFIG_DUPLICATE_NAME',
   CONFIG_RESOURCE_CONFLICT: 'CONFIG_RESOURCE_CONFLICT',
 
@@ -237,6 +239,15 @@ export const ErrorCode = {
   PHYSICAL_TLS_ERROR: 'PHYSICAL_TLS_ERROR',
   PHYSICAL_PARSE_ERROR: 'PHYSICAL_PARSE_ERROR',
 
+  // ========== 插件层（SOLARWINDS_*）==========
+  SOLARWINDS_CONFIG_INVALID: 'SOLARWINDS_CONFIG_INVALID',
+  SOLARWINDS_AUTH_FAILED: 'SOLARWINDS_AUTH_FAILED',
+  SOLARWINDS_PERMISSION_DENIED: 'SOLARWINDS_PERMISSION_DENIED',
+  SOLARWINDS_NETWORK_ERROR: 'SOLARWINDS_NETWORK_ERROR',
+  SOLARWINDS_TLS_ERROR: 'SOLARWINDS_TLS_ERROR',
+  SOLARWINDS_RATE_LIMIT: 'SOLARWINDS_RATE_LIMIT',
+  SOLARWINDS_PARSE_ERROR: 'SOLARWINDS_PARSE_ERROR',
+
   // ========== 通用（INTERNAL_*）==========
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INTERNAL_NOT_IMPLEMENTED: 'INTERNAL_NOT_IMPLEMENTED',
@@ -249,20 +260,21 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
 
 ### 5.1 命名规范
 
-| 前缀        | 层级   | 说明                          |
-| ----------- | ------ | ----------------------------- |
-| `AUTH_`     | Web    | 认证相关（登录、会话）        |
-| `CONFIG_`   | Web    | 配置/参数校验相关             |
-| `PLUGIN_`   | Worker | 插件执行相关                  |
-| `SCHEMA_`   | Worker | Schema 校验相关               |
-| `DB_`       | Worker | 数据库操作相关                |
-| `RAW_`      | Worker | Raw 存储相关                  |
-| `VCENTER_`  | Plugin | vCenter 插件专用              |
-| `PVE_`      | Plugin | PVE 插件专用（预留）          |
-| `HYPERV_`   | Plugin | Hyper-V 插件专用（预留）      |
-| `ALIYUN_`   | Plugin | 阿里云插件专用（预留）        |
-| `PHYSICAL_` | Plugin | 物理机/第三方插件专用（预留） |
-| `INTERNAL_` | 通用   | 内部错误/未分类               |
+| 前缀          | 层级   | 说明                          |
+| ------------- | ------ | ----------------------------- |
+| `AUTH_`       | Web    | 认证相关（登录、会话）        |
+| `CONFIG_`     | Web    | 配置/参数校验相关             |
+| `PLUGIN_`     | Worker | 插件执行相关                  |
+| `SCHEMA_`     | Worker | Schema 校验相关               |
+| `DB_`         | Worker | 数据库操作相关                |
+| `RAW_`        | Worker | Raw 存储相关                  |
+| `VCENTER_`    | Plugin | vCenter 插件专用              |
+| `PVE_`        | Plugin | PVE 插件专用（预留）          |
+| `HYPERV_`     | Plugin | Hyper-V 插件专用（预留）      |
+| `ALIYUN_`     | Plugin | 阿里云插件专用（预留）        |
+| `PHYSICAL_`   | Plugin | 物理机/第三方插件专用（预留） |
+| `SOLARWINDS_` | Plugin | SolarWinds 插件专用（信号）   |
+| `INTERNAL_`   | 通用   | 内部错误/未分类               |
 
 ### 5.2 新增错误码流程
 
