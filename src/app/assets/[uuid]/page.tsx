@@ -39,6 +39,8 @@ type AssetDetail = {
   mergedIntoAssetUuid: string | null;
   displayName: string | null;
   machineNameOverride?: string | null;
+  ipOverrideText?: string | null;
+  osOverrideText?: string | null;
   lastSeenAt: string | null;
   operationalState: {
     monitorCovered: boolean | null;
@@ -403,14 +405,19 @@ export default function AssetDetailPage() {
 
   const summary = useMemo(() => {
     const assetType = asset?.assetType ?? '';
-    const machineNameCollected = pickLatestFieldValue(canonicalFields, 'identity.hostname');
-    const machineNameOverride = asset?.machineNameOverride ?? null;
-    const machineName =
-      typeof machineNameOverride === 'string' && machineNameOverride.trim().length > 0
-        ? machineNameOverride.trim()
-        : typeof machineNameCollected === 'string' && machineNameCollected.trim().length > 0
-          ? machineNameCollected.trim()
-          : null;
+    const normalizeOverride = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const machineNameCollectedRaw = pickLatestFieldValue(canonicalFields, 'identity.hostname');
+    const machineNameCollected =
+      typeof machineNameCollectedRaw === 'string' && machineNameCollectedRaw.trim().length > 0
+        ? machineNameCollectedRaw.trim()
+        : null;
+    const machineNameOverride = normalizeOverride(asset?.machineNameOverride);
+    const machineName = machineNameOverride ?? machineNameCollected;
 
     const vmName = pickLatestFieldValue(canonicalFields, 'identity.caption');
     const osName = pickLatestFieldValue(canonicalFields, 'os.name');
@@ -423,9 +430,12 @@ export default function AssetDetailPage() {
     const powerState = pickLatestFieldValue(canonicalFields, 'runtime.power_state');
     const toolsRunning = pickLatestFieldValue(canonicalFields, 'runtime.tools_running');
 
-    const osText = formatOsForDisplay({ assetType, name: osName, version: osVersion, fingerprint: osFingerprint });
-
-    const ipText = formatIpAddressesForDisplay(ipAddresses);
+    const osCollected = formatOsForDisplay({ assetType, name: osName, version: osVersion, fingerprint: osFingerprint });
+    const ipCollected = formatIpAddressesForDisplay(ipAddresses);
+    const osOverride = normalizeOverride(asset?.osOverrideText);
+    const ipOverride = normalizeOverride(asset?.ipOverrideText);
+    const osCurrent = osOverride ?? osCollected;
+    const ipCurrent = ipOverride ?? ipCollected;
 
     const diskTotalBytes = (() => {
       if (!Array.isArray(disks)) return null;
@@ -442,21 +452,21 @@ export default function AssetDetailPage() {
     })();
 
     const machineNameMismatch =
-      typeof machineNameOverride === 'string' &&
-      machineNameOverride.trim().length > 0 &&
-      typeof machineNameCollected === 'string' &&
-      machineNameCollected.trim().length > 0 &&
-      machineNameOverride.trim() !== machineNameCollected.trim();
+      machineNameOverride !== null && machineNameCollected !== null && machineNameOverride !== machineNameCollected;
 
     return {
       assetType,
       machineName,
-      machineNameOverride: typeof machineNameOverride === 'string' ? machineNameOverride.trim() : null,
-      machineNameCollected: typeof machineNameCollected === 'string' ? machineNameCollected.trim() : null,
+      machineNameOverride,
+      machineNameCollected,
       machineNameMismatch,
       vmName: assetType === 'vm' ? (typeof vmName === 'string' ? vmName.trim() : null) : null,
-      osText,
-      ipText,
+      osCollected,
+      osOverride,
+      osCurrent,
+      ipCollected,
+      ipOverride,
+      ipCurrent,
       cpuText: typeof cpuCount === 'number' ? String(cpuCount) : null,
       memoryText: typeof memoryBytes === 'number' ? formatAssetFieldValue(memoryBytes, { formatHint: 'bytes' }) : null,
       diskText:
@@ -464,7 +474,7 @@ export default function AssetDetailPage() {
       powerState: typeof powerState === 'string' ? powerState.trim() : null,
       toolsRunning: typeof toolsRunning === 'boolean' ? toolsRunning : null,
     };
-  }, [asset?.assetType, asset?.machineNameOverride, canonicalFields]);
+  }, [asset?.assetType, asset?.machineNameOverride, asset?.osOverrideText, asset?.ipOverrideText, canonicalFields]);
 
   const vmDisks = useMemo(() => {
     if (asset?.assetType !== 'vm') return null;
@@ -659,9 +669,16 @@ export default function AssetDetailPage() {
               </div>
 
               <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead className="w-[120px]">字段</TableHead>
+                    <TableHead>当前值</TableHead>
+                    <TableHead className="w-[220px]">覆盖值</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableHead>机器名</TableHead>
+                    <TableCell className="font-medium">机器名</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         {summary.machineName ? (
@@ -683,25 +700,29 @@ export default function AssetDetailPage() {
                         </div>
                       ) : null}
                     </TableCell>
+                    <TableCell>{summary.machineNameOverride ?? '-'}</TableCell>
                   </TableRow>
                   {asset.assetType === 'vm' ? (
                     <TableRow>
-                      <TableHead>虚拟机名</TableHead>
+                      <TableCell className="font-medium">虚拟机名</TableCell>
                       <TableCell className="font-medium">{summary.vmName ?? asset.displayName ?? '-'}</TableCell>
+                      <TableCell>-</TableCell>
                     </TableRow>
                   ) : null}
                   <TableRow>
-                    <TableHead>操作系统</TableHead>
-                    <TableCell>{summary.osText ? summary.osText : (toolsNotRunningNode ?? '-')}</TableCell>
+                    <TableCell className="font-medium">操作系统</TableCell>
+                    <TableCell>{summary.osCurrent ? summary.osCurrent : (toolsNotRunningNode ?? '-')}</TableCell>
+                    <TableCell>{summary.osOverride ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableHead>IP</TableHead>
+                    <TableCell className="font-medium">IP</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {summary.ipText ? summary.ipText : (toolsNotRunningNode ?? '-')}
+                      {summary.ipCurrent ? summary.ipCurrent : (toolsNotRunningNode ?? '-')}
                     </TableCell>
+                    <TableCell className="font-mono text-xs">{summary.ipOverride ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableHead>监控</TableHead>
+                    <TableCell className="font-medium">监控</TableCell>
                     <TableCell>
                       {monitorDisplay ? (
                         <Badge variant={monitorDisplay.variant} title={monitorTooltip}>
@@ -711,26 +732,30 @@ export default function AssetDetailPage() {
                         '-'
                       )}
                     </TableCell>
+                    <TableCell>-</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableHead>CPU</TableHead>
+                    <TableCell className="font-medium">CPU</TableCell>
                     <TableCell>{summary.cpuText ?? '-'}</TableCell>
+                    <TableCell>-</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableHead>内存</TableHead>
+                    <TableCell className="font-medium">内存</TableCell>
                     <TableCell>{summary.memoryText ?? '-'}</TableCell>
+                    <TableCell>-</TableCell>
                   </TableRow>
                   {asset.assetType === 'vm' || asset.assetType === 'host' ? (
                     <TableRow>
-                      <TableHead>总分配磁盘</TableHead>
+                      <TableCell className="font-medium">总分配磁盘</TableCell>
                       <TableCell>
                         {asset.assetType === 'vm' ? (summary.diskText ?? '-') : (hostAllocatedDiskText ?? '-')}
                       </TableCell>
+                      <TableCell>-</TableCell>
                     </TableRow>
                   ) : null}
                   {asset.assetType === 'vm' || asset.assetType === 'host' ? (
                     <TableRow>
-                      <TableHead>电源状态</TableHead>
+                      <TableCell className="font-medium">电源状态</TableCell>
                       <TableCell>
                         {summary.powerState ? (
                           <Badge variant="outline">{powerStateLabel(summary.powerState)}</Badge>
@@ -738,12 +763,14 @@ export default function AssetDetailPage() {
                           '-'
                         )}
                       </TableCell>
+                      <TableCell>-</TableCell>
                     </TableRow>
                   ) : null}
                   {asset.assetType === 'vm' ? (
                     <TableRow>
-                      <TableHead>Tools 运行</TableHead>
+                      <TableCell className="font-medium">Tools 运行</TableCell>
                       <TableCell>{summary.toolsRunning === null ? '-' : summary.toolsRunning ? '是' : '否'}</TableCell>
+                      <TableCell>-</TableCell>
                     </TableRow>
                   ) : null}
                 </TableBody>

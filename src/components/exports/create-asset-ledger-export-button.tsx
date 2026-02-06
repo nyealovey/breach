@@ -8,9 +8,16 @@ import { Button } from '@/components/ui/button';
 
 import type { ButtonProps } from '@/components/ui/button';
 
-type Props = Pick<ButtonProps, 'size' | 'variant' | 'className' | 'children'>;
+type Props = Pick<ButtonProps, 'size' | 'variant' | 'className' | 'children' | 'title' | 'aria-label'>;
 
-export function CreateAssetLedgerExportButton({ size, variant, className, children }: Props) {
+export function CreateAssetLedgerExportButton({
+  size,
+  variant,
+  className,
+  children,
+  title,
+  'aria-label': ariaLabel,
+}: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,9 +45,21 @@ export function CreateAssetLedgerExportButton({ size, variant, className, childr
     }
   };
 
+  const defaultLabel = '导出台账 CSV';
+  const resolvedTitle = title ?? defaultLabel;
+  const resolvedAriaLabel = ariaLabel ?? defaultLabel;
+
   return (
-    <Button onClick={onClick} disabled={submitting} size={size} variant={variant} className={className}>
-      {submitting ? '创建中…' : (children ?? '导出台账 CSV')}
+    <Button
+      onClick={onClick}
+      disabled={submitting}
+      size={size}
+      variant={variant}
+      className={className}
+      title={resolvedTitle}
+      aria-label={resolvedAriaLabel}
+    >
+      {children ?? (submitting ? '创建中…' : defaultLabel)}
     </Button>
   );
 }

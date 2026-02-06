@@ -416,7 +416,14 @@ async function processRun(run: Run): Promise<ProcessResult> {
 
   const parsedResult = parseCollectorResponse(stdout);
   if (!parsedResult.ok) {
-    const error = parsedResult.error;
+    const parsedError = parsedResult.error;
+    const error: AppError = {
+      ...parsedError,
+      redacted_context: {
+        ...(parsedError.redacted_context ?? {}),
+        ...(stderr ? { stderr_excerpt: stderr.slice(0, 2000) } : {}),
+      },
+    };
     await prisma.run.update({
       where: { id: run.id },
       data: {

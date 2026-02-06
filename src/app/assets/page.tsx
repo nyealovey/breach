@@ -15,6 +15,7 @@ import {
   MinusCircle,
   Pencil,
   RefreshCw,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,7 +34,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -1357,9 +1357,13 @@ export default function AssetsPage() {
                   <ClipboardPenLine />
                 </Button>
 
-                <CreateAssetLedgerExportButton size="sm" variant="outline">
+                <CreateAssetLedgerExportButton
+                  size="icon"
+                  variant="outline"
+                  title="导出台账 CSV"
+                  aria-label="导出台账 CSV"
+                >
                   <Download />
-                  导出台账 CSV
                 </CreateAssetLedgerExportButton>
 
                 {selectedAssetUuids.length > 0 ? (
@@ -1486,11 +1490,8 @@ export default function AssetsPage() {
 
                           return (
                             <TableCell key={colId}>
-                              <div className="space-y-1">
-                                <div className={lineClassName} title={title}>
-                                  {item.machineName ? <span>{item.machineName}</span> : (toolsNotRunningNode ?? '-')}
-                                </div>
-                                <IdText value={item.assetUuid} />
+                              <div className={lineClassName} title={title}>
+                                {item.machineName ? <span>{item.machineName}</span> : (toolsNotRunningNode ?? '-')}
                               </div>
                             </TableCell>
                           );
@@ -2094,17 +2095,6 @@ export default function AssetsPage() {
                   <div className="text-[11px] text-muted-foreground">
                     支持多个 IP（逗号分隔）；资产清单展示/搜索/筛选会优先使用覆盖值。
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={editSaving || swCollecting || !hasOverrideDraft}
-                      onClick={clearOverrideDraft}
-                    >
-                      清空覆盖值
-                    </Button>
-                    <div className="text-[11px] text-muted-foreground">清空后需点击“保存”才会生效。</div>
-                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -2123,23 +2113,6 @@ export default function AssetsPage() {
                         <div className="text-muted-foreground">操作系统</div>
                         <div className="mt-1 break-words">{editTarget?.osCollected ?? '暂无'}</div>
                       </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        title="从 SolarWinds 采集"
-                        aria-label="从 SolarWinds 采集"
-                        disabled={!editTarget || swCollecting}
-                        onClick={() => {
-                          if (!editTarget) return;
-                          void runSolarWindsCollect({ assetUuid: editTarget.assetUuid });
-                        }}
-                      >
-                        <RefreshCw className={swCollecting ? 'animate-spin' : undefined} />
-                      </Button>
-                      <div className="text-[11px] text-muted-foreground">手动采集并填充覆盖字段（不会自动保存）。</div>
                     </div>
                   </div>
 
@@ -2223,86 +2196,111 @@ export default function AssetsPage() {
                       </div>
                     </div>
                   ) : null}
-
-                  <div className="text-xs text-muted-foreground">
-                    提示：SolarWinds 采集为“信号来源”，会写入 Signal 记录并更新“监控”状态；不会改写 canonical 采集结果。
-                  </div>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  disabled={editSaving || swCollecting}
-                  onClick={() => {
-                    setEditAssetOpen(false);
-                  }}
-                >
-                  取消
-                </Button>
-                <Button
-                  disabled={!editTarget || editSaving}
-                  onClick={async () => {
-                    if (!editTarget) return;
-                    setEditSaving(true);
-
-                    try {
-                      const nextMachineNameOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
-                      const nextIpOverrideText = editIpValue.trim() ? editIpValue.trim() : null;
-                      const nextOsOverrideText = editOsValue.trim() ? editOsValue.trim() : null;
-
-                      const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
-                        method: 'PUT',
-                        headers: { 'content-type': 'application/json' },
-                        body: JSON.stringify({
-                          machineNameOverride: nextMachineNameOverride,
-                          ipOverrideText: nextIpOverrideText,
-                          osOverrideText: nextOsOverrideText,
-                        }),
-                      });
-
-                      if (!res.ok) {
-                        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-                        toast.error(body?.error?.message ?? '保存失败');
-                        return;
-                      }
-
-                      setItems((prev) =>
-                        prev.map((it) => {
-                          if (it.assetUuid !== editTarget.assetUuid) return it;
-
-                          const machineNameCollected = it.machineNameCollected;
-                          const machineName = nextMachineNameOverride ?? machineNameCollected;
-                          const machineNameMismatch =
-                            nextMachineNameOverride !== null &&
-                            machineNameCollected !== null &&
-                            nextMachineNameOverride !== machineNameCollected;
-
-                          const ip = nextIpOverrideText ?? it.ipCollected;
-                          const os = nextOsOverrideText ?? it.osCollected;
-
-                          return {
-                            ...it,
-                            machineNameOverride: nextMachineNameOverride,
-                            machineName,
-                            machineNameMismatch,
-                            ipOverrideText: nextIpOverrideText,
-                            ip,
-                            osOverrideText: nextOsOverrideText,
-                            os,
-                          };
-                        }),
-                      );
-
-                      toast.success('已保存');
+              <DialogFooter className="flex-row items-center justify-between gap-2 sm:space-x-0">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    title="采集并填充覆盖草稿（不会自动保存）"
+                    aria-label="采集并填充覆盖草稿"
+                    disabled={!editTarget || swCollecting}
+                    onClick={() => {
+                      if (!editTarget) return;
+                      void runSolarWindsCollect({ assetUuid: editTarget.assetUuid });
+                    }}
+                  >
+                    <RefreshCw className={swCollecting ? 'animate-spin' : undefined} />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    title="清空覆盖草稿（需点击保存生效）"
+                    aria-label="清空覆盖草稿"
+                    disabled={editSaving || swCollecting || !hasOverrideDraft}
+                    onClick={clearOverrideDraft}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={editSaving || swCollecting}
+                    onClick={() => {
                       setEditAssetOpen(false);
-                    } finally {
-                      setEditSaving(false);
-                    }
-                  }}
-                >
-                  保存
-                </Button>
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    disabled={!editTarget || editSaving}
+                    onClick={async () => {
+                      if (!editTarget) return;
+                      setEditSaving(true);
+
+                      try {
+                        const nextMachineNameOverride = editMachineNameValue.trim()
+                          ? editMachineNameValue.trim()
+                          : null;
+                        const nextIpOverrideText = editIpValue.trim() ? editIpValue.trim() : null;
+                        const nextOsOverrideText = editOsValue.trim() ? editOsValue.trim() : null;
+
+                        const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
+                          method: 'PUT',
+                          headers: { 'content-type': 'application/json' },
+                          body: JSON.stringify({
+                            machineNameOverride: nextMachineNameOverride,
+                            ipOverrideText: nextIpOverrideText,
+                            osOverrideText: nextOsOverrideText,
+                          }),
+                        });
+
+                        if (!res.ok) {
+                          const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                          toast.error(body?.error?.message ?? '保存失败');
+                          return;
+                        }
+
+                        setItems((prev) =>
+                          prev.map((it) => {
+                            if (it.assetUuid !== editTarget.assetUuid) return it;
+
+                            const machineNameCollected = it.machineNameCollected;
+                            const machineName = nextMachineNameOverride ?? machineNameCollected;
+                            const machineNameMismatch =
+                              nextMachineNameOverride !== null &&
+                              machineNameCollected !== null &&
+                              nextMachineNameOverride !== machineNameCollected;
+
+                            const ip = nextIpOverrideText ?? it.ipCollected;
+                            const os = nextOsOverrideText ?? it.osCollected;
+
+                            return {
+                              ...it,
+                              machineNameOverride: nextMachineNameOverride,
+                              machineName,
+                              machineNameMismatch,
+                              ipOverrideText: nextIpOverrideText,
+                              ip,
+                              osOverrideText: nextOsOverrideText,
+                              os,
+                            };
+                          }),
+                        );
+
+                        toast.success('已保存');
+                        setEditAssetOpen(false);
+                      } finally {
+                        setEditSaving(false);
+                      }
+                    }}
+                  >
+                    保存
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>

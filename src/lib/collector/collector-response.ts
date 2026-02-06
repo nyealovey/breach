@@ -19,15 +19,123 @@ export type CollectorResponseV1 = {
 
 export type CollectorParseResult = { ok: true; response: CollectorResponseV1 } | { ok: false; error: AppError };
 
+const STDOUT_EXCERPT_LIMIT = 2000;
+
 function schemaError(message: string, redacted_context?: Record<string, JsonValue>): AppError {
   return { code: ErrorCode.SCHEMA_VALIDATION_FAILED, category: 'schema', message, retryable: false, redacted_context };
 }
 
-export function parseCollectorResponse(stdout: string): CollectorParseResult {
-  let parsed: unknown;
+function stripUtf8Bom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+function extractBalancedJsonObjects(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (!ch) continue;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (ch !== '}' || depth === 0) continue;
+    depth -= 1;
+    if (depth === 0 && start >= 0) {
+      out.push(text.slice(start, i + 1));
+      start = -1;
+    }
+  }
+
+  return out;
+}
+
+function recoverCollectorJson(stdout: string): unknown | null {
+  const normalized = stripUtf8Bom(stdout).trim();
+  if (!normalized) return null;
+
+  const candidates: string[] = [];
+  const lines = normalized
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length > 0) candidates.push(lines[lines.length - 1]!);
+
+  const firstBrace = normalized.indexOf('{');
+  const lastBrace = normalized.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(normalized.slice(firstBrace, lastBrace + 1));
+
+  candidates.push(...extractBalancedJsonObjects(normalized));
+
+  const dedupedCandidates: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    dedupedCandidates.push(trimmed);
+  }
+
+  for (let i = dedupedCandidates.length - 1; i >= 0; i -= 1) {
+    const candidate = dedupedCandidates[i];
+    if (!candidate) continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.schema_version === 'string') return obj;
+  }
+
+  return null;
+}
+
+function parseCollectorJson(stdout: string): { parsed: unknown | null; parseMode: 'strict' | 'recovered' | 'failed' } {
+  const normalized = stripUtf8Bom(stdout).trim();
+
   try {
-    parsed = JSON.parse(stdout);
+    return { parsed: JSON.parse(normalized), parseMode: 'strict' };
   } catch {
+    const recovered = recoverCollectorJson(stdout);
+    if (recovered !== null) return { parsed: recovered, parseMode: 'recovered' };
+    return { parsed: null, parseMode: 'failed' };
+  }
+}
+
+export function parseCollectorResponse(stdout: string): CollectorParseResult {
+  const { parsed, parseMode } = parseCollectorJson(stdout);
+  if (parsed === null) {
     return {
       ok: false,
       error: {
@@ -35,13 +143,17 @@ export function parseCollectorResponse(stdout: string): CollectorParseResult {
         category: 'parse',
         message: 'failed to parse plugin stdout as json',
         retryable: false,
-        redacted_context: { stdout_excerpt: stdout.slice(0, 2000) },
+        redacted_context: {
+          parse_attempt: 'strict_then_recovery',
+          stdout_length: stdout.length,
+          stdout_excerpt: stdout.slice(0, STDOUT_EXCERPT_LIMIT),
+        },
       },
     };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return { ok: false, error: schemaError('plugin response must be an object') };
+    return { ok: false, error: schemaError('plugin response must be an object', { parse_mode: parseMode }) };
   }
 
   const schemaVersion = (parsed as { schema_version?: unknown }).schema_version;
@@ -53,7 +165,10 @@ export function parseCollectorResponse(stdout: string): CollectorParseResult {
         category: 'schema',
         message: 'unsupported collector-response schema_version',
         retryable: false,
-        redacted_context: { schema_version: typeof schemaVersion === 'string' ? schemaVersion : null },
+        redacted_context: {
+          parse_mode: parseMode,
+          schema_version: typeof schemaVersion === 'string' ? schemaVersion : null,
+        },
       },
     };
   }
