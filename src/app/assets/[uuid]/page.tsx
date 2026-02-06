@@ -694,7 +694,7 @@ export default function AssetDetailPage() {
                 <TableHeader className="bg-muted/30">
                   <TableRow>
                     <TableHead className="w-[120px]">字段</TableHead>
-                    <TableHead>当前值</TableHead>
+                    <TableHead>采集值</TableHead>
                     <TableHead className="w-[220px]">覆盖值</TableHead>
                   </TableRow>
                 </TableHeader>
