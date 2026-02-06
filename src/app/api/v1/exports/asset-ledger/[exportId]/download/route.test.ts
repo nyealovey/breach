@@ -23,6 +23,19 @@ describe('GET /api/v1/exports/asset-ledger/:exportId/download', () => {
     vi.clearAllMocks();
   });
 
+  it('returns 204 and does not consume export for prefetch requests', async () => {
+    (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
+
+    const req = new Request('http://localhost/api/v1/exports/asset-ledger/exp_1/download', {
+      headers: { purpose: 'prefetch' },
+    });
+    const res = await GET(req, { params: Promise.resolve({ exportId: 'exp_1' }) });
+
+    expect(res.status).toBe(204);
+    expect(prisma.assetLedgerExport.findUnique).not.toHaveBeenCalled();
+    expect(prisma.assetLedgerExport.update).not.toHaveBeenCalled();
+  });
+
   it('returns 410 when export expired', async () => {
     (requireAdmin as any).mockResolvedValue({ ok: true, requestId: 'req_test', session: { user: { id: 'u1' } } });
     (prisma.assetLedgerExport.findUnique as any).mockResolvedValue({

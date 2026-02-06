@@ -180,8 +180,7 @@ function CanonicalValueCell({ value, formatHint }: { value: unknown; formatHint?
   );
 }
 
-function OverrideAwareCurrentValue(props: {
-  currentValue: string | null;
+function OverrideAwareOverrideValue(props: {
   overrideText: string | null;
   collectedText: string | null;
   mismatch?: boolean;
@@ -199,7 +198,7 @@ function OverrideAwareCurrentValue(props: {
 
   return (
     <div className={lineClassName} title={visualMeta.title}>
-      {props.currentValue ? <span>{props.currentValue}</span> : props.fallback}
+      {props.overrideText ? <span>{props.overrideText}</span> : props.fallback}
     </div>
   );
 }
@@ -702,16 +701,16 @@ export default function AssetDetailPage() {
                   <TableRow>
                     <TableCell className="font-medium">机器名</TableCell>
                     <TableCell>
-                      <OverrideAwareCurrentValue
-                        currentValue={summary.machineName}
+                      <span className="font-medium">{summary.machineName ?? toolsNotRunningNode ?? '-'}</span>
+                    </TableCell>
+                    <TableCell>
+                      <OverrideAwareOverrideValue
                         overrideText={summary.machineNameOverride}
                         collectedText={summary.machineNameCollected}
                         mismatch={summary.machineNameMismatch}
-                        fallback={toolsNotRunningNode ?? '-'}
-                        className="font-medium"
+                        fallback={<span className="text-muted-foreground">-</span>}
                       />
                     </TableCell>
-                    <TableCell>{summary.machineNameOverride ?? '-'}</TableCell>
                   </TableRow>
                   {asset.assetType === 'vm' ? (
                     <TableRow>
@@ -723,26 +722,28 @@ export default function AssetDetailPage() {
                   <TableRow>
                     <TableCell className="font-medium">操作系统</TableCell>
                     <TableCell>
-                      <OverrideAwareCurrentValue
-                        currentValue={summary.osCurrent}
+                      <span>{summary.osCurrent ?? toolsNotRunningNode ?? '-'}</span>
+                    </TableCell>
+                    <TableCell>
+                      <OverrideAwareOverrideValue
                         overrideText={summary.osOverride}
                         collectedText={summary.osCollected}
-                        fallback={toolsNotRunningNode ?? '-'}
+                        fallback={<span className="text-muted-foreground">-</span>}
                       />
                     </TableCell>
-                    <TableCell>{summary.osOverride ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium">IP</TableCell>
                     <TableCell className="font-mono text-xs">
-                      <OverrideAwareCurrentValue
-                        currentValue={summary.ipCurrent}
+                      <span>{summary.ipCurrent ?? toolsNotRunningNode ?? '-'}</span>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <OverrideAwareOverrideValue
                         overrideText={summary.ipOverride}
                         collectedText={summary.ipCollected}
-                        fallback={toolsNotRunningNode ?? '-'}
+                        fallback={<span className="text-muted-foreground">-</span>}
                       />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{summary.ipOverride ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium">监控</TableCell>
@@ -1057,13 +1058,14 @@ export default function AssetDetailPage() {
                       <TableHead>字段</TableHead>
                       <TableHead>来源值</TableHead>
                       <TableHead>覆盖值</TableHead>
-                      <TableHead>生效值</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {allowedLedgerFieldMetas.map((meta) => {
                       const value = asset.ledgerFields?.[meta.key] ?? { source: null, override: null, effective: null };
                       const draft = ledgerDraft[meta.key] ?? value.override ?? '';
+                      const sourceText = normalizeOptionalText(value.source);
+                      const overrideText = normalizeOptionalText(value.override);
 
                       return (
                         <TableRow key={meta.key}>
@@ -1074,8 +1076,8 @@ export default function AssetDetailPage() {
                             ) : null}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {value.source ? (
-                              <span className="whitespace-normal break-words">{value.source}</span>
+                            {sourceText ? (
+                              <span className="whitespace-normal break-words">{sourceText}</span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
@@ -1095,17 +1097,12 @@ export default function AssetDetailPage() {
                                   onChange={(e) => setLedgerDraft((prev) => ({ ...prev, [meta.key]: e.target.value }))}
                                 />
                               )
-                            ) : value.override ? (
-                              <span className="whitespace-normal break-words">{value.override}</span>
                             ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {value.effective ? (
-                              <span className="whitespace-normal break-words">{value.effective}</span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
+                              <OverrideAwareOverrideValue
+                                overrideText={overrideText}
+                                collectedText={sourceText}
+                                fallback={<span className="text-muted-foreground">-</span>}
+                              />
                             )}
                           </TableCell>
                         </TableRow>

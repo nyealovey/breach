@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
@@ -77,7 +76,9 @@ export default async function ExportsPage() {
                     <TableCell className="text-right">
                       {exp.status === 'Succeeded' ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={`/api/v1/exports/asset-ledger/${exp.id}/download`}>下载</Link>
+                          <a href={`/api/v1/exports/asset-ledger/${exp.id}/download`} download>
+                            下载
+                          </a>
                         </Button>
                       ) : exp.status === 'Failed' ? (
                         <span className="text-xs text-muted-foreground">失败</span>

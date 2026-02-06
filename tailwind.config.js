@@ -3,7 +3,19 @@ import defaultTheme from 'tailwindcss/defaultTheme';
 
 export default {
   darkMode: ['class'],
-  content: ['./src/app/**/*.{ts,tsx}', './src/components/**/*.{ts,tsx}', './src/lib/**/*.{ts,tsx}'],
+  // Only scan template sources. Scanning src/lib can treat regex literals
+  // (e.g. /[-:.]/) as arbitrary utility candidates and generate invalid CSS.
+  content: ['./src/app/**/*.{ts,tsx}', './src/components/**/*.{ts,tsx}'],
+  // Keep class generation for utility tokens returned from src/lib at runtime.
+  safelist: [
+    'border-destructive',
+    'border-blue-600',
+    'dark:border-blue-500',
+    'border-slate-300',
+    'dark:border-slate-600',
+    'border-emerald-600',
+    'dark:border-emerald-500',
+  ],
   theme: {
     extend: {
       fontFamily: {

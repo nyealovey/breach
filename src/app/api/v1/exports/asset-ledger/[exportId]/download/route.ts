@@ -12,6 +12,22 @@ export async function GET(request: Request, context: { params: Promise<{ exportI
   const requestId = getOrCreateRequestId(auth.requestId);
   const { exportId } = await context.params;
 
+  // Guard one-time downloads from router prefetch requests.
+  const purpose = request.headers.get('purpose') ?? request.headers.get('sec-purpose');
+  const isPrefetch =
+    (purpose?.toLowerCase().includes('prefetch') ?? false) ||
+    request.headers.has('next-router-prefetch') ||
+    request.headers.has('x-middleware-prefetch');
+  if (isPrefetch) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'X-Request-ID': requestId,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   const now = new Date();
   const result = await prisma.$transaction(async (tx) => {
     const exp = await tx.assetLedgerExport.findUnique({

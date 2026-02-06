@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: breach-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: breach
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '54329:5432'
+    volumes:
+      # PostgreSQL 18+ recommends mounting /var/lib/postgresql (not /var/lib/postgresql/data).
+      - breach_pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d breach']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  breach_pg_data:
