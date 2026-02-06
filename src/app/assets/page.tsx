@@ -1553,8 +1553,14 @@ export default function AssetsPage() {
                           });
                           if (!display)
                             return (
-                              <TableCell key={colId} className="text-center text-muted-foreground">
-                                -
+                              <TableCell key={colId} className="text-center">
+                                <span className="inline-flex items-center justify-center" title="无监控信息">
+                                  <HelpCircle
+                                    className="h-4 w-4 text-slate-400 dark:text-slate-500"
+                                    aria-hidden="true"
+                                  />
+                                  <span className="sr-only">无监控信息</span>
+                                </span>
                               </TableCell>
                             );
 
