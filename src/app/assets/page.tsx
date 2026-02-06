@@ -3,7 +3,20 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardPenLine, Columns3, Download, Eye, Pencil, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleSlash2,
+  ClipboardPenLine,
+  Columns3,
+  Download,
+  Eye,
+  HelpCircle,
+  MinusCircle,
+  Pencil,
+  RefreshCw,
+  XCircle,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
@@ -122,11 +135,11 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   { id: 'ip', label: 'IP', description: 'VM 若 Tools / Guest 服务未运行可能缺失。' },
   { id: 'brand', label: '品牌' },
   { id: 'model', label: '型号' },
-  { id: 'monitorState', label: '监控', description: 'SolarWinds 监控覆盖与状态（信号来源；不影响库存）。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
   { id: 'vmPowerState', label: '电源', description: '电源状态（poweredOn/off/suspended）。' },
+  { id: 'monitorState', label: '监控', description: 'SolarWinds 监控覆盖与状态（信号来源；不影响库存）。' },
   { id: 'recordedAt', label: '录入时间', description: '若未录入台账字段，默认显示第一次采集时间。' },
 ];
 
@@ -1378,8 +1391,14 @@ export default function AssetsPage() {
                       const label = ASSET_LIST_COLUMN_LABEL_BY_ID.get(colId) ?? colId;
                       const rightAligned =
                         colId === 'cpuCount' || colId === 'memoryBytes' || colId === 'totalDiskBytes';
+                      const centerAligned = colId === 'monitorState';
+                      const headClassName = rightAligned
+                        ? 'text-right'
+                        : centerAligned
+                          ? 'w-[64px] text-center'
+                          : undefined;
                       return (
-                        <TableHead key={colId} className={rightAligned ? 'text-right' : undefined}>
+                        <TableHead key={colId} className={headClassName}>
                           {label}
                         </TableHead>
                       );
@@ -1421,18 +1440,18 @@ export default function AssetsPage() {
                         ) : null;
 
                         if (colId === 'machineName') {
+                          const hasOverride = Boolean(item.machineNameOverride);
+                          const title = hasOverride ? (item.machineNameMismatch ? '覆盖≠采集' : '覆盖') : undefined;
+                          const lineClassName = hasOverride
+                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 font-medium ${
+                                item.machineNameMismatch ? 'border-destructive' : 'border-primary'
+                              }`
+                            : 'flex flex-wrap items-center gap-2 font-medium';
                           return (
                             <TableCell key={colId}>
                               <div className="space-y-1">
-                                <div className="flex flex-wrap items-center gap-2 font-medium">
+                                <div className={lineClassName} title={title}>
                                   {item.machineName ? <span>{item.machineName}</span> : (toolsNotRunningNode ?? '-')}
-                                  {item.machineNameOverride ? (
-                                    item.machineNameMismatch ? (
-                                      <Badge variant="destructive">覆盖≠采集</Badge>
-                                    ) : (
-                                      <Badge variant="secondary">覆盖</Badge>
-                                    )
-                                  ) : null}
                                 </div>
                                 <IdText value={item.assetUuid} />
                               </div>
@@ -1467,25 +1486,45 @@ export default function AssetsPage() {
                         }
 
                         if (colId === 'os') {
+                          const hasOverride = Boolean(item.osOverrideText);
+                          const mismatch =
+                            hasOverride &&
+                            Boolean(item.osCollected) &&
+                            item.osOverrideText?.trim() !== item.osCollected;
+                          const title = hasOverride ? (mismatch ? '覆盖≠采集' : '覆盖') : undefined;
+                          const lineClassName = hasOverride
+                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${
+                                mismatch ? 'border-destructive' : 'border-primary'
+                              }`
+                            : 'flex flex-wrap items-center gap-2';
                           return (
                             <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className={lineClassName} title={title}>
                                 <span>{item.os ? item.os : (toolsNotRunningNode ?? '-')}</span>
-                                {item.osOverrideText ? <Badge variant="secondary">覆盖</Badge> : null}
                               </div>
                             </TableCell>
                           );
                         }
 
                         if (colId === 'ip') {
+                          const hasOverride = Boolean(item.ipOverrideText);
+                          const mismatch =
+                            hasOverride &&
+                            Boolean(item.ipCollected) &&
+                            item.ipOverrideText?.trim() !== item.ipCollected;
+                          const title = hasOverride ? (mismatch ? '覆盖≠采集' : '覆盖') : undefined;
+                          const lineClassName = hasOverride
+                            ? `flex flex-wrap items-center gap-2 border-l-2 pl-2 ${
+                                mismatch ? 'border-destructive' : 'border-primary'
+                              }`
+                            : 'flex flex-wrap items-center gap-2';
                           return (
                             <TableCell
                               key={colId}
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className={lineClassName} title={title}>
                                 <span>{item.ip ? item.ip : (toolsNotRunningNode ?? '-')}</span>
-                                {item.ipOverrideText ? <Badge variant="secondary">覆盖</Badge> : null}
                               </div>
                             </TableCell>
                           );
@@ -1512,19 +1551,45 @@ export default function AssetsPage() {
                             monitorCovered: item.monitorCovered,
                             monitorState: item.monitorState,
                           });
-                          if (!display) return <TableCell key={colId}>-</TableCell>;
+                          if (!display)
+                            return (
+                              <TableCell key={colId} className="text-center text-muted-foreground">
+                                -
+                              </TableCell>
+                            );
 
                           const tooltipParts: string[] = [];
                           if (item.monitorStatus) tooltipParts.push(`SolarWinds: ${item.monitorStatus}`);
                           if (item.monitorUpdatedAt)
                             tooltipParts.push(`更新：${formatDateTime(item.monitorUpdatedAt)}`);
-                          const tooltip = tooltipParts.length > 0 ? tooltipParts.join(' · ') : undefined;
+                          const tooltip = tooltipParts.length > 0 ? tooltipParts.join(' · ') : null;
+                          const title = tooltip ? `${display.labelZh} · ${tooltip}` : display.labelZh;
+
+                          let Icon = HelpCircle;
+                          let iconClassName = 'text-slate-500';
+                          if (display.state === 'up') {
+                            Icon = CheckCircle2;
+                            iconClassName = 'text-emerald-600 dark:text-emerald-500';
+                          } else if (display.state === 'warning') {
+                            Icon = AlertTriangle;
+                            iconClassName = 'text-amber-600 dark:text-amber-500';
+                          } else if (display.state === 'down') {
+                            Icon = XCircle;
+                            iconClassName = 'text-red-600 dark:text-red-500';
+                          } else if (display.state === 'unmanaged') {
+                            Icon = CircleSlash2;
+                            iconClassName = 'text-slate-500 dark:text-slate-400';
+                          } else if (display.state === 'not_covered') {
+                            Icon = MinusCircle;
+                            iconClassName = 'text-slate-400 dark:text-slate-500';
+                          }
 
                           return (
-                            <TableCell key={colId}>
-                              <Badge variant={display.variant} title={tooltip}>
-                                {display.labelZh}
-                              </Badge>
+                            <TableCell key={colId} className="text-center">
+                              <span className="inline-flex items-center justify-center" title={title}>
+                                <Icon className={`h-4 w-4 ${iconClassName}`} aria-hidden="true" />
+                                <span className="sr-only">{display.labelZh}</span>
+                              </span>
                             </TableCell>
                           );
                         }

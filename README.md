@@ -167,11 +167,12 @@ List of websites that started off with Next.js TypeScript Starter:
   - 清单：支持按「虚拟化技术」筛选（vCenter / PVE / Hyper-V；命中规则：资产任一来源属于该类型即可）
   - 清单：暂不展示 Cluster（Cluster 定位为“虚拟资产”，后续再讨论如何在清单中展示）
   - 清单：状态列展示 `Asset.status`（`in_service/offline` → `在服/离线`）；并提供对应筛选
+  - 清单：机器名/操作系统/IP 的覆盖提示用左侧边框标记（不显示“覆盖”文字）
   - 清单：Host 增加品牌/型号列（来自 canonical：`fields.identity.vendor/model`，best-effort）；并提供对应筛选（选择后自动切到 Host）
-  - 清单：监控列展示 SolarWinds 监控覆盖与状态（信号来源；不影响库存 status）
+  - 清单：监控列用图标+颜色展示 SolarWinds 监控覆盖与状态（信号来源；不影响库存 status；hover 查看详情）
   - 清单：电源列展示 `fields.runtime.power_state`（VM/Host；`POWERED_ON/OFF/SUSPENDED` → `运行/关机/挂起`）
   - 清单：IP 列默认过滤 `169.254.*`（APIPA/link-local），避免混入无效地址
-  - 清单：录入时间列位于电源列之后
+  - 清单：录入时间列位于监控列之后
   - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
   - 操作列（admin）：支持覆盖编辑机器名/IP/操作系统；并提供“从 SolarWinds 采集”（仅针对当前资产触发一次定向采集，多命中需选择 Node；采集会填充覆盖字段但不会自动保存）
