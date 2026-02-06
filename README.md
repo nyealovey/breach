@@ -162,6 +162,8 @@ List of websites that started off with Next.js TypeScript Starter:
 - `/runs`：采集 Run 列表与详情（admin/user；支持按调度组/结果筛选；分页大小在列表底部左侧；失败可定位：错误码 + 建议动作）
 - `/assets`：资产清单与详情（admin/user；canonical）
   - 清单：支持搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）
+  - 清单：支持按「虚拟化技术」筛选（vCenter / PVE / Hyper-V；命中规则：资产任一来源属于该类型即可）
+  - 清单：暂不展示 Cluster（Cluster 定位为“虚拟资产”，后续再讨论如何在清单中展示）
   - 清单：电源列展示 `fields.runtime.power_state`（VM/Host；`POWERED_ON/OFF/SUSPENDED` → `运行/关机/挂起`）
   - 清单：IP 列默认过滤 `169.254.*`（APIPA/link-local），避免混入无效地址
   - 清单：录入时间列位于电源列之后
@@ -169,6 +171,7 @@ List of websites that started off with Next.js TypeScript Starter:
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
   - 分页：每页条数选择在列表底部左侧
   - 详情：左右等宽两列；左侧为盘点摘要（机器名/虚拟机名/操作系统/IP/CPU/内存/总分配磁盘/电源/Tools 等）/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
+  - 清单/详情：当 VM 上电且 Tools / Guest 服务未运行导致 guest 信息缺失时，机器名/操作系统/IP 会显示 `- (Tools 未运行)`（vCenter≈VMware Tools；PVE≈QEMU Guest Agent；Hyper-V≈来宾集成服务，best-effort）
 - `/exports`：导出台账 CSV 任务列表与下载（admin-only；创建入口在 `/assets`；下载即失效）
 - `/schedule-groups`：调度组配置（admin-only）
 - `/sources`：来源配置（admin-only；清单展示绑定的凭据）

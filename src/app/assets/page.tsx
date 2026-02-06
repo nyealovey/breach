@@ -27,6 +27,11 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
 import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
+import {
+  shouldShowToolsNotRunning,
+  TOOLS_NOT_RUNNING_TEXT,
+  TOOLS_NOT_RUNNING_TOOLTIP,
+} from '@/lib/assets/tools-not-running';
 import { listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AssetListUrlState, VmPowerStateParam } from '@/lib/assets/asset-list-url';
@@ -96,7 +101,7 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   { id: 'vmName', label: '虚拟机名', description: '仅 VM。' },
   { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
-  { id: 'ip', label: 'IP', description: 'VM 若 Tools 未运行可能缺失。' },
+  { id: 'ip', label: 'IP', description: 'VM 若 Tools / Guest 服务未运行可能缺失。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
@@ -252,8 +257,9 @@ export default function AssetsPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
 
   const [qInput, setQInput] = useState('');
-  const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host' | 'cluster'>('all');
+  const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host'>('all');
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
+  const [sourceTypeInput, setSourceTypeInput] = useState<'all' | 'vcenter' | 'pve' | 'hyperv'>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
   const [machineNameMissingInput, setMachineNameMissingInput] = useState(false);
@@ -277,6 +283,7 @@ export default function AssetsPage() {
 
   const query = useMemo(() => {
     const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
+    const sourceType = sourceTypeInput === 'all' ? undefined : sourceTypeInput;
     const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
     const ipMissing = ipMissingInput ? true : undefined;
     const machineNameMissing = machineNameMissingInput ? true : undefined;
@@ -290,8 +297,10 @@ export default function AssetsPage() {
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
       assetType: impliedAssetType,
-      excludeAssetType: impliedAssetType ? undefined : ('cluster' as const),
+      // Cluster is treated as a virtual asset type and is intentionally hidden from the assets page for now.
+      excludeAssetType: 'cluster' as const,
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
+      sourceType,
       region: regionInput.trim() ? regionInput.trim() : undefined,
       company: companyInput.trim() ? companyInput.trim() : undefined,
       department: departmentInput.trim() ? departmentInput.trim() : undefined,
@@ -322,6 +331,7 @@ export default function AssetsPage() {
     recentAddedInput,
     regionInput,
     sourceIdInput,
+    sourceTypeInput,
     systemCategoryInput,
     systemLevelInput,
     vmPowerStateInput,
@@ -329,7 +339,7 @@ export default function AssetsPage() {
 
   const visibleColumnsForTable = useMemo(() => {
     const cols = ensureCoreVisibleColumns(visibleColumns);
-    return assetTypeInput === 'host' || assetTypeInput === 'cluster'
+    return assetTypeInput === 'host'
       ? cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]))
       : cols;
   }, [assetTypeInput, visibleColumns]);
@@ -342,6 +352,7 @@ export default function AssetsPage() {
     setQInput(parsed.q ?? '');
     setAssetTypeInput(parsed.assetType ?? 'all');
     setSourceIdInput(parsed.sourceId ?? 'all');
+    setSourceTypeInput(parsed.sourceType ?? 'all');
     setRegionInput(parsed.region ?? '');
     setCompanyInput(parsed.company ?? '');
     setDepartmentInput(parsed.department ?? '');
@@ -371,6 +382,7 @@ export default function AssetsPage() {
       assetType: query.assetType,
       excludeAssetType: query.excludeAssetType,
       sourceId: query.sourceId,
+      sourceType: query.sourceType,
       region: query.region,
       company: query.company,
       department: query.department,
@@ -478,6 +490,7 @@ export default function AssetsPage() {
         assetType: query.assetType,
         excludeAssetType: query.excludeAssetType,
         sourceId: query.sourceId,
+        sourceType: query.sourceType,
         region: query.region,
         company: query.company,
         department: query.department,
@@ -630,7 +643,6 @@ export default function AssetsPage() {
                   <SelectItem value="all">全部类型</SelectItem>
                   <SelectItem value="vm">VM</SelectItem>
                   <SelectItem value="host">Host</SelectItem>
-                  <SelectItem value="cluster">Cluster</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -651,6 +663,24 @@ export default function AssetsPage() {
                       {s.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={sourceTypeInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setSourceTypeInput(value as typeof sourceTypeInput);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="虚拟化技术" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部技术</SelectItem>
+                  <SelectItem value="vcenter">vCenter</SelectItem>
+                  <SelectItem value="pve">PVE</SelectItem>
+                  <SelectItem value="hyperv">Hyper-V</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -964,12 +994,23 @@ export default function AssetsPage() {
                       ) : null}
 
                       {visibleColumnsForTable.map((colId) => {
+                        const showToolsNotRunning = shouldShowToolsNotRunning({
+                          assetType: item.assetType,
+                          powerState: item.vmPowerState,
+                          toolsRunning: item.toolsRunning,
+                        });
+                        const toolsNotRunningNode = showToolsNotRunning ? (
+                          <span className="cursor-help text-muted-foreground" title={TOOLS_NOT_RUNNING_TOOLTIP}>
+                            {TOOLS_NOT_RUNNING_TEXT}
+                          </span>
+                        ) : null;
+
                         if (colId === 'machineName') {
                           return (
                             <TableCell key={colId}>
                               <div className="space-y-1">
                                 <div className="flex flex-wrap items-center gap-2 font-medium">
-                                  <span>{item.machineName ?? '-'}</span>
+                                  {item.machineName ? <span>{item.machineName}</span> : (toolsNotRunningNode ?? '-')}
                                   {item.machineNameOverride ? (
                                     item.machineNameMismatch ? (
                                       <Badge variant="destructive">覆盖≠采集</Badge>
@@ -1003,7 +1044,7 @@ export default function AssetsPage() {
                         if (colId === 'os') {
                           return (
                             <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
-                              {item.os ?? '-'}
+                              {item.os ? item.os : (toolsNotRunningNode ?? '-')}
                             </TableCell>
                           );
                         }
@@ -1014,19 +1055,7 @@ export default function AssetsPage() {
                               key={colId}
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
-                              {item.ip ? (
-                                item.ip
-                              ) : normalizePowerState(item.vmPowerState ?? '') === 'poweredOn' &&
-                                item.toolsRunning === false ? (
-                                <span
-                                  className="cursor-help text-muted-foreground"
-                                  title="Guest Agent / Tools 未安装或未运行，无法获取 IP 地址"
-                                >
-                                  - (Tools 未运行)
-                                </span>
-                              ) : (
-                                '-'
-                              )}
+                              {item.ip ? item.ip : (toolsNotRunningNode ?? '-')}
                             </TableCell>
                           );
                         }
@@ -1180,7 +1209,7 @@ export default function AssetsPage() {
                 {ASSET_LIST_COLUMNS.map((col) => {
                   const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
                   const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
-                  const disabled = locked || (vmOnly && (assetTypeInput === 'host' || assetTypeInput === 'cluster'));
+                  const disabled = locked || (vmOnly && assetTypeInput === 'host');
                   const checked = locked ? true : columnDraft.includes(col.id);
                   return (
                     <div
@@ -1215,8 +1244,7 @@ export default function AssetsPage() {
               </div>
 
               <div className="text-xs text-muted-foreground">
-                机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host/Cluster
-                时不展示）；其余列可选（当前：
+                机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host 时不展示）；其余列可选（当前：
                 {columnDraft.length} 列）。
               </div>
 

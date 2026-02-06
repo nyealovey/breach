@@ -1,9 +1,10 @@
-import { AssetType, Prisma } from '@prisma/client';
+import { AssetType, Prisma, SourceType } from '@prisma/client';
 
 export type AssetListQuery = {
   assetType: AssetType | undefined;
   excludeAssetType: AssetType | undefined;
   sourceId: string | undefined;
+  sourceType: SourceType | undefined;
   q: string | undefined;
   region: string | undefined;
   company: string | undefined;
@@ -22,6 +23,12 @@ export type AssetListQuery = {
 function parseAssetType(input: string | null): AssetType | undefined {
   if (!input) return undefined;
   if ((Object.values(AssetType) as string[]).includes(input)) return input as AssetType;
+  return undefined;
+}
+
+function parseSourceType(input: string | null): SourceType | undefined {
+  if (!input) return undefined;
+  if ((Object.values(SourceType) as string[]).includes(input)) return input as SourceType;
   return undefined;
 }
 
@@ -63,6 +70,7 @@ export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
     assetType: parseAssetType(params.get('asset_type')),
     excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
+    sourceType: parseSourceType(params.get('source_type')),
     q: parseOptionalString(params.get('q')),
     region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
@@ -104,6 +112,7 @@ export function buildAssetListWhere(query: {
   assetType?: AssetType;
   excludeAssetType?: AssetType;
   sourceId?: string;
+  sourceType?: SourceType;
   q?: string;
   region?: string;
   company?: string;
@@ -126,6 +135,7 @@ export function buildAssetListWhere(query: {
   if (query.assetType) and.push({ assetType: query.assetType });
   if (query.excludeAssetType) and.push({ assetType: { not: query.excludeAssetType } });
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
+  if (query.sourceType) and.push({ sourceLinks: { some: { source: { sourceType: query.sourceType } } } });
 
   if (query.createdWithinDays && query.createdWithinDays > 0) {
     const cutoffMs = Date.now() - query.createdWithinDays * 24 * 60 * 60 * 1000;

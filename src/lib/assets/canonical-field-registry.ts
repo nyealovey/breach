@@ -54,12 +54,12 @@ export const CANONICAL_FIELD_REGISTRY: Record<string, CanonicalFieldMeta> = {
   // ========== runtime (vm) ==========
   'runtime.power_state': { labelZh: '电源状态', groupA: 'vm', groupB: 'runtime', formatHint: 'power_state' },
   'runtime.tools_running': {
-    labelZh: 'VMware Tools 运行中',
+    labelZh: 'Tools / Guest 服务运行',
     groupA: 'vm',
     groupB: 'runtime',
     formatHint: 'boolean',
   },
-  'runtime.tools_status': { labelZh: 'VMware Tools 状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
+  'runtime.tools_status': { labelZh: 'Tools / Guest 服务状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
 
   // ========== location ==========
   'location.region': { labelZh: '区域', groupA: 'common', groupB: 'location', formatHint: 'string' },

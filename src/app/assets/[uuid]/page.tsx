@@ -15,9 +15,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { groupAssetFieldsForDisplay } from '@/lib/assets/asset-field-display';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
-import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
+import { formatOsForDisplay } from '@/lib/assets/os-display';
+import { powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { flattenCanonicalFields } from '@/lib/assets/canonical-field';
+import { prioritizeStructuredFieldRows } from '@/lib/assets/structured-field-priority';
+import {
+  shouldShowToolsNotRunning,
+  TOOLS_NOT_RUNNING_TEXT,
+  TOOLS_NOT_RUNNING_TOOLTIP,
+} from '@/lib/assets/tools-not-running';
 import { isLedgerFieldAllowedForAssetType, listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 
 import type { AssetFieldRow } from '@/lib/assets/asset-field-display';
@@ -366,7 +373,7 @@ export default function AssetDetailPage() {
     return allowedGroupA ? groupedFields.filter((g) => allowedGroupA.has(g.groupA)) : groupedFields;
   }, [asset?.assetType, groupedFields]);
 
-  const structuredRows = useMemo<StructuredFieldRow[]>(() => {
+  const structuredRowsBase = useMemo<StructuredFieldRow[]>(() => {
     const out: StructuredFieldRow[] = [];
     for (const section of visibleGroupedFields) {
       for (const g of section.groups) {
@@ -376,6 +383,16 @@ export default function AssetDetailPage() {
     }
     return out;
   }, [visibleGroupedFields]);
+
+  const structuredRows = useMemo<StructuredFieldRow[]>(() => {
+    if (!asset) return structuredRowsBase;
+    return prioritizeStructuredFieldRows({
+      assetType: asset.assetType,
+      displayName: asset.displayName,
+      assetUuid: asset.assetUuid,
+      rows: structuredRowsBase,
+    });
+  }, [asset, structuredRowsBase]);
 
   const summary = useMemo(() => {
     const assetType = asset?.assetType ?? '';
@@ -391,6 +408,7 @@ export default function AssetDetailPage() {
     const vmName = pickLatestFieldValue(canonicalFields, 'identity.caption');
     const osName = pickLatestFieldValue(canonicalFields, 'os.name');
     const osVersion = pickLatestFieldValue(canonicalFields, 'os.version');
+    const osFingerprint = pickLatestFieldValue(canonicalFields, 'os.fingerprint');
     const ipAddresses = pickLatestFieldValue(canonicalFields, 'network.ip_addresses');
     const cpuCount = pickLatestFieldValue(canonicalFields, 'hardware.cpu_count');
     const memoryBytes = pickLatestFieldValue(canonicalFields, 'hardware.memory_bytes');
@@ -398,14 +416,7 @@ export default function AssetDetailPage() {
     const powerState = pickLatestFieldValue(canonicalFields, 'runtime.power_state');
     const toolsRunning = pickLatestFieldValue(canonicalFields, 'runtime.tools_running');
 
-    const osText =
-      typeof osName === 'string' && typeof osVersion === 'string'
-        ? `${osName.trim()} ${osVersion.trim()}`.trim()
-        : typeof osName === 'string'
-          ? osName.trim()
-          : typeof osVersion === 'string'
-            ? osVersion.trim()
-            : null;
+    const osText = formatOsForDisplay({ assetType, name: osName, version: osVersion, fingerprint: osFingerprint });
 
     const ipText = formatIpAddressesForDisplay(ipAddresses);
 
@@ -526,6 +537,16 @@ export default function AssetDetailPage() {
   const allowedLedgerFieldMetas = LEDGER_FIELD_METAS.filter((meta) =>
     isLedgerFieldAllowedForAssetType(meta, asset.assetType as any),
   );
+  const showToolsNotRunning = shouldShowToolsNotRunning({
+    assetType: asset.assetType,
+    powerState: summary.powerState,
+    toolsRunning: summary.toolsRunning,
+  });
+  const toolsNotRunningNode = showToolsNotRunning ? (
+    <span className="cursor-help text-muted-foreground" title={TOOLS_NOT_RUNNING_TOOLTIP}>
+      {TOOLS_NOT_RUNNING_TEXT}
+    </span>
+  ) : null;
 
   return (
     <div className="space-y-6">
@@ -573,7 +594,11 @@ export default function AssetDetailPage() {
                     <TableHead>机器名</TableHead>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{summary.machineName ?? '-'}</span>
+                        {summary.machineName ? (
+                          <span className="font-medium">{summary.machineName}</span>
+                        ) : (
+                          (toolsNotRunningNode ?? <span className="font-medium">-</span>)
+                        )}
                         {summary.machineNameOverride ? (
                           summary.machineNameMismatch ? (
                             <Badge variant="destructive">覆盖≠采集</Badge>
@@ -597,25 +622,12 @@ export default function AssetDetailPage() {
                   ) : null}
                   <TableRow>
                     <TableHead>操作系统</TableHead>
-                    <TableCell>{summary.osText ?? '-'}</TableCell>
+                    <TableCell>{summary.osText ? summary.osText : (toolsNotRunningNode ?? '-')}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>IP</TableHead>
                     <TableCell className="font-mono text-xs">
-                      {summary.ipText ? (
-                        summary.ipText
-                      ) : asset.assetType === 'vm' &&
-                        normalizePowerState(summary.powerState ?? '') === 'poweredOn' &&
-                        summary.toolsRunning === false ? (
-                        <span
-                          className="cursor-help text-muted-foreground"
-                          title="Guest Agent / Tools 未安装或未运行，无法获取 IP 地址"
-                        >
-                          - (Tools 未运行)
-                        </span>
-                      ) : (
-                        '-'
-                      )}
+                      {summary.ipText ? summary.ipText : (toolsNotRunningNode ?? '-')}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -905,18 +917,40 @@ export default function AssetDetailPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {structuredRows.map((row) => (
-                        <TableRow key={row.path}>
-                          <TableCell className="font-mono text-xs" title={row.groupTitle}>
-                            {row.path}
-                          </TableCell>
-                          <TableCell>
+                      {structuredRows.map((row) => {
+                        const toolsSensitive =
+                          row.path === 'identity.hostname' ||
+                          row.path === 'network.ip_addresses' ||
+                          row.path === 'os.name' ||
+                          row.path === 'os.version' ||
+                          row.path === 'os.fingerprint';
+
+                        const emptyValue =
+                          row.value === null ||
+                          row.value === undefined ||
+                          (typeof row.value === 'string' && row.value.trim().length === 0) ||
+                          (Array.isArray(row.value) && row.value.length === 0);
+
+                        const valueNode =
+                          toolsNotRunningNode && toolsSensitive && emptyValue ? (
+                            toolsNotRunningNode
+                          ) : (
                             <CanonicalValueCell value={row.value} formatHint={row.formatHint} />
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">{row.sourcesCount}</TableCell>
-                          <TableCell>{row.conflict ? <Badge variant="destructive">冲突</Badge> : '-'}</TableCell>
-                        </TableRow>
-                      ))}
+                          );
+
+                        return (
+                          <TableRow key={row.path}>
+                            <TableCell className="font-mono text-xs" title={row.groupTitle}>
+                              {row.path}
+                            </TableCell>
+                            <TableCell>{valueNode}</TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground">
+                              {row.sourcesCount}
+                            </TableCell>
+                            <TableCell>{row.conflict ? <Badge variant="destructive">冲突</Badge> : '-'}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </>
@@ -1116,38 +1150,40 @@ export default function AssetDetailPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center text-muted-foreground">→</div>
-                    <div className="min-w-[220px] rounded-md border bg-muted/20 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge variant="secondary">Cluster</Badge>
-                        {chainCluster ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/assets/${chainCluster.assetUuid}`}>查看</Link>
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 text-sm font-medium">
-                        {chainLoading ? '加载中…' : (chainCluster?.displayName ?? '-')}
-                      </div>
-                      <div
-                        className="mt-1 font-mono text-xs text-muted-foreground"
-                        title={chainCluster?.assetUuid ?? undefined}
-                      >
-                        <IdText value={chainCluster?.assetUuid ?? null} />
-                      </div>
-                    </div>
+                    {chainLoading || chainCluster ? (
+                      <>
+                        <div className="flex items-center text-muted-foreground">→</div>
+                        <div className="min-w-[220px] rounded-md border bg-muted/20 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge variant="secondary">Cluster</Badge>
+                            {chainCluster ? (
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={`/assets/${chainCluster.assetUuid}`}>查看</Link>
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 text-sm font-medium">
+                            {chainLoading ? '加载中…' : (chainCluster?.displayName ?? '-')}
+                          </div>
+                          <div
+                            className="mt-1 font-mono text-xs text-muted-foreground"
+                            title={chainCluster?.assetUuid ?? undefined}
+                          >
+                            <IdText value={chainCluster?.assetUuid ?? null} />
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                   </>
-                ) : asset.assetType === 'host' ? (
+                ) : asset.assetType === 'host' && directCluster ? (
                   <>
                     <div className="flex items-center text-muted-foreground">→</div>
                     <div className="min-w-[220px] rounded-md border bg-muted/20 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant="secondary">Cluster</Badge>
-                        {directCluster ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/assets/${directCluster.assetUuid}`}>查看</Link>
-                          </Button>
-                        ) : null}
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/assets/${directCluster.assetUuid}`}>查看</Link>
+                        </Button>
                       </div>
                       <div className="mt-2 text-sm font-medium">{directCluster?.displayName ?? '-'}</div>
                       <div

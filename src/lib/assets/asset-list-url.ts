@@ -1,13 +1,16 @@
 import { parsePagination } from '@/lib/http/pagination';
 
-export type AssetTypeParam = 'vm' | 'host' | 'cluster';
+export type AssetTypeParam = 'vm' | 'host';
+export type ExcludeAssetTypeParam = 'cluster';
+export type SourceTypeParam = 'vcenter' | 'pve' | 'hyperv';
 export type VmPowerStateParam = 'poweredOn' | 'poweredOff' | 'suspended';
 
 export type AssetListUrlState = {
   q?: string;
   assetType?: AssetTypeParam;
-  excludeAssetType?: AssetTypeParam;
+  excludeAssetType?: ExcludeAssetTypeParam;
   sourceId?: string;
+  sourceType?: SourceTypeParam;
   region?: string;
   company?: string;
   department?: string;
@@ -29,7 +32,17 @@ const DEFAULT_PAGE_SIZE = 20;
 const ALLOWED_PAGE_SIZES = [10, 20, 50, 100] as const;
 
 function parseAssetType(input: string | null): AssetTypeParam | undefined {
-  if (input === 'vm' || input === 'host' || input === 'cluster') return input;
+  if (input === 'vm' || input === 'host') return input;
+  return undefined;
+}
+
+function parseExcludeAssetType(input: string | null): ExcludeAssetTypeParam | undefined {
+  if (input === 'cluster') return 'cluster';
+  return undefined;
+}
+
+function parseSourceType(input: string | null): SourceTypeParam | undefined {
+  if (input === 'vcenter' || input === 'pve' || input === 'hyperv') return input;
   return undefined;
 }
 
@@ -76,8 +89,9 @@ export function parseAssetListUrlState(params: URLSearchParams): AssetListUrlSta
   return {
     q: parseOptionalString(params.get('q')),
     assetType: parseAssetType(params.get('asset_type')),
-    excludeAssetType: parseAssetType(params.get('exclude_asset_type')),
+    excludeAssetType: parseExcludeAssetType(params.get('exclude_asset_type')),
     sourceId: parseOptionalString(params.get('source_id')),
+    sourceType: parseSourceType(params.get('source_type')),
     region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
     department: parseOptionalString(params.get('department')),
@@ -104,6 +118,7 @@ export function buildAssetListUrlSearchParams(state: AssetListUrlState): URLSear
   if (state.assetType) params.set('asset_type', state.assetType);
   if (state.excludeAssetType) params.set('exclude_asset_type', state.excludeAssetType);
   if (state.sourceId) params.set('source_id', state.sourceId);
+  if (state.sourceType) params.set('source_type', state.sourceType);
   if (state.region) params.set('region', state.region);
   if (state.company) params.set('company', state.company);
   if (state.department) params.set('department', state.department);

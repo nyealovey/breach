@@ -29,9 +29,8 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
 
   // ===== os =====
   'os.name': { labelZh: '操作系统', groupA: 'common', groupB: 'os', formatHint: 'string' },
-  'os.version': { labelZh: '操作系统版本', groupA: 'common', groupB: 'os', formatHint: 'string' },
-  // NOTE: os.fingerprint is deliberately VM-only (host build is not displayed by default in list).
-  'os.fingerprint': { labelZh: 'OS 指纹', groupA: 'vm', groupB: 'os', formatHint: 'string' },
+  'os.version': { labelZh: '系统版本', groupA: 'common', groupB: 'os', formatHint: 'string' },
+  'os.fingerprint': { labelZh: '系统指纹', groupA: 'common', groupB: 'os', formatHint: 'string' },
 
   // ===== hardware =====
   'hardware.cpu_count': { labelZh: 'CPU', groupA: 'common', groupB: 'hardware', formatHint: 'json' },
@@ -40,8 +39,13 @@ const FIELD_META: Record<string, AssetFieldMeta> = {
 
   // ===== runtime =====
   'runtime.power_state': { labelZh: '电源状态', groupA: 'common', groupB: 'runtime', formatHint: 'enum' },
-  'runtime.tools_running': { labelZh: 'Tools 运行', groupA: 'vm', groupB: 'runtime', formatHint: 'boolean' },
-  'runtime.tools_status': { labelZh: 'Tools 状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
+  'runtime.tools_running': {
+    labelZh: 'Tools / Guest 服务运行',
+    groupA: 'vm',
+    groupB: 'runtime',
+    formatHint: 'boolean',
+  },
+  'runtime.tools_status': { labelZh: 'Tools / Guest 服务状态', groupA: 'vm', groupB: 'runtime', formatHint: 'string' },
 
   // ===== storage =====
   'storage.datastores': { labelZh: 'Datastore 明细', groupA: 'host', groupB: 'storage', formatHint: 'json' },

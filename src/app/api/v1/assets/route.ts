@@ -1,6 +1,7 @@
 import { requireUser } from '@/lib/auth/require-user';
 import { parseAssetListQuery, buildAssetListWhere } from '@/lib/assets/asset-list-query';
 import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
+import { formatOsForDisplay } from '@/lib/assets/os-display';
 import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
@@ -84,22 +85,7 @@ function pickOs(fields: unknown, assetType: string): string | null {
   const name = getCanonicalFieldValue(fields, ['os', 'name']);
   const version = getCanonicalFieldValue(fields, ['os', 'version']);
   const fingerprint = getCanonicalFieldValue(fields, ['os', 'fingerprint']);
-
-  const nameStr = typeof name === 'string' ? name.trim() : '';
-  const versionStr = typeof version === 'string' ? version.trim() : '';
-  const fingerprintStr = typeof fingerprint === 'string' ? fingerprint.trim() : '';
-
-  // Host: only display name+version (do NOT fall back to fingerprint/build).
-  if (assetType === 'host') {
-    if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
-    return null;
-  }
-
-  if (nameStr && versionStr) return `${nameStr} ${versionStr}`;
-  if (nameStr) return nameStr;
-  if (versionStr) return versionStr;
-  if (fingerprintStr) return fingerprintStr;
-  return null;
+  return formatOsForDisplay({ assetType, name, version, fingerprint });
 }
 
 function pickPowerState(fields: unknown): string | null {

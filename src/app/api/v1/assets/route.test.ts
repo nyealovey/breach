@@ -255,4 +255,27 @@ describe('GET /api/v1/assets', () => {
     const body = (await res.json()) as any;
     expect(body.data[0].os).toBeNull();
   });
+
+  it('filters assets by source_type via asset sourceLinks', async () => {
+    (requireUser as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.asset.count as any).mockResolvedValue(0);
+    (prisma.asset.findMany as any).mockResolvedValue([] as any);
+
+    const req = new Request('http://localhost/api/v1/assets?page=1&pageSize=20&source_type=pve');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+
+    expect((prisma.asset.count as any).mock.calls.at(-1)[0].where).toMatchObject({
+      AND: expect.arrayContaining([{ sourceLinks: { some: { source: { sourceType: 'pve' } } } }]),
+    });
+    expect((prisma.asset.findMany as any).mock.calls.at(-1)[0].where).toMatchObject({
+      AND: expect.arrayContaining([{ sourceLinks: { some: { source: { sourceType: 'pve' } } } }]),
+    });
+  });
 });
