@@ -115,6 +115,10 @@ bun build --compile src/server.ts --outfile dist/hyperv-windows-agent.exe
 }
 ```
 
+约束（严格模式）：
+
+- `mode=collect` 时：`scope` 必须显式为 `standalone|cluster`；`scope=auto` 将返回 `400`（`AGENT_INVALID_REQUEST`）
+
 响应体（raw，插件负责 normalize）：
 
 - 成功：`{ \"ok\": true, \"data\": { ... } }`

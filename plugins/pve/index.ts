@@ -613,10 +613,28 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
   const tlsVerify = cfg.tls_verify ?? true;
   const timeoutMs = cfg.timeout_ms ?? 60_000;
   const maxParallelNodes = clampPositiveInt(cfg.max_parallel_nodes, 5);
-  const configuredScope = cfg.scope ?? 'auto';
+  const configuredScope = cfg.scope;
   const warningsCollector = createWarningCollector({ sampleLimitPerCode: 10 });
 
   try {
+    // Strict mode: collect must use explicit scope (detect can be used to recommend a scope).
+    if (configuredScope !== 'standalone' && configuredScope !== 'cluster') {
+      return {
+        response: makeResponse({
+          errors: [
+            {
+              code: 'PVE_CONFIG_INVALID',
+              category: 'config',
+              message: 'scope must be explicit for collect (auto not allowed)',
+              retryable: false,
+              redacted_context: { mode: 'collect', field: 'scope', value: configuredScope ?? null },
+            },
+          ],
+        }),
+        exitCode: 1,
+      };
+    }
+
     const auth = await createPveAuth({ endpoint, tlsVerify, timeoutMs, credential: request.source.credential });
 
     const version = (await pveGet<Record<string, unknown>>({
@@ -628,10 +646,11 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     })) as any;
     const versionString = typeof version?.version === 'string' ? version.version : null;
 
-    // Best-effort: cluster discovery + host online states (for host power_state mapping).
+    // Strict mode: cluster scope requires cluster status + name (no silent downgrade).
+    const clusterMode = configuredScope === 'cluster';
     let clusterName: string | null = null;
     const hostPowerByNode = new Map<string, PowerState>();
-    try {
+    if (clusterMode) {
       const status = await pveGet<Array<Record<string, unknown>>>({
         endpoint,
         path: '/api2/json/cluster/status',
@@ -641,6 +660,22 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       });
       const clusterRow = status.find((row) => (row.type as unknown) === 'cluster') ?? null;
       clusterName = typeof clusterRow?.name === 'string' ? clusterRow.name : null;
+      if (!clusterName || clusterName.trim().length === 0) {
+        return {
+          response: makeResponse({
+            errors: [
+              {
+                code: 'PVE_CONFIG_INVALID',
+                category: 'config',
+                message: 'endpoint is not a cluster',
+                retryable: false,
+                redacted_context: { mode: 'collect', scope: configuredScope },
+              },
+            ],
+          }),
+          exitCode: 1,
+        };
+      }
 
       for (const row of status) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
@@ -657,11 +692,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
         const power = mapHostPowerStateFromOnline(online);
         if (power) hostPowerByNode.set(name, power);
       }
-    } catch {
-      // ignore
     }
-
-    const clusterMode = configuredScope !== 'standalone' && !!clusterName;
 
     const nodes = await pveGet<Array<{ node: string }>>({
       endpoint,
@@ -808,36 +839,8 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       });
     };
 
-    let vmInputs: Array<Parameters<typeof normalizeVm>[0]> = [];
-    if (clusterMode) {
-      try {
-        const resources = await pveGet<Array<Record<string, unknown>>>({
-          endpoint,
-          path: '/api2/json/cluster/resources?type=vm',
-          authHeaders: auth.headers,
-          tlsVerify,
-          timeoutMs,
-        });
-
-        vmInputs = resources
-          .map((row) => ({
-            node: typeof row.node === 'string' ? row.node : '',
-            type: row.type === 'lxc' ? ('lxc' as const) : ('qemu' as const),
-            vmid: typeof row.vmid === 'number' ? row.vmid : Number(row.vmid),
-            name: typeof row.name === 'string' ? row.name : undefined,
-            status: typeof row.status === 'string' ? row.status : undefined,
-            maxmem: typeof row.maxmem === 'number' ? row.maxmem : undefined,
-            maxcpu: typeof row.maxcpu === 'number' ? row.maxcpu : undefined,
-            cpus: typeof row.cpus === 'number' ? row.cpus : undefined,
-          }))
-          .filter((vm) => vm.node.trim().length > 0 && Number.isFinite(vm.vmid));
-      } catch {
-        // Back-compat: some deployments may not allow cluster/resources; fall back to per-node lists.
-        vmInputs = await listVmsPerNode();
-      }
-    } else {
-      vmInputs = await listVmsPerNode();
-    }
+    // Keep the VM enumeration strategy simple and explicit: always list VMs per node.
+    const vmInputs = await listVmsPerNode();
 
     // Keep these internal (no new UI config knobs); adjust if needed after observing real clusters.
     const maxParallelVm = 20;

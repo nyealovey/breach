@@ -2,6 +2,7 @@
 
 import {
   createSession,
+  resolveVcenterPlan,
   getVcenterSystemVersion,
   getVmDetail,
   getVmGuestNetworking,
@@ -17,6 +18,20 @@ import { collectHostSoapDetails } from './soap';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
 type PreferredVcenterVersion = '6.5-6.7' | '7.0-8.x';
+
+function otherPreferred(preferred: PreferredVcenterVersion): PreferredVcenterVersion {
+  return preferred === '7.0-8.x' ? '6.5-6.7' : '7.0-8.x';
+}
+
+function resolveDetectPlanOrder(configured?: PreferredVcenterVersion): PreferredVcenterVersion[] {
+  if (configured) return [configured, otherPreferred(configured)];
+  return ['7.0-8.x', '6.5-6.7'];
+}
+
+function isAuthOrPermissionError(err: unknown): boolean {
+  const status = typeof err === 'object' && err && 'status' in err ? (err as { status?: number }).status : undefined;
+  return status === 401 || status === 403;
+}
 
 function makeResponse(partial: Partial<CollectorResponseV1>): CollectorResponseV1 {
   return {
@@ -158,14 +173,29 @@ function validateVmRequiredFields(assets: CollectorResponseV1['assets']): Collec
 
 async function healthcheck(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
-    const token = await createSession(
-      request.source.config.endpoint,
-      request.source.credential.username,
-      request.source.credential.password,
-    );
-    // Ensure token is used (avoids lint about unused and keeps intent explicit).
-    if (!token) throw new Error('session token empty');
-    return { response: makeResponse({ errors: [] }), exitCode: 0 };
+    const endpoint = request.source.config.endpoint;
+    const configuredPreferred = request.source.config.preferred_vcenter_version;
+
+    let lastErr: unknown = undefined;
+    for (const preferred of resolveDetectPlanOrder(configuredPreferred)) {
+      const plan = resolveVcenterPlan(preferred);
+      try {
+        const token = await createSession(
+          endpoint,
+          request.source.credential.username,
+          request.source.credential.password,
+          plan,
+        );
+        // Ensure token is used (avoids lint about unused and keeps intent explicit).
+        if (!token) throw new Error('session token empty');
+        return { response: makeResponse({ errors: [] }), exitCode: 0 };
+      } catch (err) {
+        if (isAuthOrPermissionError(err)) throw err;
+        lastErr = err;
+      }
+    }
+
+    throw lastErr ?? new Error('session creation failed');
   } catch (err) {
     return { response: makeResponse({ errors: [toVcenterError(err, 'healthcheck')] }), exitCode: 1 };
   }
@@ -174,11 +204,31 @@ async function healthcheck(request: CollectorRequestV1): Promise<{ response: Col
 async function detect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
   try {
     const endpoint = request.source.config.endpoint;
-    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
-    if (!token) throw new Error('session token empty');
-
     const configuredPreferred = request.source.config.preferred_vcenter_version;
-    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+
+    let token: string | null = null;
+    let systemVersion: Awaited<ReturnType<typeof getVcenterSystemVersion>> = null;
+    let lastErr: unknown = undefined;
+
+    for (const preferred of resolveDetectPlanOrder(configuredPreferred)) {
+      const plan = resolveVcenterPlan(preferred);
+      try {
+        token = await createSession(
+          endpoint,
+          request.source.credential.username,
+          request.source.credential.password,
+          plan,
+        );
+        if (!token) throw new Error('session token empty');
+        systemVersion = await getVcenterSystemVersion(endpoint, token, plan);
+        if (systemVersion) break;
+      } catch (err) {
+        if (isAuthOrPermissionError(err)) throw err;
+        lastErr = err;
+      }
+    }
+
+    if (!token) throw lastErr ?? new Error('session creation failed');
 
     const detectedVersion = systemVersion?.version ?? null;
     const detectedBuild = systemVersion?.build ?? null;
@@ -245,11 +295,17 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
       };
     }
 
-    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+    const plan = resolveVcenterPlan(preferred);
+    const token = await createSession(
+      endpoint,
+      request.source.credential.username,
+      request.source.credential.password,
+      plan,
+    );
 
     const warnings: unknown[] = [];
 
-    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const systemVersion = await getVcenterSystemVersion(endpoint, token, plan);
     const detectedVersion = systemVersion?.version ?? null;
     const recommended = recommendPreferredVersion(detectedVersion);
     if (recommended && detectedVersion && recommended !== preferred) {
@@ -281,7 +337,10 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
     }
 
     // Hosts + clusters (REST)
-    const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
+    const [hostSummaries, clusters] = await Promise.all([
+      listHosts(endpoint, token, plan),
+      listClusters(endpoint, token, plan),
+    ]);
 
     // Best-effort: fetch Host details via SOAP (vim25). Failures should not abort the whole run.
     const hostSoapPromise = collectHostSoapDetails({
@@ -313,7 +372,7 @@ async function collectHosts(request: CollectorRequestV1): Promise<{ response: Co
     const hostToClusterMap = new Map<string, string>();
     await Promise.all(
       clusters.map(async (cluster) => {
-        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster);
+        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster, plan);
         for (const host of hostsInCluster) hostToClusterMap.set(host.host, cluster.cluster);
       }),
     );
@@ -444,9 +503,15 @@ async function collectVMs(request: CollectorRequestV1): Promise<{ response: Coll
       };
     }
 
-    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+    const plan = resolveVcenterPlan(preferred);
+    const token = await createSession(
+      endpoint,
+      request.source.credential.username,
+      request.source.credential.password,
+      plan,
+    );
 
-    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const systemVersion = await getVcenterSystemVersion(endpoint, token, plan);
     const detectedVersion = systemVersion?.version ?? null;
     const recommended = recommendPreferredVersion(detectedVersion);
     if (recommended && detectedVersion && recommended !== preferred) {
@@ -478,14 +543,14 @@ async function collectVMs(request: CollectorRequestV1): Promise<{ response: Coll
     }
 
     // VMs only (REST). No SOAP in this mode.
-    const hostSummaries = await listHosts(endpoint, token);
+    const hostSummaries = await listHosts(endpoint, token, plan);
 
     const vmToHostMap = new Map<string, string>();
     const allVmIds = new Set<string>();
 
     await Promise.all(
       hostSummaries.map(async (host) => {
-        const vmsOnHost = await listVMsByHost(endpoint, token, host.host);
+        const vmsOnHost = await listVMsByHost(endpoint, token, host.host, plan);
         for (const vm of vmsOnHost) {
           vmToHostMap.set(vm.vm, host.host);
           allVmIds.add(vm.vm);
@@ -496,10 +561,10 @@ async function collectVMs(request: CollectorRequestV1): Promise<{ response: Coll
     const vmDetails = await Promise.all(
       Array.from(allVmIds).map(async (vmId) => {
         const [detail, guestNetworking, guestNetworkingInfo, tools] = await Promise.all([
-          getVmDetail(endpoint, token, vmId),
-          getVmGuestNetworking(endpoint, token, vmId),
-          getVmGuestNetworkingInfo(endpoint, token, vmId),
-          getVmTools(endpoint, token, vmId),
+          getVmDetail(endpoint, token, vmId, plan),
+          getVmGuestNetworking(endpoint, token, vmId, plan),
+          getVmGuestNetworkingInfo(endpoint, token, vmId, plan),
+          getVmTools(endpoint, token, vmId, plan),
         ]);
         return {
           ...(detail as Record<string, unknown>),
@@ -596,11 +661,17 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
       };
     }
 
-    const token = await createSession(endpoint, request.source.credential.username, request.source.credential.password);
+    const plan = resolveVcenterPlan(preferred);
+    const token = await createSession(
+      endpoint,
+      request.source.credential.username,
+      request.source.credential.password,
+      plan,
+    );
 
     const warnings: unknown[] = [];
 
-    const systemVersion = await getVcenterSystemVersion(endpoint, token);
+    const systemVersion = await getVcenterSystemVersion(endpoint, token, plan);
     const detectedVersion = systemVersion?.version ?? null;
     const recommended = recommendPreferredVersion(detectedVersion);
     if (recommended && detectedVersion && recommended !== preferred) {
@@ -632,7 +703,10 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     }
 
     // First, get hosts and clusters
-    const [hostSummaries, clusters] = await Promise.all([listHosts(endpoint, token), listClusters(endpoint, token)]);
+    const [hostSummaries, clusters] = await Promise.all([
+      listHosts(endpoint, token, plan),
+      listClusters(endpoint, token, plan),
+    ]);
 
     // Best-effort: fetch Host details via SOAP (vim25). Failures should not abort the whole run.
     const hostSoapPromise = collectHostSoapDetails({
@@ -665,7 +739,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     const hostToClusterMap = new Map<string, string>();
     await Promise.all(
       clusters.map(async (cluster) => {
-        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster);
+        const hostsInCluster = await listHostsByCluster(endpoint, token, cluster.cluster, plan);
         for (const host of hostsInCluster) {
           hostToClusterMap.set(host.host, cluster.cluster);
         }
@@ -680,7 +754,7 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
 
     await Promise.all(
       hostSummaries.map(async (host) => {
-        const vmsOnHost = await listVMsByHost(endpoint, token, host.host);
+        const vmsOnHost = await listVMsByHost(endpoint, token, host.host, plan);
         for (const vm of vmsOnHost) {
           vmToHostMap.set(vm.vm, host.host);
           allVmIds.add(vm.vm);
@@ -692,10 +766,10 @@ async function collect(request: CollectorRequestV1): Promise<{ response: Collect
     const vmDetails = await Promise.all(
       Array.from(allVmIds).map(async (vmId) => {
         const [detail, guestNetworking, guestNetworkingInfo, tools] = await Promise.all([
-          getVmDetail(endpoint, token, vmId),
-          getVmGuestNetworking(endpoint, token, vmId),
-          getVmGuestNetworkingInfo(endpoint, token, vmId),
-          getVmTools(endpoint, token, vmId),
+          getVmDetail(endpoint, token, vmId, plan),
+          getVmGuestNetworking(endpoint, token, vmId, plan),
+          getVmGuestNetworkingInfo(endpoint, token, vmId, plan),
+          getVmTools(endpoint, token, vmId, plan),
         ]);
         return {
           ...(detail as Record<string, unknown>),

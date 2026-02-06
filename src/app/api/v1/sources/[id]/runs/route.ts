@@ -9,6 +9,27 @@ const BodySchema = z.object({
   mode: z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']),
 });
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function hasExplicitCollectScope(config: unknown): boolean {
+  if (!isRecord(config)) return false;
+  const scope = (config as Record<string, unknown>).scope;
+  return scope === 'standalone' || scope === 'cluster';
+}
+
+function getHypervConnectionMethod(config: unknown): 'agent' | 'winrm' {
+  if (!isRecord(config)) return 'winrm';
+  return (config as Record<string, unknown>).connection_method === 'agent' ? 'agent' : 'winrm';
+}
+
+function hasExplicitHypervAuthMethod(config: unknown): boolean {
+  if (!isRecord(config)) return false;
+  const auth = (config as Record<string, unknown>).auth_method;
+  return auth === 'kerberos' || auth === 'ntlm' || auth === 'basic';
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
@@ -47,6 +68,49 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           code: ErrorCode.CONFIG_INVALID_REQUEST,
           category: 'config',
           message: 'preferred_vcenter_version is required for vcenter collect runs',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  }
+
+  if (body.mode === 'collect' && source.sourceType === 'pve') {
+    if (!hasExplicitCollectScope(source.config)) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'scope is required for pve collect runs (standalone|cluster)',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  }
+
+  if (body.mode === 'collect' && source.sourceType === 'hyperv') {
+    if (!hasExplicitCollectScope(source.config)) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'scope is required for hyperv collect runs (standalone|cluster)',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+
+    if (getHypervConnectionMethod(source.config) !== 'agent' && !hasExplicitHypervAuthMethod(source.config)) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'auth_method is required for hyperv winrm collect runs (kerberos|ntlm|basic)',
           retryable: false,
         },
         400,

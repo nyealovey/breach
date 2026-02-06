@@ -113,7 +113,7 @@ describe('hyperv windows agent handler', () => {
           mode: 'collect',
           now: new Date().toISOString(),
           endpoint: 'host01.example.com',
-          scope: 'auto',
+          scope: 'standalone',
           max_parallel_nodes: 5,
         }),
       }),
@@ -153,7 +153,7 @@ describe('hyperv windows agent handler', () => {
           mode: 'collect',
           now: new Date().toISOString(),
           endpoint: 'host01.example.com',
-          scope: 'auto',
+          scope: 'standalone',
           max_parallel_nodes: 5,
         }),
       }),
@@ -195,7 +195,7 @@ describe('hyperv windows agent handler', () => {
           mode: 'collect',
           now: new Date().toISOString(),
           endpoint: 'host01.example.com',
-          scope: 'auto',
+          scope: 'standalone',
           max_parallel_nodes: 5,
         }),
       }),
@@ -209,5 +209,45 @@ describe('hyperv windows agent handler', () => {
     expect(events).toHaveLength(1);
     expect(events[0].outcome).toBe('kerberos_spn');
     expect(events[0].status_code).toBe(422);
+  });
+
+  it('rejects collect when scope=auto', async () => {
+    const { logger, events } = makeLogger();
+    let called = false;
+    const handler = createHandler({
+      token: 't',
+      deps: {
+        run: async () => {
+          called = true;
+          return {};
+        },
+      },
+      logger,
+    });
+    const res = await handler(
+      new Request('http://localhost/v1/hyperv/collect', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: JSON.stringify({
+          source_id: 's',
+          run_id: 'r',
+          mode: 'collect',
+          now: new Date().toISOString(),
+          endpoint: 'host01.example.com',
+          scope: 'auto',
+          max_parallel_nodes: 5,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe('AGENT_INVALID_REQUEST');
+    expect(body.error.message).toBe('scope must be explicit for collect');
+    expect(called).toBe(false);
+    expect(events).toHaveLength(1);
+    expect(events[0].outcome).toBe('invalid_request');
+    expect(events[0].status_code).toBe(400);
   });
 });

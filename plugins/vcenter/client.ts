@@ -120,21 +120,35 @@ async function fetchJson<T>(
   }
 }
 
-const API_REST_FALLBACK_STATUSES = new Set([404, 405]);
+export type VcenterApiRoot = 'api' | 'rest';
+export type VmByHostFilter = 'hosts' | 'filter.hosts';
 
-async function fetchJsonWithRestFallback<T>(
+export type VcenterPlan = {
+  apiRoot: VcenterApiRoot;
+  sessionPath: string;
+  vmByHostFilter: VmByHostFilter;
+};
+
+export function resolveVcenterPlan(preferred: '6.5-6.7' | '7.0-8.x'): VcenterPlan {
+  if (preferred === '6.5-6.7') {
+    return { apiRoot: 'rest', sessionPath: '/rest/com/vmware/cis/session', vmByHostFilter: 'filter.hosts' };
+  }
+  return { apiRoot: 'api', sessionPath: '/api/session', vmByHostFilter: 'hosts' };
+}
+
+function plannedApiPath(plan: VcenterPlan, apiPath: string): string {
+  if (plan.apiRoot === 'api') return apiPath;
+  return apiPath.replace(/^\/api\//, '/rest/');
+}
+
+async function fetchJsonPlanned<T>(
   endpoint: string,
+  plan: VcenterPlan,
   apiPath: string,
   init: RequestInit,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; bodyText: string }> {
-  const primaryUrl = joinUrl(endpoint, apiPath);
-  const primary = await fetchJson<T>(primaryUrl, init);
-  if (primary.ok) return primary;
-
-  if (!apiPath.startsWith('/api/') || !API_REST_FALLBACK_STATUSES.has(primary.status)) return primary;
-
-  const restUrl = joinUrl(endpoint, apiPath.replace(/^\/api\//, '/rest/'));
-  return await fetchJson<T>(restUrl, init);
+  const url = joinUrl(endpoint, plannedApiPath(plan, apiPath));
+  return await fetchJson<T>(url, init);
 }
 
 function unwrapValueDeep(data: unknown, maxDepth = 3): unknown {
@@ -167,38 +181,12 @@ function getSessionTokenFromHeaders(headers: Headers): SessionToken | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isJsonRpcErrorEnvelope(data: unknown): boolean {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  const record = data as Record<string, unknown>;
-  return typeof record.jsonrpc === 'string' && 'error' in record;
-}
-
-function isVapiUnexpectedInputField(bodyText: string, field: string): boolean {
-  try {
-    const data = JSON.parse(bodyText) as Record<string, unknown>;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-    if (data.type !== 'com.vmware.vapi.std.errors.unexpected_input') return false;
-    const value = data.value as Record<string, unknown> | undefined;
-    const messages = value?.messages as unknown;
-    if (!Array.isArray(messages)) return false;
-
-    const needle = `[${field}]`;
-    for (const msg of messages) {
-      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) continue;
-      const record = msg as Record<string, unknown>;
-      if (record.id !== 'vapi.data.structure.field.unexpected') continue;
-      const defaultMessage = record.default_message;
-      if (typeof defaultMessage === 'string' && defaultMessage.includes(needle)) return true;
-      const args = record.args;
-      if (Array.isArray(args) && args.some((a) => typeof a === 'string' && a.includes(needle))) return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-export async function createSession(endpoint: string, username: string, password: string): Promise<SessionToken> {
+export async function createSession(
+  endpoint: string,
+  username: string,
+  password: string,
+  plan: VcenterPlan,
+): Promise<SessionToken> {
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
   const headers = {
     Authorization: `Basic ${auth}`,
@@ -248,53 +236,39 @@ export async function createSession(endpoint: string, username: string, password
     }
   }
 
-  const primary = await postSession('/api/session');
-  if (primary.ok) {
-    const token = parseSessionToken(primary.data) ?? primary.headerToken;
-    if (token) return token;
-
-    // Older vCenter builds / proxies may answer with a JSON-RPC error envelope for this path.
-    if (isJsonRpcErrorEnvelope(primary.data)) {
-      debugLog('createSession.jsonrpc_error', {
-        endpoint: '/api/session',
-        keys: Object.keys(primary.data as Record<string, unknown>),
-      });
-    } else {
-      debugLog('createSession.unexpected_response', {
-        endpoint: '/api/session',
-        data_type: typeof primary.data,
-        keys:
-          primary.data && typeof primary.data === 'object' && !Array.isArray(primary.data)
-            ? Object.keys(primary.data as Record<string, unknown>)
-            : [],
-      });
-    }
-  } else if (![404, 405].includes(primary.status)) {
-    // If the primary endpoint exists but returns an auth/permission/network error, bubble it up.
-    throw makeHttpError({ op: 'createSession', status: primary.status, bodyText: primary.bodyText });
+  const result = await postSession(plan.sessionPath);
+  if (!result.ok) {
+    throw makeHttpError({
+      op: `createSession(${plan.apiRoot})`,
+      status: result.status,
+      bodyText: result.bodyText,
+    });
   }
 
-  // Fallback: legacy session endpoint (common in 6.5/6.7 deployments).
-  const legacy = await postSession('/rest/com/vmware/cis/session');
-  if (!legacy.ok) {
-    throw makeHttpError({ op: 'createSessionLegacy', status: legacy.status, bodyText: legacy.bodyText });
-  }
-  const legacyToken = parseSessionToken(legacy.data) ?? legacy.headerToken;
-  if (legacyToken) return legacyToken;
+  const token = parseSessionToken(result.data) ?? result.headerToken;
+  if (token) return token;
 
   debugLog('createSession.unexpected_response', {
-    endpoint: '/rest/com/vmware/cis/session',
-    data_type: typeof legacy.data,
+    endpoint: plan.sessionPath,
+    data_type: typeof result.data,
     keys:
-      legacy.data && typeof legacy.data === 'object' && !Array.isArray(legacy.data)
-        ? Object.keys(legacy.data as Record<string, unknown>)
+      result.data && typeof result.data === 'object' && !Array.isArray(result.data)
+        ? Object.keys(result.data as Record<string, unknown>)
         : [],
   });
-  throw new Error('createSession returned unexpected response');
+
+  const err = new Error('createSession returned unexpected response') as Error & { status?: number; bodyText?: string };
+  err.status = result.status;
+  err.bodyText = result.bodyText;
+  throw err;
 }
 
-export async function listVMs(endpoint: string, token: SessionToken): Promise<Array<{ vm: string }>> {
-  const result = await fetchJsonWithRestFallback<Array<{ vm: string }>>(endpoint, '/api/vcenter/vm', {
+export async function listVMs(
+  endpoint: string,
+  token: SessionToken,
+  plan: VcenterPlan,
+): Promise<Array<{ vm: string }>> {
+  const result = await fetchJsonPlanned<Array<{ vm: string }>>(endpoint, plan, '/api/vcenter/vm', {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -312,44 +286,31 @@ export async function listVMsByHost(
   endpoint: string,
   token: SessionToken,
   hostId: string,
+  plan: VcenterPlan,
 ): Promise<Array<{ vm: string }>> {
   const headers = { 'vmware-api-session-id': token };
 
-  const apiPath = `/api/vcenter/vm?hosts=${encodeURIComponent(hostId)}`;
-  const result = await fetchJsonWithRestFallback<Array<{ vm: string }>>(endpoint, apiPath, {
+  const apiPath =
+    plan.vmByHostFilter === 'hosts'
+      ? `/api/vcenter/vm?hosts=${encodeURIComponent(hostId)}`
+      : `/api/vcenter/vm?filter.hosts=${encodeURIComponent(hostId)}`;
+
+  const result = await fetchJsonPlanned<Array<{ vm: string }>>(endpoint, plan, apiPath, {
     method: 'GET',
     headers,
   });
-  if (result.ok) return unwrapArray<{ vm: string }>(result.data, 'listVMsByHost');
-
-  // Back-compat: some 6.5/6.7 deployments only support `filter.hosts` (REST-style) and treat `hosts` as unexpected.
-  if (result.status === 400 && isVapiUnexpectedInputField(result.bodyText, 'hosts')) {
-    const fallbackPath = `/api/vcenter/vm?filter.hosts=${encodeURIComponent(hostId)}`;
-
-    const apiAttempt = await fetchJson<Array<{ vm: string }>>(joinUrl(endpoint, fallbackPath), {
-      method: 'GET',
-      headers,
-    });
-    if (apiAttempt.ok) return unwrapArray<{ vm: string }>(apiAttempt.data, 'listVMsByHost');
-
-    const restUrl = joinUrl(endpoint, fallbackPath.replace(/^\/api\//, '/rest/'));
-    const restAttempt = await fetchJson<Array<{ vm: string }>>(restUrl, { method: 'GET', headers });
-    if (!restAttempt.ok) {
-      throw makeHttpError({ op: 'listVMsByHost', status: restAttempt.status, bodyText: restAttempt.bodyText });
-    }
-    return unwrapArray<{ vm: string }>(restAttempt.data, 'listVMsByHost');
-  }
-
-  throw makeHttpError({ op: 'listVMsByHost', status: result.status, bodyText: result.bodyText });
+  if (!result.ok) throw makeHttpError({ op: 'listVMsByHost', status: result.status, bodyText: result.bodyText });
+  return unwrapArray<{ vm: string }>(result.data, 'listVMsByHost');
 }
 
 export async function getVmDetail(
   endpoint: string,
   token: SessionToken,
   vmId: string,
+  plan: VcenterPlan,
 ): Promise<Record<string, unknown>> {
   const apiPath = `/api/vcenter/vm/${encodeURIComponent(vmId)}`;
-  const result = await fetchJsonWithRestFallback<Record<string, unknown>>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<Record<string, unknown>>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -365,8 +326,8 @@ export type HostSummary = {
   power_state?: string;
 };
 
-export async function listHosts(endpoint: string, token: SessionToken): Promise<HostSummary[]> {
-  const result = await fetchJsonWithRestFallback<HostSummary[]>(endpoint, '/api/vcenter/host', {
+export async function listHosts(endpoint: string, token: SessionToken, plan: VcenterPlan): Promise<HostSummary[]> {
+  const result = await fetchJsonPlanned<HostSummary[]>(endpoint, plan, '/api/vcenter/host', {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -382,9 +343,10 @@ export async function listHostsByCluster(
   endpoint: string,
   token: SessionToken,
   clusterId: string,
+  plan: VcenterPlan,
 ): Promise<HostSummary[]> {
   const apiPath = `/api/vcenter/host?clusters=${encodeURIComponent(clusterId)}`;
-  const result = await fetchJsonWithRestFallback<HostSummary[]>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<HostSummary[]>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -396,9 +358,10 @@ export async function getHostDetail(
   endpoint: string,
   token: SessionToken,
   hostId: string,
+  plan: VcenterPlan,
 ): Promise<Record<string, unknown>> {
   const apiPath = `/api/vcenter/host/${encodeURIComponent(hostId)}`;
-  const result = await fetchJsonWithRestFallback<Record<string, unknown>>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<Record<string, unknown>>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -406,8 +369,12 @@ export async function getHostDetail(
   return unwrapObject<Record<string, unknown>>(result.data, 'getHostDetail');
 }
 
-export async function listClusters(endpoint: string, token: SessionToken): Promise<Array<{ cluster: string }>> {
-  const result = await fetchJsonWithRestFallback<Array<{ cluster: string }>>(endpoint, '/api/vcenter/cluster', {
+export async function listClusters(
+  endpoint: string,
+  token: SessionToken,
+  plan: VcenterPlan,
+): Promise<Array<{ cluster: string }>> {
+  const result = await fetchJsonPlanned<Array<{ cluster: string }>>(endpoint, plan, '/api/vcenter/cluster', {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -430,8 +397,9 @@ export type VcenterSystemVersion = {
 export async function getVcenterSystemVersion(
   endpoint: string,
   token: SessionToken,
+  plan: VcenterPlan,
 ): Promise<VcenterSystemVersion | null> {
-  const result = await fetchJsonWithRestFallback<VcenterSystemVersion>(endpoint, '/api/vcenter/system/version', {
+  const result = await fetchJsonPlanned<VcenterSystemVersion>(endpoint, plan, '/api/vcenter/system/version', {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -484,9 +452,10 @@ export async function getVmGuestNetworking(
   endpoint: string,
   token: SessionToken,
   vmId: string,
+  plan: VcenterPlan,
 ): Promise<GuestNetworkInterface[]> {
   const apiPath = `/api/vcenter/vm/${encodeURIComponent(vmId)}/guest/networking/interfaces`;
-  const result = await fetchJsonWithRestFallback<GuestNetworkInterface[]>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<GuestNetworkInterface[]>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -505,9 +474,10 @@ export async function getVmGuestNetworkingInfo(
   endpoint: string,
   token: SessionToken,
   vmId: string,
+  plan: VcenterPlan,
 ): Promise<GuestNetworkingInfo | null> {
   const apiPath = `/api/vcenter/vm/${encodeURIComponent(vmId)}/guest/networking`;
-  const result = await fetchJsonWithRestFallback<GuestNetworkingInfo>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<GuestNetworkingInfo>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });
@@ -546,9 +516,14 @@ export type VmToolsInfo = {
  * Get VMware Tools status for a VM
  * @see https://developer.broadcom.com/xapis/vsphere-automation-api/v7.0U2/vcenter/api/vcenter/vm/vm/tools/get/
  */
-export async function getVmTools(endpoint: string, token: SessionToken, vmId: string): Promise<VmToolsInfo | null> {
+export async function getVmTools(
+  endpoint: string,
+  token: SessionToken,
+  vmId: string,
+  plan: VcenterPlan,
+): Promise<VmToolsInfo | null> {
   const apiPath = `/api/vcenter/vm/${encodeURIComponent(vmId)}/tools`;
-  const result = await fetchJsonWithRestFallback<VmToolsInfo>(endpoint, apiPath, {
+  const result = await fetchJsonPlanned<VmToolsInfo>(endpoint, plan, apiPath, {
     method: 'GET',
     headers: { 'vmware-api-session-id': token },
   });

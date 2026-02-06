@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 
 import { HypervAgentClientError, postAgentJson } from './agent-client';
+import { buildInventoryFromAgentPayload } from './agent-payload';
 import { runPowershellJson, runPowershellWithTimeout } from './client';
 import { buildClusterInventory, buildStandaloneInventory } from './inventory';
 import { normalizeKerberosServiceName } from './kerberos-spn';
+import { resolveHypervCollectPlan } from './plan';
 import type { NormalizedAsset } from './normalize';
 import type { CollectorError, CollectorRequestV1, CollectorResponseV1 } from './types';
 
@@ -571,11 +573,7 @@ async function collectAgent(request: CollectorRequestV1): Promise<{ response: Co
     const body = buildAgentRequestBody(request);
     const raw = await postAgentJson<unknown>(opts, '/v1/hyperv/collect', body, 'hyperv.collect.agent');
 
-    const scope = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as any).scope : null;
-    const built =
-      scope === 'cluster' || (raw && typeof raw === 'object' && !Array.isArray(raw) && 'cluster_name' in raw)
-        ? buildClusterInventory(raw)
-        : buildStandaloneInventory(raw);
+    const built = buildInventoryFromAgentPayload(raw);
     const warnings = computeCollectWarnings(built.assets);
 
     return {
@@ -1384,24 +1382,6 @@ $vms = $vmList | ForEach-Object {
   };
 }
 
-async function collect(request: CollectorRequestV1): Promise<{ response: CollectorResponseV1; exitCode: number }> {
-  try {
-    const runId = getRunId(request);
-    const scope = request.source.config?.scope ?? 'auto';
-    if (scope === 'cluster') return await collectCluster(request);
-    if (scope === 'auto') {
-      // Best-effort: if the entry endpoint is cluster-capable, prefer cluster inventory.
-      const opts = buildWinrmOptions(request);
-      const discovery = await discoverCluster(opts, { runId }).catch(() => null);
-      if (discovery?.is_cluster) return await collectCluster(request);
-    }
-
-    return await collectStandalone(request);
-  } catch (err) {
-    return { response: makeResponse({ errors: [toHypervError(err, 'collect')] }), exitCode: 1 };
-  }
-}
-
 async function main(): Promise<number> {
   let parsed: unknown;
   try {
@@ -1458,18 +1438,23 @@ async function main(): Promise<number> {
   }
 
   const mode = request.request?.mode;
-  const result =
-    mode === 'collect'
-      ? connectionMethod === 'agent'
-        ? await collectAgent(request)
-        : await collect(request)
-      : mode === 'detect'
-        ? connectionMethod === 'agent'
-          ? await detectAgent(request)
-          : await detect(request)
-        : connectionMethod === 'agent'
-          ? await healthcheckAgent(request)
-          : await healthcheck(request);
+  let result: { response: CollectorResponseV1; exitCode: number };
+  if (mode === 'collect') {
+    const planned = resolveHypervCollectPlan(request);
+    if (!planned.ok) {
+      result = { response: planned.response, exitCode: planned.exitCode };
+    } else if (planned.plan.kind === 'agent') {
+      result = await collectAgent(request);
+    } else if (planned.plan.scope === 'cluster') {
+      result = await collectCluster(request);
+    } else {
+      result = await collectStandalone(request);
+    }
+  } else if (mode === 'detect') {
+    result = connectionMethod === 'agent' ? await detectAgent(request) : await detect(request);
+  } else {
+    result = connectionMethod === 'agent' ? await healthcheckAgent(request) : await healthcheck(request);
+  }
 
   process.stdout.write(`${JSON.stringify(result.response)}\n`);
   return result.exitCode;

@@ -321,7 +321,7 @@ describe('pve plugin integration (mock PVE API)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'pve',
-        config: { endpoint, tls_verify: true, timeout_ms: 1000, max_parallel_nodes: 5 },
+        config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone', max_parallel_nodes: 5 },
         credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
       },
       request: { run_id: 'run_collect', mode: 'collect', now: new Date().toISOString() },
@@ -402,7 +402,7 @@ describe('pve plugin integration (mock PVE API)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'pve',
-          config: { endpoint, tls_verify: true, timeout_ms: 1000, max_parallel_nodes: 5 },
+          config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone', max_parallel_nodes: 5 },
           credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
         },
         request: { run_id: 'run_collect_result_wrapper', mode: 'collect', now: new Date().toISOString() },
@@ -439,7 +439,7 @@ describe('pve plugin integration (mock PVE API)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'pve',
-          config: { endpoint, tls_verify: true, timeout_ms: 1000, max_parallel_nodes: 5 },
+          config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone', max_parallel_nodes: 5 },
           credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
         },
         request: { run_id: 'run_collect_guest_agent_missing', mode: 'collect', now: new Date().toISOString() },
@@ -485,7 +485,7 @@ describe('pve plugin integration (mock PVE API)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'pve',
-        config: { endpoint, tls_verify: true, timeout_ms: 1000 },
+        config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone' },
         credential: { username: 'root@pam', password: 'pass' },
       },
       request: { run_id: 'run_collect_pw', mode: 'collect', now: new Date().toISOString() },
@@ -504,7 +504,7 @@ describe('pve plugin integration (mock PVE API)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'pve',
-        config: { endpoint, tls_verify: true, timeout_ms: 1000 },
+        config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone' },
         credential: { auth_type: 'user_password', username: 'root', realm: 'pam', password: 'pass' },
       },
       request: { run_id: 'run_collect_pw_realm', mode: 'collect', now: new Date().toISOString() },
@@ -523,7 +523,7 @@ describe('pve plugin integration (mock PVE API)', () => {
       source: {
         source_id: 'src_1',
         source_type: 'pve',
-        config: { endpoint, tls_verify: true, timeout_ms: 1000 },
+        config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'standalone' },
         credential: { auth_type: 'user_password', username: 'root', password: 'pass' },
       },
       request: { run_id: 'run_collect_pw_default_realm', mode: 'collect', now: new Date().toISOString() },
@@ -536,7 +536,7 @@ describe('pve plugin integration (mock PVE API)', () => {
     expect(parsed.stats?.inventory_complete).toBe(true);
   });
 
-  it('collect includes cluster asset + host->cluster relations when cluster is detected', async () => {
+  it('collect includes cluster asset + host->cluster relations when scope=cluster', async () => {
     clusterEnabled = true;
     try {
       const request = {
@@ -544,7 +544,7 @@ describe('pve plugin integration (mock PVE API)', () => {
         source: {
           source_id: 'src_1',
           source_type: 'pve',
-          config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'auto' },
+          config: { endpoint, tls_verify: true, timeout_ms: 1000, scope: 'cluster' },
           credential: { auth_type: 'api_token', api_token_id: 'user@pam!tokenid', api_token_secret: 'secret' },
         },
         request: { run_id: 'run_collect_cluster', mode: 'collect', now: new Date().toISOString() },

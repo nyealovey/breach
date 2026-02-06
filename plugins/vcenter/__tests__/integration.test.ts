@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 type PluginResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -41,8 +41,10 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
   let soapLoginCookie = 'vmware_soap_session="soap-123"';
   let restSessionToken = 'token-123';
   let restSessionApiJsonRpcError = false;
+  let restApiSessionCalls = 0;
   let restCisSessionCalls = 0;
   let restVcenterApiGetNotAllowed = false;
+  let restVcenterApiCalls = 0;
   let restVcenterRestCalls = 0;
   let restVmListHostsParamUnsupported = false;
   let restVmListFilterHostsCalls = 0;
@@ -56,6 +58,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     const pathname = parsedUrl.pathname;
     const searchParams = parsedUrl.searchParams;
     const method = req.method ?? 'GET';
+
+    if (pathname.startsWith('/api/vcenter/')) restVcenterApiCalls++;
+    if (pathname.startsWith('/rest/vcenter/')) restVcenterRestCalls++;
 
     // Minimal SOAP mock for /sdk.
     if (method === 'POST' && pathname === '/sdk') {
@@ -395,6 +400,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
 
     // Minimal Basic auth check for POST /api/session.
     if (method === 'POST' && url === '/api/session') {
+      restApiSessionCalls++;
       const auth = req.headers.authorization ?? '';
       if (auth !== `Basic ${Buffer.from('user:pass').toString('base64')}`) {
         res.statusCode = 401;
@@ -438,11 +444,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       return;
     }
 
-    if (
-      restVcenterApiGetNotAllowed &&
-      method === 'GET' &&
-      (pathname === '/api/vcenter/system/version' || pathname.startsWith('/api/vcenter/'))
-    ) {
+    if (restVcenterApiGetNotAllowed && method === 'GET' && pathname.startsWith('/api/vcenter/')) {
       res.statusCode = 405;
       res.setHeader('Content-Type', 'text/html; charset=ISO-8859-1');
       res.end(`<!DOCTYPE html>
@@ -471,8 +473,6 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       res.end(JSON.stringify({ error: 'missing-session' }));
       return;
     }
-
-    if (pathname.startsWith('/rest/vcenter/')) restVcenterRestCalls++;
 
     if (
       method === 'GET' &&
@@ -648,6 +648,31 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
+  beforeEach(() => {
+    soapFail = false;
+    soapRetrievePropertiesExUnsupported = false;
+    soapSerialNumberUnsupported = false;
+    soapNvmeTopologyUnsupported = false;
+    soapLoginCookie = 'vmware_soap_session="soap-123"';
+
+    restSessionToken = 'token-123';
+    restSessionApiJsonRpcError = false;
+    restApiSessionCalls = 0;
+    restCisSessionCalls = 0;
+
+    restVcenterApiGetNotAllowed = false;
+    restVcenterApiCalls = 0;
+    restVcenterRestCalls = 0;
+
+    restVmListHostsParamUnsupported = false;
+    restVmListFilterHostsCalls = 0;
+
+    restWrapValue = false;
+    restVmDetailFlat = false;
+    restSystemVersion = '7.0.3';
+    restSystemBuild = '20036589';
+  });
+
   it('healthcheck succeeds', async () => {
     const request = {
       schema_version: 'collector-request-v1',
@@ -796,9 +821,8 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     }
   });
 
-  it('collect_hosts falls back to /rest/vcenter/* when /api/vcenter/* GET is not allowed', async () => {
+  it('collect_hosts uses /rest/vcenter/* when preferred_vcenter_version=6.5-6.7', async () => {
     restVcenterApiGetNotAllowed = true;
-    restVcenterRestCalls = 0;
     restSystemVersion = '6.5.0';
     restSystemBuild = '123456';
     try {
@@ -816,15 +840,47 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       const result = await runCollector(request);
       expect(result.exitCode).toBe(0);
       expect(restVcenterRestCalls).toBeGreaterThan(0);
+      expect(restVcenterApiCalls).toBe(0);
+      expect(restApiSessionCalls).toBe(0);
+      expect(restCisSessionCalls).toBeGreaterThan(0);
 
       const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: unknown[] };
       expect(parsed.schema_version).toBe('collector-response-v1');
       expect(parsed.errors ?? []).toEqual([]);
     } finally {
       restVcenterApiGetNotAllowed = false;
-      restVcenterRestCalls = 0;
       restSystemVersion = '7.0.3';
       restSystemBuild = '20036589';
+    }
+  });
+
+  it('collect_hosts does not fall back to /rest/vcenter/* when preferred_vcenter_version=7.0-8.x', async () => {
+    restVcenterApiGetNotAllowed = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_hosts_no_rest_fallback', mode: 'collect_hosts', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(1);
+
+      expect(restApiSessionCalls).toBeGreaterThan(0);
+      expect(restVcenterApiCalls).toBeGreaterThan(0);
+      expect(restVcenterRestCalls).toBe(0);
+      expect(restCisSessionCalls).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: Array<{ code?: string }> };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors?.[0]?.code).toBe('VCENTER_NETWORK_ERROR');
+    } finally {
+      restVcenterApiGetNotAllowed = false;
     }
   });
 
@@ -878,9 +934,8 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     );
   });
 
-  it('collect_vms falls back to filter.hosts when hosts filter is rejected', async () => {
+  it('collect_vms uses filter.hosts when preferred_vcenter_version=6.5-6.7', async () => {
     restVmListHostsParamUnsupported = true;
-    restVmListFilterHostsCalls = 0;
     restSystemVersion = '6.5.0';
     restSystemBuild = '123456';
     try {
@@ -898,11 +953,43 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       const result = await runCollector(request);
       expect(result.exitCode).toBe(0);
       expect(restVmListFilterHostsCalls).toBeGreaterThan(0);
+      expect(restVcenterApiCalls).toBe(0);
+      expect(restApiSessionCalls).toBe(0);
+      expect(restCisSessionCalls).toBeGreaterThan(0);
     } finally {
       restVmListHostsParamUnsupported = false;
-      restVmListFilterHostsCalls = 0;
       restSystemVersion = '7.0.3';
       restSystemBuild = '20036589';
+    }
+  });
+
+  it('collect_vms does not fall back to filter.hosts when preferred_vcenter_version=7.0-8.x', async () => {
+    restVmListHostsParamUnsupported = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_vms_no_filter_hosts_fallback', mode: 'collect_vms', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(1);
+
+      expect(restVcenterApiCalls).toBeGreaterThan(0);
+      expect(restVcenterRestCalls).toBe(0);
+      expect(restCisSessionCalls).toBe(0);
+      expect(restVmListFilterHostsCalls).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: Array<{ code?: string }> };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors?.[0]?.code).toBe('VCENTER_NETWORK_ERROR');
+    } finally {
+      restVmListHostsParamUnsupported = false;
     }
   });
 
@@ -953,10 +1040,9 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     }
   });
 
-  it('collect_vms falls back to legacy /rest/com/vmware/cis/session when /api/session returns a JSON-RPC error', async () => {
+  it('collect_vms uses legacy /rest/com/vmware/cis/session when preferred_vcenter_version=6.5-6.7', async () => {
     restSessionApiJsonRpcError = true;
     restSessionToken = 'token-legacy';
-    restCisSessionCalls = 0;
     restWrapValue = true;
     restVmDetailFlat = true;
     restSystemVersion = '6.5.0';
@@ -976,6 +1062,7 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
       const result = await runCollector(request);
       expect(result.exitCode).toBe(0);
       expect(restCisSessionCalls).toBeGreaterThan(0);
+      expect(restApiSessionCalls).toBe(0);
 
       const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: unknown[] };
       expect(parsed.schema_version).toBe('collector-response-v1');
@@ -983,11 +1070,40 @@ describe('vcenter plugin integration (mock vSphere REST)', () => {
     } finally {
       restSessionApiJsonRpcError = false;
       restSessionToken = 'token-123';
-      restCisSessionCalls = 0;
       restWrapValue = false;
       restVmDetailFlat = false;
       restSystemVersion = '7.0.3';
       restSystemBuild = '20036589';
+    }
+  });
+
+  it('collect_vms does not fall back to legacy session when preferred_vcenter_version=7.0-8.x', async () => {
+    restSessionApiJsonRpcError = true;
+    try {
+      const request = {
+        schema_version: 'collector-request-v1',
+        source: {
+          source_id: 'src_1',
+          source_type: 'vcenter',
+          config: { endpoint, preferred_vcenter_version: '7.0-8.x' },
+          credential: { username: 'user', password: 'pass' },
+        },
+        request: { run_id: 'run_vms_no_legacy_session_fallback', mode: 'collect_vms', now: new Date().toISOString() },
+      };
+
+      const result = await runCollector(request);
+      expect(result.exitCode).toBe(1);
+
+      expect(restApiSessionCalls).toBeGreaterThan(0);
+      expect(restCisSessionCalls).toBe(0);
+      expect(restVcenterApiCalls).toBe(0);
+      expect(restVcenterRestCalls).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as { schema_version: string; errors?: Array<{ code?: string }> };
+      expect(parsed.schema_version).toBe('collector-response-v1');
+      expect(parsed.errors?.[0]?.code).toBe('VCENTER_NETWORK_ERROR');
+    } finally {
+      restSessionApiJsonRpcError = false;
     }
   });
 
