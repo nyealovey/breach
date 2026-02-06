@@ -23,6 +23,30 @@ bun run dev
 - 数据底座：PostgreSQL + Prisma
 - 工程质量：TypeScript 严格模式、Lint/Format/Type Check、E2E 测试
 
+## 台账字段语义（source / override / effective）
+
+从 `2026-02-06` 起，台账字段采用三态模型：
+
+- `source`：来源值（由 SolarWinds 手动同步写入）
+- `override`：覆盖值（人工单资产编辑 / 批量设置写入）
+- `effective`：生效值，规则为 `override ?? source`
+
+行为规则：
+
+- SolarWinds 同步只更新 `source`，不改 `override`
+- 手工编辑与批量设置只更新 `override`
+- 覆盖值传空串会归一为 `null`（即取消覆盖，回退到来源值）
+- 列表筛选、关键字搜索、下拉候选与 CSV 导出统一按 `effective` 口径
+
+当前接入 SolarWinds 来源映射（仅 6 个字段）：
+
+- `CITY -> region`（地区）
+- `CLASSIFICATION -> systemLevel`（系统分级）
+- `DEPARTMENT -> company`（公司）
+- `RES_APP -> systemCategory`（系统分类）
+- `POC_DEP -> department`（部门）
+- `POC_NAME -> bizOwner`（业务对接人员）
+
 ## UI 说明（资产列表）
 
 - 「机器名」列：仅展示机器名，不在列表显示 UUID（UUID 保留在资产详情页）。

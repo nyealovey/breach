@@ -6,8 +6,11 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 import {
   buildLedgerFieldsV1FromRow,
+  computeLedgerFieldEffectiveValueV1,
+  getLedgerFieldDbColumnV1,
   getLedgerFieldMetaV1,
   isLedgerFieldAllowedForAssetType,
+  LEDGER_FIELDS_V1_DB_SELECT,
   normalizeLedgerFieldValueV1,
   summarizeLedgerValue,
 } from '@/lib/ledger/ledger-fields-v1';
@@ -16,7 +19,7 @@ import type { AppError } from '@/lib/errors/error';
 import type { Prisma } from '@prisma/client';
 
 const BodySchema = z.object({
-  ledgerFields: z.record(z.string(), z.union([z.string(), z.null()])),
+  ledgerFieldOverrides: z.record(z.string(), z.union([z.string(), z.null()])),
 });
 
 function isAppError(err: unknown): err is AppError {
@@ -41,7 +44,7 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
     );
   }
 
-  const updates = Object.entries(body.ledgerFields)
+  const updates = Object.entries(body.ledgerFieldOverrides)
     .map(([k, v]) => ({ key: k.trim(), value: v }))
     .filter((p) => p.key.length > 0);
 
@@ -66,27 +69,20 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
 
       const existing = await tx.assetLedgerFields.findUnique({
         where: { assetUuid: uuid },
-        select: {
-          region: true,
-          company: true,
-          department: true,
-          systemCategory: true,
-          systemLevel: true,
-          bizOwner: true,
-          maintenanceDueDate: true,
-          purchaseDate: true,
-          bmcIp: true,
-          cabinetNo: true,
-          rackPosition: true,
-          managementCode: true,
-          fixedAssetNo: true,
-        },
+        select: LEDGER_FIELDS_V1_DB_SELECT,
       });
 
       const updateData: Prisma.AssetLedgerFieldsUncheckedUpdateInput = {};
       const createData: Prisma.AssetLedgerFieldsUncheckedCreateInput = { assetUuid: uuid };
       const updatedKeys: string[] = [];
-      const changes: Array<{ key: string; before: string | null; after: string | null }> = [];
+      const changes: Array<{
+        key: string;
+        layer: 'override';
+        beforeOverride: string | null;
+        afterOverride: string | null;
+        beforeEffective: string | null;
+        afterEffective: string | null;
+      }> = [];
       const beforeFields = buildLedgerFieldsV1FromRow(existing);
 
       for (const { key, value } of updates) {
@@ -112,15 +108,24 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
         }
 
         const normalized = normalizeLedgerFieldValueV1(meta, value);
-        updateData[meta.key] = normalized.dbValue as any;
-        createData[meta.key] = normalized.dbValue as any;
+        const overrideColumn = getLedgerFieldDbColumnV1(meta.key, 'override');
+        updateData[overrideColumn] = normalized.dbValue as any;
+        createData[overrideColumn] = normalized.dbValue as any;
         updatedKeys.push(meta.key);
 
         const before = beforeFields[meta.key];
+        const nextOverride = normalized.displayValue;
+        const nextEffective = computeLedgerFieldEffectiveValueV1({
+          source: before.source,
+          override: nextOverride,
+        });
         changes.push({
           key: meta.key,
-          before: summarizeLedgerValue(before),
-          after: summarizeLedgerValue(normalized.displayValue),
+          layer: 'override',
+          beforeOverride: summarizeLedgerValue(before.override),
+          afterOverride: summarizeLedgerValue(nextOverride),
+          beforeEffective: summarizeLedgerValue(before.effective),
+          afterEffective: summarizeLedgerValue(nextEffective),
         });
       }
 
@@ -128,21 +133,7 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
         where: { assetUuid: uuid },
         create: createData,
         update: updateData,
-        select: {
-          region: true,
-          company: true,
-          department: true,
-          systemCategory: true,
-          systemLevel: true,
-          bizOwner: true,
-          maintenanceDueDate: true,
-          purchaseDate: true,
-          bmcIp: true,
-          cabinetNo: true,
-          rackPosition: true,
-          managementCode: true,
-          fixedAssetNo: true,
-        },
+        select: LEDGER_FIELDS_V1_DB_SELECT,
       });
 
       const audit = await tx.auditEvent.create({
@@ -168,6 +159,7 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
           summary: {
             actor: { userId: auth.session.user.id, username: auth.session.user.username },
             requestId: auth.requestId,
+            mode: 'manual_single',
             updatedKeys,
             changes,
           } as Prisma.InputJsonValue,

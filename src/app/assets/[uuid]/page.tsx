@@ -478,17 +478,17 @@ export default function AssetDetailPage() {
 
     return {
       assetType,
-      machineName: machineNameValue.currentText,
+      machineName: machineNameValue.collectedText,
       machineNameOverride: machineNameValue.overrideText,
       machineNameCollected: machineNameValue.collectedText,
       machineNameMismatch: machineNameValue.mismatch,
       vmName: assetType === 'vm' ? normalizeOptionalText(vmName) : null,
       osCollected: osValue.collectedText,
       osOverride: osValue.overrideText,
-      osCurrent: osValue.currentText,
+      osCurrent: osValue.collectedText,
       ipCollected: ipValue.collectedText,
       ipOverride: ipValue.overrideText,
-      ipCurrent: ipValue.currentText,
+      ipCurrent: ipValue.collectedText,
       cpuText: typeof cpuCount === 'number' ? String(cpuCount) : null,
       memoryText: typeof memoryBytes === 'number' ? formatAssetFieldValue(memoryBytes, { formatHint: 'bytes' }) : null,
       diskText:
@@ -984,7 +984,7 @@ export default function AssetDetailPage() {
 
                               const draft = (ledgerDraft[meta.key] ?? '').trim();
                               const nextValue = draft.length > 0 ? draft : null;
-                              const prevValue = asset.ledgerFields?.[meta.key] ?? null;
+                              const prevValue = asset.ledgerFields?.[meta.key]?.override ?? null;
 
                               if (nextValue !== prevValue) updates[meta.key] = nextValue;
                             }
@@ -1002,7 +1002,7 @@ export default function AssetDetailPage() {
                                 {
                                   method: 'PUT',
                                   headers: { 'content-type': 'application/json' },
-                                  body: JSON.stringify({ ledgerFields: updates }),
+                                  body: JSON.stringify({ ledgerFieldOverrides: updates }),
                                 },
                               );
 
@@ -1038,7 +1038,7 @@ export default function AssetDetailPage() {
                         onClick={() => {
                           const nextDraft: Partial<Record<LedgerFieldKey, string>> = {};
                           for (const meta of allowedLedgerFieldMetas) {
-                            nextDraft[meta.key] = asset.ledgerFields?.[meta.key] ?? '';
+                            nextDraft[meta.key] = asset.ledgerFields?.[meta.key]?.override ?? '';
                           }
                           setLedgerDraft(nextDraft);
                           setLedgerEditing(true);
@@ -1055,13 +1055,15 @@ export default function AssetDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>字段</TableHead>
-                      <TableHead>值</TableHead>
+                      <TableHead>来源值</TableHead>
+                      <TableHead>覆盖值</TableHead>
+                      <TableHead>生效值</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {allowedLedgerFieldMetas.map((meta) => {
-                      const value = asset.ledgerFields?.[meta.key] ?? null;
-                      const draft = ledgerDraft[meta.key] ?? value ?? '';
+                      const value = asset.ledgerFields?.[meta.key] ?? { source: null, override: null, effective: null };
+                      const draft = ledgerDraft[meta.key] ?? value.override ?? '';
 
                       return (
                         <TableRow key={meta.key}>
@@ -1070,6 +1072,13 @@ export default function AssetDetailPage() {
                             {meta.scope === 'host_only' ? (
                               <span className="ml-1 text-xs text-muted-foreground">(仅 Host)</span>
                             ) : null}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {value.source ? (
+                              <span className="whitespace-normal break-words">{value.source}</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm">
                             {ledgerEditing && isAdmin ? (
@@ -1086,8 +1095,15 @@ export default function AssetDetailPage() {
                                   onChange={(e) => setLedgerDraft((prev) => ({ ...prev, [meta.key]: e.target.value }))}
                                 />
                               )
-                            ) : value ? (
-                              <span className="whitespace-normal break-words">{value}</span>
+                            ) : value.override ? (
+                              <span className="whitespace-normal break-words">{value.override}</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {value.effective ? (
+                              <span className="whitespace-normal break-words">{value.effective}</span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}

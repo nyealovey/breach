@@ -420,31 +420,48 @@ model AssetLedgerFields {
   assetUuid String @id @db.Uuid
 
   // ===== common (vm + host) =====
-  region         String?
-  company        String?
-  department     String?
-  systemCategory String?
-  systemLevel    String?
-  bizOwner       String?
+  regionSource         String?
+  regionOverride       String?
+  companySource        String?
+  companyOverride      String?
+  departmentSource     String?
+  departmentOverride   String?
+  systemCategorySource   String?
+  systemCategoryOverride String?
+  systemLevelSource      String?
+  systemLevelOverride    String?
+  bizOwnerSource         String?
+  bizOwnerOverride       String?
 
   // ===== host-only =====
-  maintenanceDueDate DateTime? @db.Date
-  purchaseDate       DateTime? @db.Date
-  bmcIp              String?
-  cabinetNo          String?
-  rackPosition       String?
-  managementCode     String?
-  fixedAssetNo       String?
+  maintenanceDueDateSource   DateTime? @db.Date
+  maintenanceDueDateOverride DateTime? @db.Date
+  purchaseDateSource         DateTime? @db.Date
+  purchaseDateOverride       DateTime? @db.Date
+  bmcIpSource                String?
+  bmcIpOverride              String?
+  cabinetNoSource            String?
+  cabinetNoOverride          String?
+  rackPositionSource         String?
+  rackPositionOverride       String?
+  managementCodeSource       String?
+  managementCodeOverride     String?
+  fixedAssetNoSource         String?
+  fixedAssetNoOverride       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   asset Asset @relation(fields: [assetUuid], references: [uuid], onDelete: Cascade)
 
-  @@index([company])
-  @@index([department])
-  @@index([systemCategory])
-  @@index([systemLevel])
+  @@index([companySource])
+  @@index([companyOverride])
+  @@index([departmentSource])
+  @@index([departmentOverride])
+  @@index([systemCategorySource])
+  @@index([systemCategoryOverride])
+  @@index([systemLevelSource])
+  @@index([systemLevelOverride])
 }
 
 model AssetSourceLink {

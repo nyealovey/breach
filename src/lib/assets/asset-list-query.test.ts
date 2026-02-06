@@ -311,12 +311,11 @@ describe('asset list query', () => {
   });
 
   it('builds where with createdWithinDays', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-02-05T00:00:00.000Z'));
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-02-05T00:00:00.000Z').getTime());
 
     const where = buildAssetListWhere({ createdWithinDays: 7 });
 
-    vi.useRealTimers();
+    nowSpy.mockRestore();
 
     const and = (where as any).AND as any[];
     const clause = and.find((c) => c && typeof c === 'object' && c.createdAt && c.createdAt.gte instanceof Date);
@@ -377,16 +376,74 @@ describe('asset list query', () => {
       bizOwner: 'Alice',
     });
 
-    expect(where).toMatchObject({
-      AND: expect.arrayContaining([
-        { status: { not: 'merged' } },
-        { ledgerFields: { is: { region: { contains: 'cn-shanghai', mode: 'insensitive' } } } },
-        { ledgerFields: { is: { company: { contains: 'ACME', mode: 'insensitive' } } } },
-        { ledgerFields: { is: { department: { contains: 'IT', mode: 'insensitive' } } } },
-        { ledgerFields: { is: { systemCategory: { contains: '财经', mode: 'insensitive' } } } },
-        { ledgerFields: { is: { systemLevel: { contains: '核心', mode: 'insensitive' } } } },
-        { ledgerFields: { is: { bizOwner: { contains: 'Alice', mode: 'insensitive' } } } },
-      ]),
+    const and = (where as any).AND as any[];
+    expect(and).toEqual(expect.arrayContaining([{ status: { not: 'merged' } }]));
+
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { regionOverride: { contains: 'cn-shanghai', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { regionOverride: null } } },
+            { ledgerFields: { is: { regionSource: { contains: 'cn-shanghai', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { companyOverride: { contains: 'ACME', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { companyOverride: null } } },
+            { ledgerFields: { is: { companySource: { contains: 'ACME', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { departmentOverride: { contains: 'IT', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { departmentOverride: null } } },
+            { ledgerFields: { is: { departmentSource: { contains: 'IT', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { systemCategoryOverride: { contains: '财经', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { systemCategoryOverride: null } } },
+            { ledgerFields: { is: { systemCategorySource: { contains: '财经', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { systemLevelOverride: { contains: '核心', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { systemLevelOverride: null } } },
+            { ledgerFields: { is: { systemLevelSource: { contains: '核心', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(and).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { bizOwnerOverride: { contains: 'Alice', mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { bizOwnerOverride: null } } },
+            { ledgerFields: { is: { bizOwnerSource: { contains: 'Alice', mode: 'insensitive' } } } },
+          ],
+        },
+      ],
     });
   });
 
@@ -422,7 +479,27 @@ describe('asset list query', () => {
     const and = (where as any).AND as any[];
     const or = and?.find((c) => c && typeof c === 'object' && 'OR' in c)?.OR as any[];
 
-    expect(or).toContainEqual({ ledgerFields: { is: { company: { contains: q, mode: 'insensitive' } } } });
-    expect(or).toContainEqual({ ledgerFields: { is: { bizOwner: { contains: q, mode: 'insensitive' } } } });
+    expect(or).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { companyOverride: { contains: q, mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { companyOverride: null } } },
+            { ledgerFields: { is: { companySource: { contains: q, mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
+    expect(or).toContainEqual({
+      OR: [
+        { ledgerFields: { is: { bizOwnerOverride: { contains: q, mode: 'insensitive' } } } },
+        {
+          AND: [
+            { ledgerFields: { is: { bizOwnerOverride: null } } },
+            { ledgerFields: { is: { bizOwnerSource: { contains: q, mode: 'insensitive' } } } },
+          ],
+        },
+      ],
+    });
   });
 });

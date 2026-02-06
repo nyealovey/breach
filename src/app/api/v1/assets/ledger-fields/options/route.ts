@@ -16,6 +16,12 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
+    type RegionRow = { region: string | null };
+    type CompanyRow = { company: string | null };
+    type DepartmentRow = { department: string | null };
+    type SystemCategoryRow = { systemCategory: string | null };
+    type SystemLevelRow = { systemLevel: string | null };
+    type BizOwnerRow = { bizOwner: string | null };
     type OsNameRow = { osName: string | null };
     type BrandRow = { brand: string | null };
     type ModelRow = { model: string | null };
@@ -31,48 +37,78 @@ export async function GET(request: Request) {
       brandRows,
       modelRows,
     ] = await Promise.all([
-      prisma.assetLedgerFields.findMany({
-        distinct: ['region'],
-        where: { asset: { status: { not: 'merged' } }, region: { not: null } },
-        select: { region: true },
-        orderBy: { region: 'asc' },
-        take: TAKE_LIMIT,
-      }),
-      prisma.assetLedgerFields.findMany({
-        distinct: ['company'],
-        where: { asset: { status: { not: 'merged' } }, company: { not: null } },
-        select: { company: true },
-        orderBy: { company: 'asc' },
-        take: TAKE_LIMIT,
-      }),
-      prisma.assetLedgerFields.findMany({
-        distinct: ['department'],
-        where: { asset: { status: { not: 'merged' } }, department: { not: null } },
-        select: { department: true },
-        orderBy: { department: 'asc' },
-        take: TAKE_LIMIT,
-      }),
-      prisma.assetLedgerFields.findMany({
-        distinct: ['systemCategory'],
-        where: { asset: { status: { not: 'merged' } }, systemCategory: { not: null } },
-        select: { systemCategory: true },
-        orderBy: { systemCategory: 'asc' },
-        take: TAKE_LIMIT,
-      }),
-      prisma.assetLedgerFields.findMany({
-        distinct: ['systemLevel'],
-        where: { asset: { status: { not: 'merged' } }, systemLevel: { not: null } },
-        select: { systemLevel: true },
-        orderBy: { systemLevel: 'asc' },
-        take: TAKE_LIMIT,
-      }),
-      prisma.assetLedgerFields.findMany({
-        distinct: ['bizOwner'],
-        where: { asset: { status: { not: 'merged' } }, bizOwner: { not: null } },
-        select: { bizOwner: true },
-        orderBy: { bizOwner: 'asc' },
-        take: TAKE_LIMIT,
-      }),
+      prisma.$queryRaw<RegionRow[]>`
+        SELECT DISTINCT value AS "region"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."regionOverride", alf."regionSource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<CompanyRow[]>`
+        SELECT DISTINCT value AS "company"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."companyOverride", alf."companySource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<DepartmentRow[]>`
+        SELECT DISTINCT value AS "department"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."departmentOverride", alf."departmentSource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<SystemCategoryRow[]>`
+        SELECT DISTINCT value AS "systemCategory"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."systemCategoryOverride", alf."systemCategorySource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<SystemLevelRow[]>`
+        SELECT DISTINCT value AS "systemLevel"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."systemLevelOverride", alf."systemLevelSource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
+      prisma.$queryRaw<BizOwnerRow[]>`
+        SELECT DISTINCT value AS "bizOwner"
+        FROM (
+          SELECT NULLIF(btrim(COALESCE(alf."bizOwnerOverride", alf."bizOwnerSource")), '') AS value
+          FROM "AssetLedgerFields" alf
+          JOIN "Asset" a ON a.uuid = alf."assetUuid"
+          WHERE a.status <> 'merged'
+        ) t
+        WHERE value IS NOT NULL
+        ORDER BY value
+        LIMIT ${TAKE_LIMIT}
+      `,
       prisma.$queryRaw<OsNameRow[]>`
         SELECT DISTINCT os_name AS "osName"
         FROM (

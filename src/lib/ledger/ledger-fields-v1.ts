@@ -50,9 +50,66 @@ const LEDGER_FIELD_META_BY_KEY: Record<LedgerFieldKey, LedgerFieldMeta> = Object
   LEDGER_FIELDS_V1.map((m) => [m.key, m]),
 ) as Record<LedgerFieldKey, LedgerFieldMeta>;
 
-export type LedgerFieldsV1Value = string | null;
+export type LedgerFieldLayer = 'source' | 'override';
 
-export type LedgerFieldsV1 = Record<LedgerFieldKey, LedgerFieldsV1Value>;
+export type LedgerFieldSourceColumn = `${LedgerFieldKey}Source`;
+export type LedgerFieldOverrideColumn = `${LedgerFieldKey}Override`;
+
+export const LEDGER_FIELDS_V1_DB_SELECT = {
+  regionSource: true,
+  regionOverride: true,
+  companySource: true,
+  companyOverride: true,
+  departmentSource: true,
+  departmentOverride: true,
+  systemCategorySource: true,
+  systemCategoryOverride: true,
+  systemLevelSource: true,
+  systemLevelOverride: true,
+  bizOwnerSource: true,
+  bizOwnerOverride: true,
+  maintenanceDueDateSource: true,
+  maintenanceDueDateOverride: true,
+  purchaseDateSource: true,
+  purchaseDateOverride: true,
+  bmcIpSource: true,
+  bmcIpOverride: true,
+  cabinetNoSource: true,
+  cabinetNoOverride: true,
+  rackPositionSource: true,
+  rackPositionOverride: true,
+  managementCodeSource: true,
+  managementCodeOverride: true,
+  fixedAssetNoSource: true,
+  fixedAssetNoOverride: true,
+} as const;
+
+const LEDGER_FIELD_DB_COLUMNS_BY_KEY: Record<
+  LedgerFieldKey,
+  { source: LedgerFieldSourceColumn; override: LedgerFieldOverrideColumn }
+> = {
+  region: { source: 'regionSource', override: 'regionOverride' },
+  company: { source: 'companySource', override: 'companyOverride' },
+  department: { source: 'departmentSource', override: 'departmentOverride' },
+  systemCategory: { source: 'systemCategorySource', override: 'systemCategoryOverride' },
+  systemLevel: { source: 'systemLevelSource', override: 'systemLevelOverride' },
+  bizOwner: { source: 'bizOwnerSource', override: 'bizOwnerOverride' },
+  maintenanceDueDate: { source: 'maintenanceDueDateSource', override: 'maintenanceDueDateOverride' },
+  purchaseDate: { source: 'purchaseDateSource', override: 'purchaseDateOverride' },
+  bmcIp: { source: 'bmcIpSource', override: 'bmcIpOverride' },
+  cabinetNo: { source: 'cabinetNoSource', override: 'cabinetNoOverride' },
+  rackPosition: { source: 'rackPositionSource', override: 'rackPositionOverride' },
+  managementCode: { source: 'managementCodeSource', override: 'managementCodeOverride' },
+  fixedAssetNo: { source: 'fixedAssetNoSource', override: 'fixedAssetNoOverride' },
+};
+
+export type LedgerFieldValueV1 = {
+  source: string | null;
+  override: string | null;
+  effective: string | null;
+};
+
+export type LedgerFieldsV1 = Record<LedgerFieldKey, LedgerFieldValueV1>;
 
 export type LedgerFieldsAssetType = 'vm' | 'host' | 'cluster';
 
@@ -68,6 +125,22 @@ export function getLedgerFieldMetaV1(key: string): LedgerFieldMeta | null {
   return isLedgerFieldKeyV1(key) ? LEDGER_FIELD_META_BY_KEY[key] : null;
 }
 
+export function getLedgerFieldDbColumnV1(key: LedgerFieldKey, layer: 'source'): LedgerFieldSourceColumn;
+export function getLedgerFieldDbColumnV1(key: LedgerFieldKey, layer: 'override'): LedgerFieldOverrideColumn;
+export function getLedgerFieldDbColumnV1(
+  key: LedgerFieldKey,
+  layer: LedgerFieldLayer,
+): LedgerFieldSourceColumn | LedgerFieldOverrideColumn {
+  return LEDGER_FIELD_DB_COLUMNS_BY_KEY[key][layer];
+}
+
+export function getLedgerFieldDbColumnsV1(key: LedgerFieldKey): {
+  source: LedgerFieldSourceColumn;
+  override: LedgerFieldOverrideColumn;
+} {
+  return LEDGER_FIELD_DB_COLUMNS_BY_KEY[key];
+}
+
 export function isLedgerFieldAllowedForAssetType(meta: LedgerFieldMeta, assetType: LedgerFieldsAssetType): boolean {
   if (assetType === 'host') return true;
   if (assetType === 'vm') return meta.scope === 'vm_host';
@@ -76,20 +149,31 @@ export function isLedgerFieldAllowedForAssetType(meta: LedgerFieldMeta, assetTyp
 
 export function buildEmptyLedgerFieldsV1(): LedgerFieldsV1 {
   return {
-    region: null,
-    company: null,
-    department: null,
-    systemCategory: null,
-    systemLevel: null,
-    bizOwner: null,
-    maintenanceDueDate: null,
-    purchaseDate: null,
-    bmcIp: null,
-    cabinetNo: null,
-    rackPosition: null,
-    managementCode: null,
-    fixedAssetNo: null,
+    region: { source: null, override: null, effective: null },
+    company: { source: null, override: null, effective: null },
+    department: { source: null, override: null, effective: null },
+    systemCategory: { source: null, override: null, effective: null },
+    systemLevel: { source: null, override: null, effective: null },
+    bizOwner: { source: null, override: null, effective: null },
+    maintenanceDueDate: { source: null, override: null, effective: null },
+    purchaseDate: { source: null, override: null, effective: null },
+    bmcIp: { source: null, override: null, effective: null },
+    cabinetNo: { source: null, override: null, effective: null },
+    rackPosition: { source: null, override: null, effective: null },
+    managementCode: { source: null, override: null, effective: null },
+    fixedAssetNo: { source: null, override: null, effective: null },
   };
+}
+
+export function computeLedgerFieldEffectiveValueV1(input: {
+  source: string | null;
+  override: string | null;
+}): string | null {
+  return input.override ?? input.source;
+}
+
+export function extractLedgerFieldEffectiveValueV1(value: LedgerFieldValueV1): string | null {
+  return computeLedgerFieldEffectiveValueV1({ source: value.source, override: value.override });
 }
 
 function parseIsoDateOnly(input: string): Date | null {
@@ -181,7 +265,7 @@ export function normalizeLedgerFieldValueV1(
   } satisfies AppError;
 }
 
-export function formatLedgerFieldValueV1(meta: LedgerFieldMeta, dbValue: unknown): string | null {
+function formatLedgerFieldStoredValueV1(meta: LedgerFieldMeta, dbValue: unknown): string | null {
   if (dbValue === null || dbValue === undefined) return null;
 
   if (meta.kind === 'date') {
@@ -193,13 +277,19 @@ export function formatLedgerFieldValueV1(meta: LedgerFieldMeta, dbValue: unknown
 }
 
 export function buildLedgerFieldsV1FromRow(
-  row: Partial<Record<LedgerFieldKey, unknown>> | null | undefined,
+  row: Partial<Record<LedgerFieldSourceColumn | LedgerFieldOverrideColumn, unknown>> | null | undefined,
 ): LedgerFieldsV1 {
   const out = buildEmptyLedgerFieldsV1();
 
   for (const meta of LEDGER_FIELDS_V1) {
-    const v = row ? row[meta.key] : undefined;
-    out[meta.key] = formatLedgerFieldValueV1(meta, v);
+    const columns = getLedgerFieldDbColumnsV1(meta.key);
+    const source = formatLedgerFieldStoredValueV1(meta, row ? row[columns.source] : undefined);
+    const override = formatLedgerFieldStoredValueV1(meta, row ? row[columns.override] : undefined);
+    out[meta.key] = {
+      source,
+      override,
+      effective: computeLedgerFieldEffectiveValueV1({ source, override }),
+    };
   }
 
   return out;

@@ -68,19 +68,32 @@ export function buildAssetLedgerExportV1Row(input: {
   };
   sourceLinks: Array<{ sourceId: string; sourceType: string }>;
   ledgerFields: {
-    region: string | null;
-    company: string | null;
-    department: string | null;
-    systemCategory: string | null;
-    systemLevel: string | null;
-    bizOwner: string | null;
-    maintenanceDueDate: Date | null;
-    purchaseDate: Date | null;
-    bmcIp: string | null;
-    cabinetNo: string | null;
-    rackPosition: string | null;
-    managementCode: string | null;
-    fixedAssetNo: string | null;
+    regionSource: string | null;
+    regionOverride: string | null;
+    companySource: string | null;
+    companyOverride: string | null;
+    departmentSource: string | null;
+    departmentOverride: string | null;
+    systemCategorySource: string | null;
+    systemCategoryOverride: string | null;
+    systemLevelSource: string | null;
+    systemLevelOverride: string | null;
+    bizOwnerSource: string | null;
+    bizOwnerOverride: string | null;
+    maintenanceDueDateSource: Date | null;
+    maintenanceDueDateOverride: Date | null;
+    purchaseDateSource: Date | null;
+    purchaseDateOverride: Date | null;
+    bmcIpSource: string | null;
+    bmcIpOverride: string | null;
+    cabinetNoSource: string | null;
+    cabinetNoOverride: string | null;
+    rackPositionSource: string | null;
+    rackPositionOverride: string | null;
+    managementCodeSource: string | null;
+    managementCodeOverride: string | null;
+    fixedAssetNoSource: string | null;
+    fixedAssetNoOverride: string | null;
   } | null;
 }): AssetLedgerExportV1Row {
   const sortedSources = [...input.sourceLinks]
@@ -92,6 +105,12 @@ export function buildAssetLedgerExportV1Row(input: {
 
   const lf = input.ledgerFields;
   const isHost = input.asset.assetType === 'host';
+  const pickString = (overrideValue: string | null | undefined, sourceValue: string | null | undefined) =>
+    overrideValue ?? sourceValue ?? '';
+  const pickDate = (overrideValue: Date | null | undefined, sourceValue: Date | null | undefined) => {
+    const v = overrideValue ?? sourceValue;
+    return v ? formatDateOnly(v) : '';
+  };
 
   return {
     asset_uuid: input.asset.uuid,
@@ -102,20 +121,20 @@ export function buildAssetLedgerExportV1Row(input: {
     source_id: sourceIds,
     source_type: sourceTypes,
 
-    region: lf?.region ?? '',
-    company: lf?.company ?? '',
-    department: lf?.department ?? '',
-    systemCategory: lf?.systemCategory ?? '',
-    systemLevel: lf?.systemLevel ?? '',
-    bizOwner: lf?.bizOwner ?? '',
+    region: pickString(lf?.regionOverride, lf?.regionSource),
+    company: pickString(lf?.companyOverride, lf?.companySource),
+    department: pickString(lf?.departmentOverride, lf?.departmentSource),
+    systemCategory: pickString(lf?.systemCategoryOverride, lf?.systemCategorySource),
+    systemLevel: pickString(lf?.systemLevelOverride, lf?.systemLevelSource),
+    bizOwner: pickString(lf?.bizOwnerOverride, lf?.bizOwnerSource),
 
-    maintenanceDueDate: isHost && lf?.maintenanceDueDate ? formatDateOnly(lf.maintenanceDueDate) : '',
-    purchaseDate: isHost && lf?.purchaseDate ? formatDateOnly(lf.purchaseDate) : '',
-    bmcIp: isHost ? (lf?.bmcIp ?? '') : '',
-    cabinetNo: isHost ? (lf?.cabinetNo ?? '') : '',
-    rackPosition: isHost ? (lf?.rackPosition ?? '') : '',
-    managementCode: isHost ? (lf?.managementCode ?? '') : '',
-    fixedAssetNo: isHost ? (lf?.fixedAssetNo ?? '') : '',
+    maintenanceDueDate: isHost ? pickDate(lf?.maintenanceDueDateOverride, lf?.maintenanceDueDateSource) : '',
+    purchaseDate: isHost ? pickDate(lf?.purchaseDateOverride, lf?.purchaseDateSource) : '',
+    bmcIp: isHost ? pickString(lf?.bmcIpOverride, lf?.bmcIpSource) : '',
+    cabinetNo: isHost ? pickString(lf?.cabinetNoOverride, lf?.cabinetNoSource) : '',
+    rackPosition: isHost ? pickString(lf?.rackPositionOverride, lf?.rackPositionSource) : '',
+    managementCode: isHost ? pickString(lf?.managementCodeOverride, lf?.managementCodeSource) : '',
+    fixedAssetNo: isHost ? pickString(lf?.fixedAssetNoOverride, lf?.fixedAssetNoSource) : '',
   };
 }
 

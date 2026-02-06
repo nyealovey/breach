@@ -8,7 +8,7 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { buildPagination, parsePagination } from '@/lib/http/pagination';
 import { fail, okPaginated } from '@/lib/http/response';
 import { formatAssetListIpText, parsePrivateIpPrefixes } from '@/lib/ip/asset-list-ip-display';
-import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
+import { buildLedgerFieldsV1FromRow, LEDGER_FIELDS_V1_DB_SELECT } from '@/lib/ledger/ledger-fields-v1';
 
 function getCanonicalFieldValue(fields: unknown, path: string[]): unknown {
   let cursor: unknown = fields;
@@ -134,19 +134,7 @@ export async function GET(request: Request) {
         },
         ledgerFields: {
           select: {
-            region: true,
-            company: true,
-            department: true,
-            systemCategory: true,
-            systemLevel: true,
-            bizOwner: true,
-            maintenanceDueDate: true,
-            purchaseDate: true,
-            bmcIp: true,
-            cabinetNo: true,
-            rackPosition: true,
-            managementCode: true,
-            fixedAssetNo: true,
+            ...LEDGER_FIELDS_V1_DB_SELECT,
             createdAt: true,
           },
         },

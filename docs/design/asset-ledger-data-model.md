@@ -307,7 +307,7 @@
 
 - `event_id`：主键
 - `occurred_at`：事件发生时间
-- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`run.trigger_suppressed`、`duplicate_candidate.ignored`、`asset.merged`、`asset.ledger_fields_saved`、`asset.ledger_fields_bulk_set`）
+- `event_type`：事件类型（建议使用 `domain.action` 命名，如 `source.updated`、`run.triggered`、`run.trigger_suppressed`、`duplicate_candidate.ignored`、`asset.merged`、`asset.ledger_fields_saved`、`asset.ledger_fields_bulk_set`、`asset.ledger_fields_source_synced`）
 - `actor_user_id`：操作者（系统自动事件可为空）
 - `subject_type`：被影响对象类型（如 `source/run/asset/duplicate_candidate/asset_ledger_fields`）
 - `subject_id`：被影响对象标识（字符串；例如 `asset_uuid`、`source_id`）
@@ -341,23 +341,56 @@
 `asset_ledger_fields`：
 
 - `asset_uuid`：主键 + 外键 → asset
+- 每个台账字段采用双列设计（不落地 effective）：
+  - `xxx_source`：来源值（SolarWinds 同步写入）
+  - `xxx_override`：覆盖值（人工维护写入）
 - 通用（vm + host）：
-  - `region`、`company`、`department`、`system_category`、`system_level`、`biz_owner`（string，可为空）
+  - `region_source/region_override`
+  - `company_source/company_override`
+  - `department_source/department_override`
+  - `system_category_source/system_category_override`
+  - `system_level_source/system_level_override`
+  - `biz_owner_source/biz_owner_override`
 - host 专用：
-  - `maintenance_due_date`（date，可为空）
-  - `purchase_date`（date，可为空）
-  - `bmc_ip`（string，可为空；语义为 BMC/ILO 管理 IP，值需做 IPv4 校验）
-  - `cabinet_no`、`rack_position`、`management_code`、`fixed_asset_no`（string，可为空）
+  - `maintenance_due_date_source/maintenance_due_date_override`（date）
+  - `purchase_date_source/purchase_date_override`（date）
+  - `bmc_ip_source/bmc_ip_override`（string；语义为 BMC/ILO 管理 IP，值需做 IPv4 校验）
+  - `cabinet_no_source/cabinet_no_override`
+  - `rack_position_source/rack_position_override`
+  - `management_code_source/management_code_override`
+  - `fixed_asset_no_source/fixed_asset_no_override`
 - `updated_at`：更新时间
+
+服务层统一计算：
+
+- `effective = override ?? source`
+- 查询/筛选/导出统一按 `effective` 口径（SQL 可用 `COALESCE(override, source)`）
+
+SolarWinds 来源映射（本期）：
+
+- `CITY -> region`
+- `CLASSIFICATION -> system_level`
+- `DEPARTMENT -> company`
+- `RES_APP -> system_category`
+- `POC_DEP -> department`（完整路径原样保存）
+- `POC_NAME -> biz_owner`
+- 键名匹配需做标准化：`toUpperCase + 去空白`（例如 `CLASSIFICA TION` 也可命中 `CLASSIFICATION`）
 
 **关键约束 / 索引建议**
 
 - 一对一：`asset_uuid` 唯一
-- 索引（筛选/查询）：`company`、`department`、`system_category`、`system_level`
+- 索引（筛选/查询）：`company_source/company_override`、`department_source/department_override`、`system_category_source/system_category_override`、`system_level_source/system_level_override`
 
 **历史追溯**
 
-- 字段值历史不使用版本表；统一由 `audit_event` 承载（建议 eventType：`asset.ledger_fields_saved`、`asset.ledger_fields_bulk_set`）。
+- 字段值历史不使用版本表；统一由 `audit_event` 承载：
+  - `asset.ledger_fields_saved`（单资产手工覆盖）
+  - `asset.ledger_fields_bulk_set`（批量手工覆盖）
+  - `asset.ledger_fields_source_synced`（SolarWinds 来源同步）
+- 资产历史统一投影为 `ledger_fields.changed`，并在 `summary.mode` 区分：
+  - `manual_single`
+  - `manual_bulk`
+  - `source_sync`
 
 ### 2.13 asset_run_snapshot（按 Run 的资产快照/摘要，物化）
 

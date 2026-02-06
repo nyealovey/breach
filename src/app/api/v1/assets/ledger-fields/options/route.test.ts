@@ -6,8 +6,7 @@ import { prisma } from '@/lib/db/prisma';
 
 vi.mock('@/lib/auth/require-user', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/db/prisma', () => {
-  const assetLedgerFields = { findMany: vi.fn() };
-  return { prisma: { assetLedgerFields, $queryRaw: vi.fn() } };
+  return { prisma: { $queryRaw: vi.fn() } };
 });
 
 describe('GET /api/v1/assets/ledger-fields/options', () => {
@@ -29,15 +28,13 @@ describe('GET /api/v1/assets/ledger-fields/options', () => {
       session: { user: { id: 'u1' } },
     } as any);
 
-    (prisma.assetLedgerFields.findMany as any)
+    (prisma.$queryRaw as any)
       .mockResolvedValueOnce([{ region: '  cn-shanghai ' }, { region: '' }, { region: 'cn-beijing' }])
       .mockResolvedValueOnce([{ company: '  ACME  ' }, { company: '' }, { company: 'Beta' }, { company: 'ACME' }])
       .mockResolvedValueOnce([{ department: ' Dev ' }, { department: null }, { department: 'Ops' }])
       .mockResolvedValueOnce([{ systemCategory: ' 业务系统 ' }, { systemCategory: '' }, { systemCategory: '业务系统' }])
       .mockResolvedValueOnce([{ systemLevel: 'L2' }, { systemLevel: 'L1' }, { systemLevel: '  ' }])
-      .mockResolvedValueOnce([{ bizOwner: ' Alice ' }, { bizOwner: null }, { bizOwner: 'Bob' }]);
-
-    (prisma.$queryRaw as any)
+      .mockResolvedValueOnce([{ bizOwner: ' Alice ' }, { bizOwner: null }, { bizOwner: 'Bob' }])
       .mockResolvedValueOnce([{ osName: '  Ubuntu  ' }, { osName: '' }, { osName: 'Windows' }])
       .mockResolvedValueOnce([{ brand: '  Dell  ' }, { brand: '' }, { brand: 'Dell' }, { brand: null }])
       .mockResolvedValueOnce([{ model: ' R740 ' }, { model: '' }, { model: 'R640' }, { model: 'R740' }]);
@@ -47,56 +44,7 @@ describe('GET /api/v1/assets/ledger-fields/options', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Request-ID')).toBe('req_test');
 
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenCalledTimes(6);
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        distinct: ['region'],
-        where: expect.objectContaining({ region: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { region: true },
-      }),
-    );
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        distinct: ['company'],
-        where: expect.objectContaining({ company: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { company: true },
-      }),
-    );
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        distinct: ['department'],
-        where: expect.objectContaining({ department: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { department: true },
-      }),
-    );
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      4,
-      expect.objectContaining({
-        distinct: ['systemCategory'],
-        where: expect.objectContaining({ systemCategory: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { systemCategory: true },
-      }),
-    );
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      5,
-      expect.objectContaining({
-        distinct: ['systemLevel'],
-        where: expect.objectContaining({ systemLevel: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { systemLevel: true },
-      }),
-    );
-    expect(prisma.assetLedgerFields.findMany).toHaveBeenNthCalledWith(
-      6,
-      expect.objectContaining({
-        distinct: ['bizOwner'],
-        where: expect.objectContaining({ bizOwner: { not: null }, asset: { status: { not: 'merged' } } }),
-        select: { bizOwner: true },
-      }),
-    );
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(9);
 
     const body = (await res.json()) as any;
     expect(body.data).toEqual({

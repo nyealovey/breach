@@ -45,20 +45,30 @@ const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_pa
 const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const ScheduleGroupRunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
 
+const LedgerFieldValueV1Schema = z.object({
+  source: z.string().nullable(),
+  override: z.string().nullable(),
+  effective: z.string().nullable(),
+});
+
+const LedgerFieldOverridesPayloadSchema = z.object({
+  ledgerFieldOverrides: z.record(z.string(), z.union([z.string(), z.null()])),
+});
+
 const LedgerFieldsV1Schema = z.object({
-  region: z.string().nullable(),
-  company: z.string().nullable(),
-  department: z.string().nullable(),
-  systemCategory: z.string().nullable(),
-  systemLevel: z.string().nullable(),
-  bizOwner: z.string().nullable(),
-  maintenanceDueDate: z.string().nullable(),
-  purchaseDate: z.string().nullable(),
-  bmcIp: z.string().nullable(),
-  cabinetNo: z.string().nullable(),
-  rackPosition: z.string().nullable(),
-  managementCode: z.string().nullable(),
-  fixedAssetNo: z.string().nullable(),
+  region: LedgerFieldValueV1Schema,
+  company: LedgerFieldValueV1Schema,
+  department: LedgerFieldValueV1Schema,
+  systemCategory: LedgerFieldValueV1Schema,
+  systemLevel: LedgerFieldValueV1Schema,
+  bizOwner: LedgerFieldValueV1Schema,
+  maintenanceDueDate: LedgerFieldValueV1Schema,
+  purchaseDate: LedgerFieldValueV1Schema,
+  bmcIp: LedgerFieldValueV1Schema,
+  cabinetNo: LedgerFieldValueV1Schema,
+  rackPosition: LedgerFieldValueV1Schema,
+  managementCode: LedgerFieldValueV1Schema,
+  fixedAssetNo: LedgerFieldValueV1Schema,
 });
 
 const AssetOperationalStateSchema = z.object({
@@ -117,6 +127,40 @@ const SolarWindsCollectCandidateSchema = SolarWindsNodeCandidateSchema.extend({
   matchReasons: z.array(z.string()),
 });
 
+const LedgerFieldSourcesV1Schema = z.object({
+  region: z.string().nullable(),
+  company: z.string().nullable(),
+  department: z.string().nullable(),
+  systemCategory: z.string().nullable(),
+  systemLevel: z.string().nullable(),
+  bizOwner: z.string().nullable(),
+  maintenanceDueDate: z.string().nullable(),
+  purchaseDate: z.string().nullable(),
+  bmcIp: z.string().nullable(),
+  cabinetNo: z.string().nullable(),
+  rackPosition: z.string().nullable(),
+  managementCode: z.string().nullable(),
+  fixedAssetNo: z.string().nullable(),
+});
+
+const LedgerSourceSyncWarningSchema = z.object({
+  type: z.string(),
+  message: z.string(),
+  detail: z.string().optional(),
+});
+
+const LedgerFieldOptionsSchema = z.object({
+  regions: z.array(z.string()),
+  companies: z.array(z.string()),
+  departments: z.array(z.string()),
+  systemCategories: z.array(z.string()),
+  systemLevels: z.array(z.string()),
+  bizOwners: z.array(z.string()),
+  osNames: z.array(z.string()),
+  brands: z.array(z.string()),
+  models: z.array(z.string()),
+});
+
 const SolarWindsTargetedCollectResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('no_source') }),
   z.object({ status: z.literal('no_match'), hints: z.unknown().optional() }),
@@ -132,6 +176,8 @@ const SolarWindsTargetedCollectResponseSchema = z.discriminatedUnion('status', [
       ipText: z.string().nullable(),
       osText: z.string().nullable(),
     }),
+    ledgerFieldSources: LedgerFieldSourcesV1Schema.nullable(),
+    warnings: z.array(LedgerSourceSyncWarningSchema),
   }),
 ]);
 
@@ -281,6 +327,98 @@ registry.registerPath({
     401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
     404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/assets/{uuid}/ledger-fields',
+  tags: ['assets'],
+  request: {
+    params: z.object({ uuid: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: LedgerFieldOverridesPayloadSchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(
+            z.object({
+              assetUuid: z.string(),
+              updatedKeys: z.array(z.string()),
+              ledgerFields: LedgerFieldsV1Schema,
+            }),
+          ),
+        },
+      },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/assets/ledger-fields/bulk-set',
+  tags: ['assets'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            assetUuids: z.array(z.string().min(1)).min(1),
+            key: z.string().min(1),
+            value: z.union([z.string(), z.null()]),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(
+            z.object({
+              updated: z.number().int(),
+            }),
+          ),
+        },
+      },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/assets/ledger-fields/options',
+  tags: ['assets'],
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(LedgerFieldOptionsSchema),
+        },
+      },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
   },
 });
 

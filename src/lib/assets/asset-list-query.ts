@@ -1,4 +1,7 @@
 import { AssetType, Prisma, SourceType } from '@prisma/client';
+import { getLedgerFieldDbColumnV1 } from '@/lib/ledger/ledger-fields-v1';
+
+import type { LedgerFieldKey } from '@/lib/ledger/ledger-fields-v1';
 
 export type AssetListQuery = {
   assetType: AssetType | undefined;
@@ -119,6 +122,40 @@ function parseIsoDateOnly(input: string): Date | null {
   return d;
 }
 
+function buildLedgerEffectiveContainsWhere(key: LedgerFieldKey, value: string): Prisma.AssetWhereInput {
+  const overrideColumn = getLedgerFieldDbColumnV1(key, 'override');
+  const sourceColumn = getLedgerFieldDbColumnV1(key, 'source');
+
+  return {
+    OR: [
+      { ledgerFields: { is: { [overrideColumn]: { contains: value, mode: 'insensitive' } } } as any },
+      {
+        AND: [
+          { ledgerFields: { is: { [overrideColumn]: null } } as any },
+          { ledgerFields: { is: { [sourceColumn]: { contains: value, mode: 'insensitive' } } } as any },
+        ],
+      },
+    ],
+  };
+}
+
+function buildLedgerEffectiveDateEqualsWhere(key: LedgerFieldKey, value: Date): Prisma.AssetWhereInput {
+  const overrideColumn = getLedgerFieldDbColumnV1(key, 'override');
+  const sourceColumn = getLedgerFieldDbColumnV1(key, 'source');
+
+  return {
+    OR: [
+      { ledgerFields: { is: { [overrideColumn]: value } } as any },
+      {
+        AND: [
+          { ledgerFields: { is: { [overrideColumn]: null } } as any },
+          { ledgerFields: { is: { [sourceColumn]: value } } as any },
+        ],
+      },
+    ],
+  };
+}
+
 export function buildAssetListWhere(query: {
   assetType?: AssetType;
   excludeAssetType?: AssetType;
@@ -190,18 +227,12 @@ export function buildAssetListWhere(query: {
   }
 
   // Ledger-fields-v1 filters (case-insensitive substring).
-  if (query.region) and.push({ ledgerFields: { is: { region: { contains: query.region, mode: 'insensitive' } } } });
-  if (query.company) and.push({ ledgerFields: { is: { company: { contains: query.company, mode: 'insensitive' } } } });
-  if (query.department)
-    and.push({ ledgerFields: { is: { department: { contains: query.department, mode: 'insensitive' } } } });
-  if (query.systemCategory)
-    and.push({
-      ledgerFields: { is: { systemCategory: { contains: query.systemCategory, mode: 'insensitive' } } },
-    });
-  if (query.systemLevel)
-    and.push({ ledgerFields: { is: { systemLevel: { contains: query.systemLevel, mode: 'insensitive' } } } });
-  if (query.bizOwner)
-    and.push({ ledgerFields: { is: { bizOwner: { contains: query.bizOwner, mode: 'insensitive' } } } });
+  if (query.region) and.push(buildLedgerEffectiveContainsWhere('region', query.region));
+  if (query.company) and.push(buildLedgerEffectiveContainsWhere('company', query.company));
+  if (query.department) and.push(buildLedgerEffectiveContainsWhere('department', query.department));
+  if (query.systemCategory) and.push(buildLedgerEffectiveContainsWhere('systemCategory', query.systemCategory));
+  if (query.systemLevel) and.push(buildLedgerEffectiveContainsWhere('systemLevel', query.systemLevel));
+  if (query.bizOwner) and.push(buildLedgerEffectiveContainsWhere('bizOwner', query.bizOwner));
 
   if (query.os) {
     and.push({
@@ -280,20 +311,20 @@ export function buildAssetListWhere(query: {
         { osOverrideText: { contains: token, mode: 'insensitive' } },
         { sourceLinks: { some: { externalId: { contains: token, mode: 'insensitive' } } } },
         // Ledger-fields-v1: must always be searchable (case-insensitive substring).
-        { ledgerFields: { is: { region: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { company: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { department: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { systemCategory: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { systemLevel: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { bizOwner: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { bmcIp: { contains: token, mode: 'insensitive' } } } },
+        buildLedgerEffectiveContainsWhere('region', token),
+        buildLedgerEffectiveContainsWhere('company', token),
+        buildLedgerEffectiveContainsWhere('department', token),
+        buildLedgerEffectiveContainsWhere('systemCategory', token),
+        buildLedgerEffectiveContainsWhere('systemLevel', token),
+        buildLedgerEffectiveContainsWhere('bizOwner', token),
+        buildLedgerEffectiveContainsWhere('bmcIp', token),
         // Date-only ledger fields are searchable via exact `YYYY-MM-DD` token.
-        ...(tokenDate ? [{ ledgerFields: { is: { maintenanceDueDate: tokenDate } } }] : []),
-        ...(tokenDate ? [{ ledgerFields: { is: { purchaseDate: tokenDate } } }] : []),
-        { ledgerFields: { is: { cabinetNo: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { rackPosition: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { managementCode: { contains: token, mode: 'insensitive' } } } },
-        { ledgerFields: { is: { fixedAssetNo: { contains: token, mode: 'insensitive' } } } },
+        ...(tokenDate ? [buildLedgerEffectiveDateEqualsWhere('maintenanceDueDate', tokenDate)] : []),
+        ...(tokenDate ? [buildLedgerEffectiveDateEqualsWhere('purchaseDate', tokenDate)] : []),
+        buildLedgerEffectiveContainsWhere('cabinetNo', token),
+        buildLedgerEffectiveContainsWhere('rackPosition', token),
+        buildLedgerEffectiveContainsWhere('managementCode', token),
+        buildLedgerEffectiveContainsWhere('fixedAssetNo', token),
 
         // 宿主机名：VM --runs_on--> Host 的 displayName
         {

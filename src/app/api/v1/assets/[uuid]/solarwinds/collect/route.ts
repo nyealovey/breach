@@ -6,8 +6,18 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 import { compressRaw } from '@/lib/ingest/raw';
+import {
+  buildLedgerFieldsV1FromRow,
+  getLedgerFieldDbColumnV1,
+  getLedgerFieldMetaV1,
+  LEDGER_FIELDS_V1_DB_SELECT,
+  normalizeLedgerFieldValueV1,
+  summarizeLedgerValue,
+} from '@/lib/ledger/ledger-fields-v1';
 import { createSwisClient } from '@/lib/solarwinds/swis-client';
 import { Prisma } from '@prisma/client';
+
+import type { LedgerFieldKey } from '@/lib/ledger/ledger-fields-v1';
 
 function cleanString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -91,6 +101,69 @@ type NodeCandidate = {
   unmanaged: boolean | null;
   lastSyncIso: string | null;
 };
+
+const SOLARWINDS_LEDGER_SOURCE_MAPPING: ReadonlyArray<{ sourceKey: string; ledgerKey: LedgerFieldKey }> = [
+  { sourceKey: 'CITY', ledgerKey: 'region' },
+  { sourceKey: 'CLASSIFICATION', ledgerKey: 'systemLevel' },
+  { sourceKey: 'DEPARTMENT', ledgerKey: 'company' },
+  { sourceKey: 'RES_APP', ledgerKey: 'systemCategory' },
+  { sourceKey: 'POC_DEP', ledgerKey: 'department' },
+  { sourceKey: 'POC_NAME', ledgerKey: 'bizOwner' },
+] as const;
+
+function normalizeSolarWindsCustomPropertyKey(key: string): string {
+  return key.toUpperCase().replace(/\s+/g, '');
+}
+
+function extractLedgerSourceFromCustomProperties(raw: Record<string, unknown>): Record<LedgerFieldKey, string | null> {
+  const values: Record<LedgerFieldKey, string | null> = {
+    region: null,
+    company: null,
+    department: null,
+    systemCategory: null,
+    systemLevel: null,
+    bizOwner: null,
+    maintenanceDueDate: null,
+    purchaseDate: null,
+    bmcIp: null,
+    cabinetNo: null,
+    rackPosition: null,
+    managementCode: null,
+    fixedAssetNo: null,
+  };
+
+  const normalizedMap = new Map<string, unknown>();
+  for (const [key, value] of Object.entries(raw)) {
+    normalizedMap.set(normalizeSolarWindsCustomPropertyKey(key), value);
+  }
+
+  for (const mapping of SOLARWINDS_LEDGER_SOURCE_MAPPING) {
+    const rawValue = normalizedMap.get(normalizeSolarWindsCustomPropertyKey(mapping.sourceKey));
+    values[mapping.ledgerKey] = cleanString(rawValue);
+  }
+
+  return values;
+}
+
+function toLedgerSourceValueMap(
+  fields: ReturnType<typeof buildLedgerFieldsV1FromRow>,
+): Record<LedgerFieldKey, string | null> {
+  return {
+    region: fields.region.source,
+    company: fields.company.source,
+    department: fields.department.source,
+    systemCategory: fields.systemCategory.source,
+    systemLevel: fields.systemLevel.source,
+    bizOwner: fields.bizOwner.source,
+    maintenanceDueDate: fields.maintenanceDueDate.source,
+    purchaseDate: fields.purchaseDate.source,
+    bmcIp: fields.bmcIp.source,
+    cabinetNo: fields.cabinetNo.source,
+    rackPosition: fields.rackPosition.source,
+    managementCode: fields.managementCode.source,
+    fixedAssetNo: fields.fixedAssetNo.source,
+  };
+}
 
 function toNodeCandidate(row: Record<string, unknown>): NodeCandidate | null {
   const nodeIdRaw = row.NodeID ?? row.nodeId ?? row.node_id;
@@ -362,6 +435,14 @@ export async function POST(request: Request, context: { params: Promise<{ uuid: 
     return raw ? toNodeCandidate(raw) : null;
   };
 
+  const queryNodeCustomProperties = async (nodeId: string): Promise<Record<string, unknown> | null> => {
+    const swql = 'SELECT TOP 1 * FROM Orion.NodesCustomProperties WHERE NodeID = @nodeId';
+    const page = await client.query(swql, { nodeId: Number.isFinite(Number(nodeId)) ? Number(nodeId) : nodeId });
+    const raw = page.results.length > 0 ? page.results[0]! : null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    return raw;
+  };
+
   let chosen: NodeCandidate | null = null;
 
   try {
@@ -466,6 +547,19 @@ export async function POST(request: Request, context: { params: Promise<{ uuid: 
       { status: 'no_match' as const, hints: { reason: 'unmanaged_filtered' as const, nodeId: chosen.nodeId } },
       { requestId: auth.requestId },
     );
+  }
+
+  let ledgerFieldSources: Record<LedgerFieldKey, string | null> | null = null;
+  const ledgerSourceSyncWarnings: Array<{ type: string; message: string; detail?: string }> = [];
+  try {
+    const cpRow = await queryNodeCustomProperties(chosen.nodeId);
+    ledgerFieldSources = extractLedgerSourceFromCustomProperties(cpRow ?? {});
+  } catch (err) {
+    ledgerSourceSyncWarnings.push({
+      type: 'ledger.source_sync_skipped',
+      message: 'Failed to query SolarWinds custom properties',
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 
   const now = new Date();
@@ -612,7 +706,119 @@ export async function POST(request: Request, context: { params: Promise<{ uuid: 
       },
     });
 
-    return { runId: run.id, linkId: link.id };
+    let syncedLedgerFieldSources: Record<LedgerFieldKey, string | null> | null = null;
+    const sourceSyncStatus: 'synced' | 'skipped' = ledgerFieldSources ? 'synced' : 'skipped';
+    const sourceSyncReason: string | null = ledgerFieldSources ? null : 'custom_properties_query_failed';
+    const sourceSyncUpdatedKeys: LedgerFieldKey[] = [];
+    const sourceSyncChanges: Array<{
+      key: LedgerFieldKey;
+      layer: 'source';
+      beforeSource: string | null;
+      afterSource: string | null;
+      beforeEffective: string | null;
+      afterEffective: string | null;
+    }> = [];
+
+    if (ledgerFieldSources) {
+      const existingLedger = await tx.assetLedgerFields.findUnique({
+        where: { assetUuid: asset.uuid },
+        select: LEDGER_FIELDS_V1_DB_SELECT,
+      });
+      const beforeFields = buildLedgerFieldsV1FromRow(existingLedger);
+      const sourceUpdateData: Prisma.AssetLedgerFieldsUncheckedUpdateInput = {};
+      const sourceCreateData: Prisma.AssetLedgerFieldsUncheckedCreateInput = { assetUuid: asset.uuid };
+
+      for (const [key, rawValue] of Object.entries(ledgerFieldSources) as Array<[LedgerFieldKey, string | null]>) {
+        const meta = getLedgerFieldMetaV1(key);
+        if (!meta) continue;
+
+        try {
+          const normalizedSource = normalizeLedgerFieldValueV1(meta, rawValue);
+          const sourceColumn = getLedgerFieldDbColumnV1(meta.key, 'source');
+          sourceUpdateData[sourceColumn] = normalizedSource.dbValue as any;
+          sourceCreateData[sourceColumn] = normalizedSource.dbValue as any;
+
+          const before = beforeFields[meta.key];
+          const afterSource = normalizedSource.displayValue;
+          const afterEffective = before.override ?? afterSource;
+          if (before.source !== afterSource) {
+            sourceSyncUpdatedKeys.push(meta.key);
+            sourceSyncChanges.push({
+              key: meta.key,
+              layer: 'source',
+              beforeSource: summarizeLedgerValue(before.source),
+              afterSource: summarizeLedgerValue(afterSource),
+              beforeEffective: summarizeLedgerValue(before.effective),
+              afterEffective: summarizeLedgerValue(afterEffective),
+            });
+          }
+        } catch (err) {
+          ledgerSourceSyncWarnings.push({
+            type: 'ledger.source_sync_value_invalid',
+            message: `Invalid SolarWinds value for ${meta.key}`,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const savedLedger = await tx.assetLedgerFields.upsert({
+        where: { assetUuid: asset.uuid },
+        create: sourceCreateData,
+        update: sourceUpdateData,
+        select: LEDGER_FIELDS_V1_DB_SELECT,
+      });
+      syncedLedgerFieldSources = toLedgerSourceValueMap(buildLedgerFieldsV1FromRow(savedLedger));
+    }
+
+    const sourceSyncAudit = await tx.auditEvent.create({
+      data: {
+        eventType: 'asset.ledger_fields_source_synced',
+        actorUserId: auth.session.user.id,
+        payload: {
+          requestId: auth.requestId,
+          assetUuid: asset.uuid,
+          sourceId: source.id,
+          runId: run.id,
+          nodeId: chosen.nodeId,
+          status: sourceSyncStatus,
+          reason: sourceSyncReason,
+          updatedKeys: sourceSyncUpdatedKeys,
+          changes: sourceSyncChanges,
+          warnings: ledgerSourceSyncWarnings,
+        },
+      },
+      select: { id: true },
+    });
+
+    await tx.assetHistoryEvent.create({
+      data: {
+        assetUuid: asset.uuid,
+        eventType: 'ledger_fields.changed',
+        occurredAt: now,
+        title: '台账字段来源同步',
+        summary: {
+          actor: { userId: auth.session.user.id, username: auth.session.user.username },
+          requestId: auth.requestId,
+          mode: 'source_sync',
+          status: sourceSyncStatus,
+          reason: sourceSyncReason,
+          sourceId: source.id,
+          runId: run.id,
+          nodeId: chosen.nodeId,
+          updatedKeys: sourceSyncUpdatedKeys,
+          changes: sourceSyncChanges,
+          warnings: ledgerSourceSyncWarnings,
+        } as Prisma.InputJsonValue,
+        refs: { auditEventId: sourceSyncAudit.id, runId: run.id, sourceId: source.id } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      runId: run.id,
+      linkId: link.id,
+      ledgerFieldSources: syncedLedgerFieldSources,
+      sourceSyncWarnings: ledgerSourceSyncWarnings,
+    };
   });
 
   return ok(
@@ -627,6 +833,8 @@ export async function POST(request: Request, context: { params: Promise<{ uuid: 
         ipText: ip,
         osText: chosen.machineType ?? null,
       },
+      ledgerFieldSources: result.ledgerFieldSources,
+      warnings: result.sourceSyncWarnings,
     },
     { requestId: auth.requestId },
   );

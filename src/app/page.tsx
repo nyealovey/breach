@@ -8,17 +8,37 @@ import { prisma } from '@/lib/db/prisma';
 
 type LedgerTopItem = { value: string; count: number };
 
+const TOP_LEDGER_FIELD_COLUMNS = {
+  region: { source: 'regionSource', override: 'regionOverride' },
+  company: { source: 'companySource', override: 'companyOverride' },
+  department: { source: 'departmentSource', override: 'departmentOverride' },
+  systemCategory: { source: 'systemCategorySource', override: 'systemCategoryOverride' },
+  systemLevel: { source: 'systemLevelSource', override: 'systemLevelOverride' },
+  bizOwner: { source: 'bizOwnerSource', override: 'bizOwnerOverride' },
+} as const;
+
 async function topLedgerField(
   field: 'region' | 'company' | 'department' | 'systemCategory' | 'systemLevel' | 'bizOwner',
 ) {
-  const rows = await prisma.assetLedgerFields.groupBy({
-    by: [field],
-    where: { asset: { status: { not: 'merged' } }, [field]: { not: null } },
-    _count: { _all: true },
-  });
+  const columns = TOP_LEDGER_FIELD_COLUMNS[field];
+  const effectiveExpr = `COALESCE(lf."${columns.override}", lf."${columns.source}")`;
+  const sql = `
+    SELECT t.value, COUNT(*)::bigint AS count
+    FROM (
+      SELECT ${effectiveExpr} AS value
+      FROM "AssetLedgerFields" lf
+      JOIN "Asset" a ON a.uuid = lf."assetUuid"
+      WHERE a.status <> 'merged'
+    ) t
+    WHERE t.value IS NOT NULL AND btrim(t.value) <> ''
+    GROUP BY t.value
+    ORDER BY COUNT(*) DESC, t.value ASC
+    LIMIT 10
+  `;
+  const rows = await prisma.$queryRawUnsafe<Array<{ value: string; count: bigint }>>(sql);
 
   return rows
-    .map((r) => ({ value: String((r as any)[field] ?? '').trim(), count: r._count._all }))
+    .map((r) => ({ value: String(r.value ?? '').trim(), count: Number(r.count) }))
     .filter((r): r is LedgerTopItem => r.value.length > 0)
     .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.value.localeCompare(b.value, 'zh-CN')))
     .slice(0, 10);

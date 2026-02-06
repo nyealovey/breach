@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 import {
+  getLedgerFieldDbColumnV1,
   getLedgerFieldMetaV1,
   isLedgerFieldAllowedForAssetType,
   normalizeLedgerFieldValueV1,
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
 
   try {
     const normalized = normalizeLedgerFieldValueV1(meta, body.value);
+    const overrideColumn = getLedgerFieldDbColumnV1(meta.key, 'override');
 
     const assets = await prisma.asset.findMany({
       where: { uuid: { in: assetUuids } },
@@ -122,8 +124,8 @@ export async function POST(request: Request) {
         assetUuids.map((assetUuid) =>
           tx.assetLedgerFields.upsert({
             where: { assetUuid },
-            create: { assetUuid, [meta.key]: normalized.dbValue } as any,
-            update: { [meta.key]: normalized.dbValue } as any,
+            create: { assetUuid, [overrideColumn]: normalized.dbValue } as any,
+            update: { [overrideColumn]: normalized.dbValue } as any,
             select: { assetUuid: true },
           }),
         ),
@@ -137,6 +139,7 @@ export async function POST(request: Request) {
             requestId: auth.requestId,
             assetUuids,
             key: meta.key,
+            layer: 'override',
             valueSummary: summarizeLedgerValue(normalized.displayValue),
           },
         },
@@ -152,8 +155,9 @@ export async function POST(request: Request) {
           summary: {
             actor: { userId: auth.session.user.id, username: auth.session.user.username },
             requestId: auth.requestId,
-            mode: 'bulk_set',
+            mode: 'manual_bulk',
             key: meta.key,
+            layer: 'override',
             valueSummary: summarizeLedgerValue(normalized.displayValue),
           } as Prisma.InputJsonValue,
           refs: { auditEventId: audit.id } as Prisma.InputJsonValue,

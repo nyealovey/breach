@@ -82,19 +82,32 @@ async function buildAssetLedgerExportCsvV1(args: {
       displayName: string | null;
       lastSeenAt: Date | null;
       ledgerFields: {
-        region: string | null;
-        company: string | null;
-        department: string | null;
-        systemCategory: string | null;
-        systemLevel: string | null;
-        bizOwner: string | null;
-        maintenanceDueDate: Date | null;
-        purchaseDate: Date | null;
-        bmcIp: string | null;
-        cabinetNo: string | null;
-        rackPosition: string | null;
-        managementCode: string | null;
-        fixedAssetNo: string | null;
+        regionSource: string | null;
+        regionOverride: string | null;
+        companySource: string | null;
+        companyOverride: string | null;
+        departmentSource: string | null;
+        departmentOverride: string | null;
+        systemCategorySource: string | null;
+        systemCategoryOverride: string | null;
+        systemLevelSource: string | null;
+        systemLevelOverride: string | null;
+        bizOwnerSource: string | null;
+        bizOwnerOverride: string | null;
+        maintenanceDueDateSource: Date | null;
+        maintenanceDueDateOverride: Date | null;
+        purchaseDateSource: Date | null;
+        purchaseDateOverride: Date | null;
+        bmcIpSource: string | null;
+        bmcIpOverride: string | null;
+        cabinetNoSource: string | null;
+        cabinetNoOverride: string | null;
+        rackPositionSource: string | null;
+        rackPositionOverride: string | null;
+        managementCodeSource: string | null;
+        managementCodeOverride: string | null;
+        fixedAssetNoSource: string | null;
+        fixedAssetNoOverride: string | null;
       } | null;
       sourceLinks: Array<{ sourceId: string; source: { sourceType: string } }>;
     }>;
@@ -116,19 +129,32 @@ async function buildAssetLedgerExportCsvV1(args: {
           lastSeenAt: true,
           ledgerFields: {
             select: {
-              region: true,
-              company: true,
-              department: true,
-              systemCategory: true,
-              systemLevel: true,
-              bizOwner: true,
-              maintenanceDueDate: true,
-              purchaseDate: true,
-              bmcIp: true,
-              cabinetNo: true,
-              rackPosition: true,
-              managementCode: true,
-              fixedAssetNo: true,
+              regionSource: true,
+              regionOverride: true,
+              companySource: true,
+              companyOverride: true,
+              departmentSource: true,
+              departmentOverride: true,
+              systemCategorySource: true,
+              systemCategoryOverride: true,
+              systemLevelSource: true,
+              systemLevelOverride: true,
+              bizOwnerSource: true,
+              bizOwnerOverride: true,
+              maintenanceDueDateSource: true,
+              maintenanceDueDateOverride: true,
+              purchaseDateSource: true,
+              purchaseDateOverride: true,
+              bmcIpSource: true,
+              bmcIpOverride: true,
+              cabinetNoSource: true,
+              cabinetNoOverride: true,
+              rackPositionSource: true,
+              rackPositionOverride: true,
+              managementCodeSource: true,
+              managementCodeOverride: true,
+              fixedAssetNoSource: true,
+              fixedAssetNoOverride: true,
             },
           },
           sourceLinks: {

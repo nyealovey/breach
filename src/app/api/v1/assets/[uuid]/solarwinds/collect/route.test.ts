@@ -15,20 +15,34 @@ vi.mock('@/lib/db/prisma', () => {
   const asset = { findUnique: vi.fn() };
   const source = { findMany: vi.fn() };
   const assetSignalLink = { findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() };
+  const assetLedgerFields = { findUnique: vi.fn(), upsert: vi.fn() };
   const run = { create: vi.fn() };
   const signalRecord = { create: vi.fn() };
   const assetOperationalState = { upsert: vi.fn() };
+  const auditEvent = { create: vi.fn() };
+  const assetHistoryEvent = { create: vi.fn() };
 
-  const tx = { run, assetSignalLink, signalRecord, assetOperationalState };
+  const tx = {
+    run,
+    assetSignalLink,
+    signalRecord,
+    assetOperationalState,
+    assetLedgerFields,
+    auditEvent,
+    assetHistoryEvent,
+  };
 
   return {
     prisma: {
       asset,
       source,
       assetSignalLink,
+      assetLedgerFields,
       run,
       signalRecord,
       assetOperationalState,
+      auditEvent,
+      assetHistoryEvent,
       $transaction: vi.fn(async (fn: unknown) => {
         if (typeof fn !== 'function') throw new Error('expected $transaction callback');
         return (fn as any)(tx);
@@ -41,7 +55,7 @@ function mockAdminAuth() {
   (requireAdmin as any).mockResolvedValue({
     ok: true,
     requestId: 'req_test',
-    session: { user: { id: 'u1' } },
+    session: { user: { id: 'u1', username: 'tester' } },
   } as any);
 }
 
@@ -63,8 +77,44 @@ function mockSolarWindsSource() {
   (decryptJson as any).mockReturnValue({ username: 'user@example.com', password: 'password' });
 }
 
+function buildLedgerRow(partial: Partial<Record<`${string}Source` | `${string}Override`, string | Date | null>> = {}) {
+  return {
+    regionSource: null,
+    regionOverride: null,
+    companySource: null,
+    companyOverride: null,
+    departmentSource: null,
+    departmentOverride: null,
+    systemCategorySource: null,
+    systemCategoryOverride: null,
+    systemLevelSource: null,
+    systemLevelOverride: null,
+    bizOwnerSource: null,
+    bizOwnerOverride: null,
+    maintenanceDueDateSource: null,
+    maintenanceDueDateOverride: null,
+    purchaseDateSource: null,
+    purchaseDateOverride: null,
+    bmcIpSource: null,
+    bmcIpOverride: null,
+    cabinetNoSource: null,
+    cabinetNoOverride: null,
+    rackPositionSource: null,
+    rackPositionOverride: null,
+    managementCodeSource: null,
+    managementCodeOverride: null,
+    fixedAssetNoSource: null,
+    fixedAssetNoOverride: null,
+    ...partial,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  (prisma.auditEvent.create as any).mockResolvedValue({ id: 'audit_1' });
+  (prisma.assetHistoryEvent.create as any).mockResolvedValue({ id: 'history_1' });
+  (prisma.assetLedgerFields.findUnique as any).mockResolvedValue(null);
+  (prisma.assetLedgerFields.upsert as any).mockResolvedValue(buildLedgerRow());
 });
 
 describe('POST /api/v1/assets/:uuid/solarwinds/collect', () => {
@@ -210,23 +260,140 @@ describe('POST /api/v1/assets/:uuid/solarwinds/collect', () => {
       collectedIpText: '192.0.2.10',
     } as any);
 
-    const query = vi.fn().mockResolvedValue({
-      results: [
-        {
-          NodeID: 1001,
-          Caption: 'host01.example.com',
-          SysName: 'host01.example.com',
-          DNS: 'host01.example.com',
-          IPAddress: '192.0.2.10',
-          MachineType: 'Linux',
-          Status: 1,
-          StatusDescription: 'Up',
-          UnManaged: false,
-          LastSync: '2026-02-06T00:00:00.000Z',
-        },
-      ],
-      raw: {},
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            NodeID: 1001,
+            Caption: 'host01.example.com',
+            SysName: 'host01.example.com',
+            DNS: 'host01.example.com',
+            IPAddress: '192.0.2.10',
+            MachineType: 'Linux',
+            Status: 1,
+            StatusDescription: 'Up',
+            UnManaged: false,
+            LastSync: '2026-02-06T00:00:00.000Z',
+          },
+        ],
+        raw: {},
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            CITY: '温州',
+            'CLASSIFICA TION': '一般系统',
+            DEPARTMENT: '浙江正泰电器股份有限公司',
+            RES_APP: '大数据（测试）',
+            POC_DEP: '浙江正泰电器股份有限公司/IT共享资源中心（虚拟）/基础架构/',
+            POC_NAME: '王逸',
+          },
+        ],
+        raw: {},
+      });
+    (createSwisClient as any).mockReturnValue({ query });
+
+    (prisma.assetSignalLink.findUnique as any).mockResolvedValue(null);
+    (prisma.run.create as any).mockResolvedValue({ id: 'run_1' });
+    (prisma.assetSignalLink.upsert as any).mockResolvedValue({ id: 'link_1' });
+    (prisma.signalRecord.create as any).mockResolvedValue({ id: 'sig_1' });
+    (prisma.assetOperationalState.upsert as any).mockResolvedValue({
+      assetUuid: '550e8400-e29b-41d4-a716-446655440000',
     });
+    (prisma.assetLedgerFields.upsert as any).mockResolvedValue(
+      buildLedgerRow({
+        regionSource: '温州',
+        systemLevelSource: '一般系统',
+        companySource: '浙江正泰电器股份有限公司',
+        systemCategorySource: '大数据（测试）',
+        departmentSource: '浙江正泰电器股份有限公司/IT共享资源中心（虚拟）/基础架构/',
+        bizOwnerSource: '王逸',
+      }),
+    );
+
+    (compressRaw as any).mockResolvedValue({
+      bytes: new Uint8Array([1, 2, 3]),
+      compression: 'zstd',
+      sizeBytes: 3,
+      hash: 'hash_test',
+      mimeType: 'application/json',
+      inlineExcerpt: '{"NodeID":1001}',
+    });
+
+    const req = new Request('http://localhost/api/v1/assets/550e8400-e29b-41d4-a716-446655440000/solarwinds/collect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: '1001' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ uuid: '550e8400-e29b-41d4-a716-446655440000' }) });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.status).toBe('ok');
+    expect(body.data.runId).toBe('run_1');
+    expect(body.data.linkId).toBe('link_1');
+    expect(body.data.fields).toEqual({
+      machineName: 'host01.example.com',
+      ipText: '192.0.2.10',
+      osText: 'Linux',
+    });
+    expect(body.data.ledgerFieldSources).toMatchObject({
+      region: '温州',
+      systemLevel: '一般系统',
+      company: '浙江正泰电器股份有限公司',
+      systemCategory: '大数据（测试）',
+      department: '浙江正泰电器股份有限公司/IT共享资源中心（虚拟）/基础架构/',
+      bizOwner: '王逸',
+    });
+    expect(body.data.warnings).toEqual([]);
+    expect(prisma.assetLedgerFields.upsert).toHaveBeenCalledTimes(1);
+    const upsertPayload = (prisma.assetLedgerFields.upsert as any).mock.calls[0][0];
+    expect(upsertPayload.update).toMatchObject({
+      regionSource: '温州',
+      systemLevelSource: '一般系统',
+      companySource: '浙江正泰电器股份有限公司',
+      systemCategorySource: '大数据（测试）',
+      departmentSource: '浙江正泰电器股份有限公司/IT共享资源中心（虚拟）/基础架构/',
+      bizOwnerSource: '王逸',
+    });
+  });
+
+  it('skips source sync with warning when custom properties query fails', async () => {
+    mockAdminAuth();
+    mockSolarWindsSource();
+
+    (prisma.asset.findUnique as any).mockResolvedValue({
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'in_service',
+      assetType: 'host',
+      machineNameOverride: null,
+      ipOverrideText: null,
+      collectedHostname: 'host01.example.com',
+      collectedVmCaption: null,
+      collectedIpText: '192.0.2.10',
+    } as any);
+
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            NodeID: 1001,
+            Caption: 'host01.example.com',
+            SysName: 'host01.example.com',
+            DNS: 'host01.example.com',
+            IPAddress: '192.0.2.10',
+            MachineType: 'Linux',
+            Status: 1,
+            StatusDescription: 'Up',
+            UnManaged: false,
+            LastSync: '2026-02-06T00:00:00.000Z',
+          },
+        ],
+        raw: {},
+      })
+      .mockRejectedValueOnce(new Error('custom props failed'));
     (createSwisClient as any).mockReturnValue({ query });
 
     (prisma.assetSignalLink.findUnique as any).mockResolvedValue(null);
@@ -256,12 +423,100 @@ describe('POST /api/v1/assets/:uuid/solarwinds/collect', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.status).toBe('ok');
-    expect(body.data.runId).toBe('run_1');
-    expect(body.data.linkId).toBe('link_1');
-    expect(body.data.fields).toEqual({
-      machineName: 'host01.example.com',
-      ipText: '192.0.2.10',
-      osText: 'Linux',
+    expect(body.data.ledgerFieldSources).toBeNull();
+    expect(body.data.warnings).toEqual([
+      expect.objectContaining({
+        type: 'ledger.source_sync_skipped',
+      }),
+    ]);
+    expect(prisma.assetLedgerFields.upsert).not.toHaveBeenCalled();
+  });
+
+  it('clears source field when mapped custom property is empty', async () => {
+    mockAdminAuth();
+    mockSolarWindsSource();
+
+    (prisma.asset.findUnique as any).mockResolvedValue({
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'in_service',
+      assetType: 'host',
+      machineNameOverride: null,
+      ipOverrideText: null,
+      collectedHostname: 'host01.example.com',
+      collectedVmCaption: null,
+      collectedIpText: '192.0.2.10',
+    } as any);
+
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            NodeID: 1001,
+            Caption: 'host01.example.com',
+            SysName: 'host01.example.com',
+            DNS: 'host01.example.com',
+            IPAddress: '192.0.2.10',
+            MachineType: 'Linux',
+            Status: 1,
+            StatusDescription: 'Up',
+            UnManaged: false,
+            LastSync: '2026-02-06T00:00:00.000Z',
+          },
+        ],
+        raw: {},
+      })
+      .mockResolvedValueOnce({
+        results: [{ CITY: '   ', DEPARTMENT: '浙江正泰电器股份有限公司' }],
+        raw: {},
+      });
+    (createSwisClient as any).mockReturnValue({ query });
+
+    (prisma.assetSignalLink.findUnique as any).mockResolvedValue(null);
+    (prisma.run.create as any).mockResolvedValue({ id: 'run_1' });
+    (prisma.assetSignalLink.upsert as any).mockResolvedValue({ id: 'link_1' });
+    (prisma.signalRecord.create as any).mockResolvedValue({ id: 'sig_1' });
+    (prisma.assetOperationalState.upsert as any).mockResolvedValue({
+      assetUuid: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    (prisma.assetLedgerFields.findUnique as any).mockResolvedValue(
+      buildLedgerRow({
+        regionSource: '旧地区',
+      }),
+    );
+    (prisma.assetLedgerFields.upsert as any).mockResolvedValue(
+      buildLedgerRow({
+        regionSource: null,
+        companySource: '浙江正泰电器股份有限公司',
+      }),
+    );
+
+    (compressRaw as any).mockResolvedValue({
+      bytes: new Uint8Array([1, 2, 3]),
+      compression: 'zstd',
+      sizeBytes: 3,
+      hash: 'hash_test',
+      mimeType: 'application/json',
+      inlineExcerpt: '{"NodeID":1001}',
+    });
+
+    const req = new Request('http://localhost/api/v1/assets/550e8400-e29b-41d4-a716-446655440000/solarwinds/collect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: '1001' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ uuid: '550e8400-e29b-41d4-a716-446655440000' }) });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.status).toBe('ok');
+    expect(body.data.ledgerFieldSources.region).toBeNull();
+    expect(body.data.ledgerFieldSources.company).toBe('浙江正泰电器股份有限公司');
+
+    const upsertPayload = (prisma.assetLedgerFields.upsert as any).mock.calls[0][0];
+    expect(upsertPayload.update).toMatchObject({
+      regionSource: null,
+      companySource: '浙江正泰电器股份有限公司',
     });
   });
 

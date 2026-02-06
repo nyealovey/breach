@@ -1346,8 +1346,8 @@ export default function AssetsPage() {
                 <Button
                   size="icon"
                   variant="outline"
-                  title="批量设置台账字段"
-                  aria-label="批量设置台账字段"
+                  title="批量设置台账覆盖值"
+                  aria-label="批量设置台账覆盖值"
                   disabled={selectedAssetUuids.length < 1}
                   onClick={() => {
                     setBulkKey('');
@@ -1653,9 +1653,21 @@ export default function AssetsPage() {
 
                         if (colId.startsWith('ledger.')) {
                           const key = colId.slice('ledger.'.length) as LedgerFieldKey;
+                          const sourceValue = item.ledgerFields?.[key]?.source ?? null;
+                          const overrideValue = item.ledgerFields?.[key]?.override ?? null;
+                          const effectiveValue = item.ledgerFields?.[key]?.effective ?? null;
+                          const tooltip = [
+                            `来源值：${sourceValue ?? '-'}`,
+                            `覆盖值：${overrideValue ?? '-'}`,
+                            `生效值：${effectiveValue ?? '-'}`,
+                          ].join('\n');
                           return (
-                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
-                              {item.ledgerFields?.[key] ?? '-'}
+                            <TableCell
+                              key={colId}
+                              className="max-w-[220px] whitespace-normal break-words text-sm"
+                              title={tooltip}
+                            >
+                              {effectiveValue ?? '-'}
                             </TableCell>
                           );
                         }
@@ -1859,7 +1871,7 @@ export default function AssetsPage() {
           >
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>批量设置台账字段</DialogTitle>
+                <DialogTitle>批量设置台账覆盖值</DialogTitle>
                 <DialogDescription>仅支持对“当前页勾选”的资产批量设置 1 个字段（N≤100）。</DialogDescription>
               </DialogHeader>
 
@@ -1946,7 +1958,22 @@ export default function AssetsPage() {
                       setItems((prev) =>
                         prev.map((it) => {
                           if (!selectedAssetUuidSet.has(it.assetUuid)) return it;
-                          return { ...it, ledgerFields: { ...it.ledgerFields, [bulkKey]: value } as LedgerFieldsV1 };
+                          const prevField = it.ledgerFields?.[bulkKey] ?? {
+                            source: null,
+                            override: null,
+                            effective: null,
+                          };
+                          return {
+                            ...it,
+                            ledgerFields: {
+                              ...it.ledgerFields,
+                              [bulkKey]: {
+                                source: prevField.source,
+                                override: value,
+                                effective: value ?? prevField.source,
+                              },
+                            } as LedgerFieldsV1,
+                          };
                         }),
                       );
 

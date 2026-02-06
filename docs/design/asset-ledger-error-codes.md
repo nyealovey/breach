@@ -645,3 +645,15 @@ formatErrorMessage('VCENTER_NETWORK_ERROR', 'zh', { endpoint: 'vcenter.example.c
 formatErrorMessage('PLUGIN_TIMEOUT', 'en', { timeout_ms: 300000 });
 // => "Plugin execution timeout (exceeded 300000 ms)"
 ```
+
+### 6.4 台账来源同步提示（非错误码）
+
+自 `2026-02-06` 起，`POST /api/v1/assets/:assetUuid/solarwinds/collect` 在主流程成功时，可能返回 `warnings`（但 `status` 仍为 `ok`）：
+
+- `ledger.source_sync_skipped`：读取 SolarWinds Custom Properties 失败，本次跳过台账来源同步。
+- `ledger.source_sync_value_invalid`：某个映射字段值格式非法（例如日期/IP 不符合约束），该字段来源值被忽略。
+
+说明：
+
+- 以上为“可见告警提示”，不新增 `error.code`。
+- 监控状态与 signal 入库流程不受影响，仍按成功路径提交。

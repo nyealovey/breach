@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
-import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
+import { buildLedgerFieldsV1FromRow, LEDGER_FIELDS_V1_DB_SELECT } from '@/lib/ledger/ledger-fields-v1';
 
 const AssetUpdateBodySchema = z.object({
   machineNameOverride: z.string().nullable().optional(),
@@ -40,21 +40,7 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
         },
       },
       ledgerFields: {
-        select: {
-          region: true,
-          company: true,
-          department: true,
-          systemCategory: true,
-          systemLevel: true,
-          bizOwner: true,
-          maintenanceDueDate: true,
-          purchaseDate: true,
-          bmcIp: true,
-          cabinetNo: true,
-          rackPosition: true,
-          managementCode: true,
-          fixedAssetNo: true,
-        },
+        select: LEDGER_FIELDS_V1_DB_SELECT,
       },
     },
   });

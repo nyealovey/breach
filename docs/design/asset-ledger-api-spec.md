@@ -1,7 +1,7 @@
 # 资产台账 API 规范
 
-版本：v1.1
-日期：2026-01-31
+版本：v1.2
+日期：2026-02-06
 
 ## 文档简介
 
@@ -789,6 +789,7 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 - 范围：对机器名（覆盖值/采集值）、虚拟机名、宿主机名、操作系统生效：
   - `os.name` / `os.version`：所有资产类型均参与；
   - `os.fingerprint`：仅 VM 参与（用于承接 guest_OS 等指纹）；Host 的 `os.fingerprint` 用于承接 ESXi build，本期不纳入 `q` 搜索。
+  - 台账字段按 `effective` 口径参与（`override` 命中优先；`override` 为空时匹配 `source`）。
   - 以及 externalId、uuid 等文本字段。
 - 空值处理：`q` 为空或仅包含空白时，视为未提供该参数。
 
@@ -1067,24 +1068,34 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 > 注意：raw 展示必须脱敏可能的敏感字段（例如 `password/token/secret` 等），且不得包含任何来源凭证明文。
 
-### 6.6 台账字段（预设字段集：ledger-fields-v1）
+### 6.6 台账字段（ledger-fields-v1：source / override / effective）
 
-> 说明：台账字段为“业务补录字段”，字段集合固定（ledger-fields-v1），仅允许维护值；写入 admin-only，变更与导出需审计。
+> 说明：台账字段为固定字段集（ledger-fields-v1），字段值采用三态：
+>
+> - `source`：来源值（由 SolarWinds 手动同步写入）
+> - `override`：手工覆盖值（单资产编辑/批量设置写入）
+> - `effective`：生效值，统一口径 `override ?? source`
 
-#### 6.6.1 更新单资产台账字段（管理员）
+补充规则：
+
+- `override` 写入空串会归一化为 `null`（表示取消覆盖，回退来源值）。
+- SolarWinds 同步只更新 `source`，不会修改 `override`。
+- 本期仅以下 6 个字段接入 SolarWinds 来源映射：`region/systemLevel/company/systemCategory/department/bizOwner`。
+
+#### 6.6.1 更新单资产台账覆盖值（管理员）
 
 **PUT** `/api/v1/assets/:assetUuid/ledger-fields`
 
-**权限**：仅管理员可访问；变更动作必须记录审计（audit_event，event_type=`asset.ledger_fields_saved`）。
+**权限**：仅管理员可访问；变更动作必须记录审计（`asset.ledger_fields_saved`）。
 
 **请求体**：
 
 ```json
 {
-  "ledgerFields": {
+  "ledgerFieldOverrides": {
     "company": "Example Corp",
     "department": "SRE",
-    "systemLevel": "核心",
+    "systemLevel": "一般系统",
     "fixedAssetNo": null
   }
 }
@@ -1094,7 +1105,16 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 
 ```json
 {
-  "data": { "message": "Ledger fields updated successfully" },
+  "data": {
+    "assetUuid": "a_123",
+    "updatedKeys": ["company", "department", "systemLevel", "fixedAssetNo"],
+    "ledgerFields": {
+      "company": { "source": "浙江正泰电器股份有限公司", "override": "Example Corp", "effective": "Example Corp" },
+      "department": { "source": "IT共享资源中心", "override": "SRE", "effective": "SRE" },
+      "systemLevel": { "source": "一般系统", "override": "一般系统", "effective": "一般系统" },
+      "fixedAssetNo": { "source": null, "override": null, "effective": null }
+    }
+  },
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
@@ -1106,11 +1126,11 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 - 400：`CONFIG_LEDGER_FIELD_VALUE_INVALID`
 - 403：`AUTH_FORBIDDEN`
 
-#### 6.6.2 批量设置台账字段（管理员，当前页勾选）
+#### 6.6.2 批量设置台账覆盖值（管理员，当前页勾选）
 
 **POST** `/api/v1/assets/ledger-fields/bulk-set`
 
-**权限**：仅管理员可访问；变更动作必须记录审计（audit_event，event_type=`asset.ledger_fields_bulk_set`）。
+**权限**：仅管理员可访问；变更动作必须记录审计（`asset.ledger_fields_bulk_set`）。
 
 **请求体**：
 
@@ -1122,11 +1142,13 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 }
 ```
 
+说明：该接口只写 `override` 层；`value = null` 表示清空覆盖并回退到 `source`。
+
 **成功响应**（200）：
 
 ```json
 {
-  "data": { "message": "Bulk ledger field update accepted" },
+  "data": { "updated": 2 },
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
@@ -1138,6 +1160,45 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 - 400：`CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH`
 - 400：`CONFIG_LEDGER_FIELD_VALUE_INVALID`
 - 403：`AUTH_FORBIDDEN`
+
+#### 6.6.3 获取台账筛选候选值（effective 口径）
+
+**GET** `/api/v1/assets/ledger-fields/options`
+
+**权限**：user/admin 均可访问。
+
+**成功响应**（200）：
+
+```json
+{
+  "data": {
+    "regions": ["温州"],
+    "companies": ["浙江正泰电器股份有限公司"],
+    "departments": ["IT共享资源中心"],
+    "systemCategories": ["大数据（测试）"],
+    "systemLevels": ["一般系统"],
+    "bizOwners": ["王逸"],
+    "osNames": ["Windows Server 2019"],
+    "brands": ["Dell Inc."],
+    "models": ["PowerEdge R740"]
+  },
+  "meta": { "requestId": "req_xxx", "timestamp": "..." }
+}
+```
+
+#### 6.6.4 SolarWinds 手动同步（来源值写入）
+
+**POST** `/api/v1/assets/:assetUuid/solarwinds/collect`
+
+当返回 `status = "ok"` 时，响应中新增：
+
+- `ledgerFieldSources`：本次同步后的来源值快照（可能为 `null`，表示本次来源同步被跳过）
+- `warnings`：来源同步告警列表（例如 `ledger.source_sync_skipped`、`ledger.source_sync_value_invalid`）
+
+说明：
+
+- 该接口始终以“监控信号采集”为主流程；台账来源同步是 best-effort 附带动作。
+- 即使 `warnings` 非空，只要 `status = "ok"`，采集主流程仍视为成功。
 
 ### 6.7 导出全量台账（CSV）（管理员）
 
