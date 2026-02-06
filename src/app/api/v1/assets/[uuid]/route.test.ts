@@ -45,6 +45,8 @@ describe('GET /api/v1/assets/:uuid', () => {
       status: 'in_service',
       displayName: 'vm-01',
       machineNameOverride: null,
+      ipOverrideText: null,
+      osOverrideText: null,
       lastSeenAt: new Date('2026-01-28T00:00:00.000Z'),
       operationalState: {
         monitorCovered: true,
@@ -73,6 +75,8 @@ describe('GET /api/v1/assets/:uuid', () => {
       mergedIntoAssetUuid: null,
       displayName: 'vm-01',
       machineNameOverride: null,
+      ipOverrideText: null,
+      osOverrideText: null,
       lastSeenAt: '2026-01-28T00:00:00.000Z',
       ledgerFields: {
         region: null,
@@ -172,6 +176,8 @@ describe('PUT /api/v1/assets/:uuid', () => {
     expect(body.data).toEqual({
       assetUuid: '550e8400-e29b-41d4-a716-446655440000',
       machineNameOverride: 'vm-guest-01',
+      ipOverrideText: null,
+      osOverrideText: null,
     });
   });
 });

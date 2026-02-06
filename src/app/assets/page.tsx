@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardPenLine, Columns3, Download, Eye, Pencil } from 'lucide-react';
+import { ClipboardPenLine, Columns3, Download, Eye, Pencil, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
@@ -42,6 +42,8 @@ type AssetListItem = {
   assetUuid: string;
   assetType: string;
   status: string;
+  brand: string | null;
+  model: string | null;
   machineName: string | null;
   machineNameOverride: string | null;
   machineNameCollected: string | null;
@@ -49,9 +51,13 @@ type AssetListItem = {
   hostName: string | null;
   vmName: string | null;
   os: string | null;
+  osCollected: string | null;
+  osOverrideText: string | null;
   vmPowerState: string | null;
   toolsRunning: boolean | null;
   ip: string | null;
+  ipCollected: string | null;
+  ipOverrideText: string | null;
   monitorCovered: boolean | null;
   monitorState: string | null;
   monitorStatus: string | null;
@@ -80,14 +86,19 @@ type LedgerFieldFilterOptions = {
   systemLevels: string[];
   bizOwners: string[];
   osNames: string[];
+  brands: string[];
+  models: string[];
 };
 
 type AssetListColumnId =
+  | 'status'
   | 'machineName'
   | 'vmName'
   | 'hostName'
   | 'os'
   | 'ip'
+  | 'brand'
+  | 'model'
   | 'monitorState'
   | 'recordedAt'
   | 'cpuCount'
@@ -96,7 +107,7 @@ type AssetListColumnId =
   | 'vmPowerState'
   | `ledger.${LedgerFieldKey}`;
 
-const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v1' as const;
+const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v2' as const;
 
 const BASE_ASSET_LIST_COLUMNS: Array<{
   id: AssetListColumnId;
@@ -104,10 +115,13 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   description?: string;
 }> = [
   { id: 'machineName', label: '机器名', description: '支持“覆盖显示”，并标记覆盖≠采集。' },
+  { id: 'status', label: '状态' },
   { id: 'vmName', label: '虚拟机名', description: '仅 VM。' },
   { id: 'hostName', label: '宿主机名', description: '仅 VM（VM --runs_on--> Host displayName）。' },
   { id: 'os', label: '操作系统' },
   { id: 'ip', label: 'IP', description: 'VM 若 Tools / Guest 服务未运行可能缺失。' },
+  { id: 'brand', label: '品牌' },
+  { id: 'model', label: '型号' },
   { id: 'monitorState', label: '监控', description: 'SolarWinds 监控覆盖与状态（信号来源；不影响库存）。' },
   { id: 'cpuCount', label: 'CPU' },
   { id: 'memoryBytes', label: '内存' },
@@ -117,6 +131,9 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
 ];
 
 const LEDGER_FIELD_METAS = listLedgerFieldMetasV1();
+const LEDGER_HOST_ONLY_KEY_SET = new Set<LedgerFieldKey>(
+  LEDGER_FIELD_METAS.filter((m) => m.scope === 'host_only').map((m) => m.key),
+);
 const LEDGER_FIELD_COLUMNS: Array<{ id: AssetListColumnId; label: string; description?: string }> =
   LEDGER_FIELD_METAS.map((m) => ({
     id: `ledger.${m.key}` as const,
@@ -141,6 +158,7 @@ const ASSET_LIST_COLUMN_ORDER_INDEX = new Map<AssetListColumnId, number>(
 
 const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['machineName', 'ip'];
 const VM_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'vmName' | 'hostName'>> = ['vmName', 'hostName'];
+const HOST_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'brand' | 'model'>> = ['brand', 'model'];
 
 const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
   regions: [],
@@ -150,6 +168,8 @@ const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
   systemLevels: [],
   bizOwners: [],
   osNames: [],
+  brands: [],
+  models: [],
 };
 
 function ensureCoreVisibleColumns(columns: AssetListColumnId[]): AssetListColumnId[] {
@@ -201,6 +221,19 @@ function powerStateBadgeVariant(powerState: string): React.ComponentProps<typeof
   return 'outline';
 }
 
+function assetStatusLabel(status: string): string {
+  if (status === 'in_service') return '在服';
+  if (status === 'offline') return '离线';
+  if (status === 'merged') return '已合并';
+  return status;
+}
+
+function assetStatusBadgeVariant(status: string): React.ComponentProps<typeof Badge>['variant'] {
+  if (status === 'in_service') return 'default';
+  if (status === 'offline') return 'secondary';
+  return 'outline';
+}
+
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -237,6 +270,7 @@ export default function AssetsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const skipNextUrlSyncRef = useRef(false);
+  const swCollectingRef = useRef(false);
 
   const [items, setItems] = useState<AssetListItem[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -267,11 +301,14 @@ export default function AssetsPage() {
   const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host'>('all');
   const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
   const [sourceTypeInput, setSourceTypeInput] = useState<'all' | 'vcenter' | 'pve' | 'hyperv'>('all');
+  const [statusInput, setStatusInput] = useState<'all' | 'in_service' | 'offline'>('all');
   const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
   const [ipMissingInput, setIpMissingInput] = useState(false);
   const [machineNameMissingInput, setMachineNameMissingInput] = useState(false);
   const [machineNameVmNameMismatchInput, setMachineNameVmNameMismatchInput] = useState(false);
   const [recentAddedInput, setRecentAddedInput] = useState(false);
+  const [brandInput, setBrandInput] = useState('');
+  const [modelInput, setModelInput] = useState('');
   const [regionInput, setRegionInput] = useState('');
   const [companyInput, setCompanyInput] = useState('');
   const [departmentInput, setDepartmentInput] = useState('');
@@ -283,23 +320,47 @@ export default function AssetsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const [editMachineNameOpen, setEditMachineNameOpen] = useState(false);
+  const [editAssetOpen, setEditAssetOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AssetListItem | null>(null);
   const [editMachineNameValue, setEditMachineNameValue] = useState('');
+  const [editIpValue, setEditIpValue] = useState('');
+  const [editOsValue, setEditOsValue] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [swCollecting, setSwCollecting] = useState(false);
+  const [swCandidates, setSwCandidates] = useState<Array<{
+    nodeId: string;
+    caption: string | null;
+    sysName: string | null;
+    dns: string | null;
+    ipAddress: string | null;
+    machineType: string | null;
+    statusDescription: string | null;
+    unmanaged: boolean | null;
+    lastSyncIso: string | null;
+    matchScore: number;
+    matchReasons: string[];
+  }> | null>(null);
+  const [swSelectedNodeId, setSwSelectedNodeId] = useState<string>('');
 
   const query = useMemo(() => {
     const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
     const sourceType = sourceTypeInput === 'all' ? undefined : sourceTypeInput;
+    const status = statusInput === 'all' ? undefined : statusInput;
     const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
     const ipMissing = ipMissingInput ? true : undefined;
     const machineNameMissing = machineNameMissingInput ? true : undefined;
     const machineNameVmNameMismatch = machineNameVmNameMismatchInput ? true : undefined;
     const createdWithinDays = recentAddedInput ? 7 : undefined;
+    const brand = brandInput.trim() ? brandInput.trim() : undefined;
+    const model = modelInput.trim() ? modelInput.trim() : undefined;
 
     // VM-only filters imply `asset_type=vm`.
     const impliedAssetType =
-      vmPowerState || ipMissing || machineNameMissing || machineNameVmNameMismatch ? ('vm' as const) : assetType;
+      vmPowerState || ipMissing || machineNameMissing || machineNameVmNameMismatch
+        ? ('vm' as const)
+        : brand || model
+          ? ('host' as const)
+          : assetType;
 
     return {
       q: qInput.trim() ? qInput.trim() : undefined,
@@ -308,6 +369,9 @@ export default function AssetsPage() {
       excludeAssetType: 'cluster' as const,
       sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
       sourceType,
+      status,
+      brand,
+      model,
       region: regionInput.trim() ? regionInput.trim() : undefined,
       company: companyInput.trim() ? companyInput.trim() : undefined,
       department: departmentInput.trim() ? departmentInput.trim() : undefined,
@@ -325,12 +389,14 @@ export default function AssetsPage() {
     };
   }, [
     assetTypeInput,
+    brandInput,
     bizOwnerInput,
     companyInput,
     machineNameMissingInput,
     machineNameVmNameMismatchInput,
     departmentInput,
     ipMissingInput,
+    modelInput,
     osInput,
     page,
     pageSize,
@@ -339,6 +405,7 @@ export default function AssetsPage() {
     regionInput,
     sourceIdInput,
     sourceTypeInput,
+    statusInput,
     systemCategoryInput,
     systemLevelInput,
     vmPowerStateInput,
@@ -346,9 +413,20 @@ export default function AssetsPage() {
 
   const visibleColumnsForTable = useMemo(() => {
     const cols = ensureCoreVisibleColumns(visibleColumns);
-    return assetTypeInput === 'host'
-      ? cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]))
-      : cols;
+    if (assetTypeInput === 'host') {
+      return cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]));
+    }
+    if (assetTypeInput === 'vm') {
+      return cols.filter((id) => {
+        if (HOST_ONLY_COLUMNS.includes(id as (typeof HOST_ONLY_COLUMNS)[number])) return false;
+        if (id.startsWith('ledger.')) {
+          const key = id.slice('ledger.'.length) as LedgerFieldKey;
+          if (LEDGER_HOST_ONLY_KEY_SET.has(key)) return false;
+        }
+        return true;
+      });
+    }
+    return cols;
   }, [assetTypeInput, visibleColumns]);
 
   useEffect(() => {
@@ -360,6 +438,9 @@ export default function AssetsPage() {
     setAssetTypeInput(parsed.assetType ?? 'all');
     setSourceIdInput(parsed.sourceId ?? 'all');
     setSourceTypeInput(parsed.sourceType ?? 'all');
+    setStatusInput(parsed.status ?? 'all');
+    setBrandInput(parsed.brand ?? '');
+    setModelInput(parsed.model ?? '');
     setRegionInput(parsed.region ?? '');
     setCompanyInput(parsed.company ?? '');
     setDepartmentInput(parsed.department ?? '');
@@ -390,6 +471,9 @@ export default function AssetsPage() {
       excludeAssetType: query.excludeAssetType,
       sourceId: query.sourceId,
       sourceType: query.sourceType,
+      status: query.status,
+      brand: query.brand,
+      model: query.model,
       region: query.region,
       company: query.company,
       department: query.department,
@@ -498,6 +582,9 @@ export default function AssetsPage() {
         excludeAssetType: query.excludeAssetType,
         sourceId: query.sourceId,
         sourceType: query.sourceType,
+        status: query.status,
+        brand: query.brand,
+        model: query.model,
         region: query.region,
         company: query.company,
         department: query.department,
@@ -546,6 +633,226 @@ export default function AssetsPage() {
   const canPrev = (pagination?.page ?? 1) > 1;
   const canNext = (pagination?.page ?? 1) < (pagination?.totalPages ?? 1);
 
+  const renderColumnSettingItem = (col: { id: AssetListColumnId; label: string }) => {
+    const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
+    const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
+    const hostOnlyAsset = HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]);
+    const hostOnlyLedger =
+      col.id.startsWith('ledger.') && LEDGER_HOST_ONLY_KEY_SET.has(col.id.slice('ledger.'.length) as LedgerFieldKey);
+    const hostOnly = hostOnlyAsset || hostOnlyLedger;
+
+    const disabled = locked || (vmOnly && assetTypeInput === 'host') || (hostOnly && assetTypeInput === 'vm');
+    const checked = locked ? true : columnDraft.includes(col.id);
+
+    return (
+      <div
+        key={col.id}
+        className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
+          disabled ? 'bg-muted/40 opacity-70' : ''
+        }`}
+      >
+        <div className="min-w-0 text-sm font-medium leading-snug">{col.label}</div>
+        <Switch
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(next) => {
+            setColumnDraft((prev) => {
+              const draft = next
+                ? prev.includes(col.id)
+                  ? prev
+                  : [...prev, col.id]
+                : prev.filter((id) => id !== col.id);
+              return ensureCoreVisibleColumns(draft);
+            });
+          }}
+        />
+      </div>
+    );
+  };
+
+  const assetFieldCommonColumns = ASSET_LIST_COLUMNS.filter(
+    (col) =>
+      !col.id.startsWith('ledger.') &&
+      !VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]) &&
+      !HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+  );
+  const assetFieldVmOnlyColumns = ASSET_LIST_COLUMNS.filter(
+    (col) => !col.id.startsWith('ledger.') && VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]),
+  );
+  const assetFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter(
+    (col) => !col.id.startsWith('ledger.') && HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+  );
+
+  const ledgerFieldCommonColumns = ASSET_LIST_COLUMNS.filter((col) => {
+    if (!col.id.startsWith('ledger.')) return false;
+    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+    return !LEDGER_HOST_ONLY_KEY_SET.has(key);
+  });
+  const ledgerFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter((col) => {
+    if (!col.id.startsWith('ledger.')) return false;
+    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+    return LEDGER_HOST_ONLY_KEY_SET.has(key);
+  });
+
+  const resetEditState = () => {
+    setEditTarget(null);
+    setEditMachineNameValue('');
+    setEditIpValue('');
+    setEditOsValue('');
+    setEditSaving(false);
+    setSwCollecting(false);
+    setSwCandidates(null);
+    setSwSelectedNodeId('');
+  };
+
+  const openEditForItem = (item: AssetListItem) => {
+    setEditTarget(item);
+    setEditMachineNameValue(item.machineNameOverride ?? '');
+    setEditIpValue(item.ipOverrideText ?? '');
+    setEditOsValue(item.osOverrideText ?? '');
+    setEditSaving(false);
+    setSwCollecting(false);
+    setSwCandidates(null);
+    setSwSelectedNodeId('');
+    setEditAssetOpen(true);
+  };
+
+  const mapSolarWindsMonitorState = (node: { status?: unknown; unmanaged?: unknown }): string => {
+    if (node.unmanaged === true) return 'unmanaged';
+    const status = node.status;
+    if (typeof status === 'number') {
+      if (status === 1) return 'up';
+      if (status === 2) return 'down';
+      if (status === 3) return 'warning';
+    }
+    if (typeof status === 'string') {
+      const s = status.trim().toLowerCase();
+      if (s === 'up') return 'up';
+      if (s === 'down') return 'down';
+      if (s === 'warning') return 'warning';
+      if (s === 'unmanaged') return 'unmanaged';
+    }
+    return 'unknown';
+  };
+
+  const runSolarWindsCollect = async (args: { assetUuid: string; nodeId?: string }) => {
+    if (swCollectingRef.current) return;
+    swCollectingRef.current = true;
+    setSwCollecting(true);
+
+    try {
+      const res = await fetch(`/api/v1/assets/${args.assetUuid}/solarwinds/collect`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(args.nodeId ? { nodeId: args.nodeId } : {}),
+      });
+
+      const body = (await res.json().catch(() => null)) as { data?: unknown; error?: { message?: string } } | null;
+
+      if (!res.ok) {
+        toast.error(body?.error?.message ?? '采集失败');
+        return;
+      }
+
+      const data = body?.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        toast.error('采集失败');
+        return;
+      }
+
+      const status = (data as any).status as string | undefined;
+      if (status === 'no_source') {
+        toast.error('未配置 SolarWinds 信号来源（role=signal）');
+        return;
+      }
+      if (status === 'no_match') {
+        toast.error('SolarWinds 未找到匹配节点');
+        setSwCandidates(null);
+        setSwSelectedNodeId('');
+        return;
+      }
+      if (status === 'ambiguous') {
+        const candidates = Array.isArray((data as any).candidates) ? ((data as any).candidates as any[]) : [];
+        const normalized = candidates
+          .filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+          .map((c) => ({
+            nodeId: String((c as any).nodeId ?? ''),
+            caption: typeof (c as any).caption === 'string' ? (c as any).caption : null,
+            sysName: typeof (c as any).sysName === 'string' ? (c as any).sysName : null,
+            dns: typeof (c as any).dns === 'string' ? (c as any).dns : null,
+            ipAddress: typeof (c as any).ipAddress === 'string' ? (c as any).ipAddress : null,
+            machineType: typeof (c as any).machineType === 'string' ? (c as any).machineType : null,
+            statusDescription: typeof (c as any).statusDescription === 'string' ? (c as any).statusDescription : null,
+            unmanaged: typeof (c as any).unmanaged === 'boolean' ? (c as any).unmanaged : null,
+            lastSyncIso: typeof (c as any).lastSyncIso === 'string' ? (c as any).lastSyncIso : null,
+            matchScore: typeof (c as any).matchScore === 'number' ? (c as any).matchScore : 0,
+            matchReasons: Array.isArray((c as any).matchReasons)
+              ? ((c as any).matchReasons as unknown[]).filter((v): v is string => typeof v === 'string')
+              : [],
+          }))
+          .filter((c) => c.nodeId.trim().length > 0);
+
+        if (normalized.length === 0) {
+          toast.error('采集失败：候选为空');
+          return;
+        }
+
+        setSwCandidates(normalized);
+        setSwSelectedNodeId(normalized[0]?.nodeId ?? '');
+        toast.message('发现多个可能的 SolarWinds 节点，请选择后继续采集');
+        return;
+      }
+
+      if (status === 'ok') {
+        const fields = (data as any).fields as { machineName?: unknown; ipText?: unknown; osText?: unknown } | null;
+        const nextMachineName = typeof fields?.machineName === 'string' ? fields.machineName : null;
+        const nextIpText = typeof fields?.ipText === 'string' ? fields.ipText : null;
+        const nextOsText = typeof fields?.osText === 'string' ? fields.osText : null;
+
+        if (nextMachineName !== null) setEditMachineNameValue(nextMachineName);
+        if (nextIpText !== null) setEditIpValue(nextIpText);
+        if (nextOsText !== null) setEditOsValue(nextOsText);
+
+        setSwCandidates(null);
+        setSwSelectedNodeId('');
+
+        const node = (data as any).node as any;
+        const collectedAt = typeof (data as any).collectedAt === 'string' ? (data as any).collectedAt : null;
+        const monitorState = mapSolarWindsMonitorState({ status: node?.status, unmanaged: node?.unmanaged });
+        const monitorStatus = typeof node?.statusDescription === 'string' ? node.statusDescription : null;
+
+        if (collectedAt) {
+          setItems((prev) =>
+            prev.map((it) =>
+              it.assetUuid === args.assetUuid
+                ? {
+                    ...it,
+                    monitorCovered: true,
+                    monitorState,
+                    monitorStatus,
+                    monitorUpdatedAt: collectedAt,
+                  }
+                : it,
+            ),
+          );
+          setEditTarget((prev) =>
+            prev && prev.assetUuid === args.assetUuid
+              ? { ...prev, monitorCovered: true, monitorState, monitorStatus, monitorUpdatedAt: collectedAt }
+              : prev,
+          );
+        }
+
+        toast.success('采集完成：已填充到覆盖字段（未保存）');
+        return;
+      }
+
+      toast.error('采集失败：未知状态');
+    } finally {
+      swCollectingRef.current = false;
+      setSwCollecting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader title="资产" description="统一视图（canonical）。支持搜索/筛选/列设置与台账字段批量维护。" />
@@ -574,7 +881,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setIpMissingInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -589,7 +900,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setMachineNameMissingInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -604,7 +919,11 @@ export default function AssetsPage() {
                   onCheckedChange={(checked) => {
                     setPage(1);
                     setMachineNameVmNameMismatchInput(checked);
-                    if (checked) setAssetTypeInput('vm');
+                    if (checked) {
+                      setAssetTypeInput('vm');
+                      setBrandInput('');
+                      setModelInput('');
+                    }
                   }}
                 />
               </div>
@@ -641,6 +960,12 @@ export default function AssetsPage() {
                     setMachineNameMissingInput(false);
                     setMachineNameVmNameMismatchInput(false);
                   }
+
+                  // Host-only filters don't apply to other types; reset them to avoid confusing empty results.
+                  if (value !== 'host') {
+                    setBrandInput('');
+                    setModelInput('');
+                  }
                 }}
               >
                 <SelectTrigger className="w-full md:w-[150px]">
@@ -650,6 +975,23 @@ export default function AssetsPage() {
                   <SelectItem value="all">全部类型</SelectItem>
                   <SelectItem value="vm">VM</SelectItem>
                   <SelectItem value="host">Host</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={statusInput}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setStatusInput(value as typeof statusInput);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[160px]">
+                  <SelectValue placeholder="状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="in_service">在服</SelectItem>
+                  <SelectItem value="offline">离线</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -692,12 +1034,78 @@ export default function AssetsPage() {
               </Select>
 
               <Select
+                value={brandInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setBrandInput(value === 'all' ? '' : value);
+
+                  if (value !== 'all') {
+                    setAssetTypeInput('host');
+                    setVmPowerStateInput('all');
+                    setIpMissingInput(false);
+                    setMachineNameMissingInput(false);
+                    setMachineNameVmNameMismatchInput(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[200px]">
+                  <SelectValue placeholder="品牌" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部品牌</SelectItem>
+                  {brandInput && !ledgerFieldFilterOptions.brands.includes(brandInput) ? (
+                    <SelectItem value={brandInput}>{brandInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.brands.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={modelInput || 'all'}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setModelInput(value === 'all' ? '' : value);
+
+                  if (value !== 'all') {
+                    setAssetTypeInput('host');
+                    setVmPowerStateInput('all');
+                    setIpMissingInput(false);
+                    setMachineNameMissingInput(false);
+                    setMachineNameVmNameMismatchInput(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[200px]">
+                  <SelectValue placeholder="型号" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部型号</SelectItem>
+                  {modelInput && !ledgerFieldFilterOptions.models.includes(modelInput) ? (
+                    <SelectItem value={modelInput}>{modelInput}（当前）</SelectItem>
+                  ) : null}
+                  {ledgerFieldFilterOptions.models.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
                 value={vmPowerStateInput}
                 onValueChange={(value) => {
                   setPage(1);
                   setVmPowerStateInput(value as typeof vmPowerStateInput);
 
-                  if (value !== 'all') setAssetTypeInput('vm');
+                  if (value !== 'all') {
+                    setAssetTypeInput('vm');
+                    setBrandInput('');
+                    setModelInput('');
+                  }
                 }}
               >
                 <SelectTrigger className="w-full md:w-[160px]">
@@ -1032,6 +1440,16 @@ export default function AssetsPage() {
                           );
                         }
 
+                        if (colId === 'status') {
+                          return (
+                            <TableCell key={colId}>
+                              <Badge variant={assetStatusBadgeVariant(item.status)}>
+                                {assetStatusLabel(item.status)}
+                              </Badge>
+                            </TableCell>
+                          );
+                        }
+
                         if (colId === 'vmName') {
                           return (
                             <TableCell key={colId} className="font-medium">
@@ -1051,7 +1469,10 @@ export default function AssetsPage() {
                         if (colId === 'os') {
                           return (
                             <TableCell key={colId} className="max-w-[240px] whitespace-normal break-words text-sm">
-                              {item.os ? item.os : (toolsNotRunningNode ?? '-')}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{item.os ? item.os : (toolsNotRunningNode ?? '-')}</span>
+                                {item.osOverrideText ? <Badge variant="secondary">覆盖</Badge> : null}
+                              </div>
                             </TableCell>
                           );
                         }
@@ -1062,7 +1483,26 @@ export default function AssetsPage() {
                               key={colId}
                               className="max-w-[280px] whitespace-normal break-all font-mono text-xs"
                             >
-                              {item.ip ? item.ip : (toolsNotRunningNode ?? '-')}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{item.ip ? item.ip : (toolsNotRunningNode ?? '-')}</span>
+                                {item.ipOverrideText ? <Badge variant="secondary">覆盖</Badge> : null}
+                              </div>
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'brand') {
+                          return (
+                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                              {item.brand ?? '-'}
+                            </TableCell>
+                          );
+                        }
+
+                        if (colId === 'model') {
+                          return (
+                            <TableCell key={colId} className="max-w-[220px] whitespace-normal break-words text-sm">
+                              {item.model ?? '-'}
                             </TableCell>
                           );
                         }
@@ -1153,19 +1593,31 @@ export default function AssetsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {isAdmin ? (
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              title="编辑机器名"
-                              aria-label="编辑机器名"
-                              onClick={() => {
-                                setEditTarget(item);
-                                setEditMachineNameValue(item.machineNameOverride ?? '');
-                                setEditMachineNameOpen(true);
-                              }}
-                            >
-                              <Pencil />
-                            </Button>
+                            <>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                title="从 SolarWinds 采集"
+                                aria-label="从 SolarWinds 采集"
+                                onClick={() => {
+                                  openEditForItem(item);
+                                  void runSolarWindsCollect({ assetUuid: item.assetUuid });
+                                }}
+                              >
+                                <RefreshCw />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                title="编辑/覆盖字段"
+                                aria-label="编辑/覆盖字段"
+                                onClick={() => {
+                                  openEditForItem(item);
+                                }}
+                              >
+                                <Pencil />
+                              </Button>
+                            </>
                           ) : null}
                           <Button asChild size="icon" variant="outline" title="查看详情" aria-label="查看详情">
                             <Link href={`/assets/${item.assetUuid}`}>
@@ -1228,53 +1680,51 @@ export default function AssetsPage() {
               }
             }}
           >
-            <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
+            <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col">
               <DialogHeader>
                 <DialogTitle>列设置</DialogTitle>
                 <DialogDescription>列配置按用户保存到数据库，可在不同设备复用。</DialogDescription>
               </DialogHeader>
 
-              <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                {ASSET_LIST_COLUMNS.map((col) => {
-                  const locked = CORE_COLUMNS.includes(col.id as (typeof CORE_COLUMNS)[number]);
-                  const vmOnly = VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]);
-                  const disabled = locked || (vmOnly && assetTypeInput === 'host');
-                  const checked = locked ? true : columnDraft.includes(col.id);
-                  return (
-                    <div
-                      key={col.id}
-                      className={`flex items-center justify-between gap-4 rounded-md border p-3 ${
-                        disabled ? 'bg-muted/40 opacity-70' : ''
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium">{col.label}</div>
-                        {col.description ? (
-                          <div className="mt-0.5 text-xs text-muted-foreground">{col.description}</div>
-                        ) : null}
-                      </div>
-                      <Switch
-                        checked={checked}
-                        disabled={disabled}
-                        onCheckedChange={(next) => {
-                          setColumnDraft((prev) => {
-                            const draft = next
-                              ? prev.includes(col.id)
-                                ? prev
-                                : [...prev, col.id]
-                              : prev.filter((id) => id !== col.id);
-                            return ensureCoreVisibleColumns(draft);
-                          });
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto pr-1 md:grid-cols-2">
+                <div className="min-w-0 space-y-4">
+                  <div className="text-sm font-semibold">资产字段</div>
 
-              <div className="text-xs text-muted-foreground">
-                机器名/IP 为核心列固定显示；虚拟机名/宿主机名仅 VM（当前类型为 Host 时不展示）；其余列可选（当前：
-                {columnDraft.length} 列）。
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">通用字段</div>
+                    <div className="space-y-2">{assetFieldCommonColumns.map(renderColumnSettingItem)}</div>
+                  </div>
+
+                  {assetFieldVmOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">VM 专属</div>
+                      <div className="space-y-2">{assetFieldVmOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+
+                  {assetFieldHostOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Host 专属</div>
+                      <div className="space-y-2">{assetFieldHostOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 space-y-4">
+                  <div className="text-sm font-semibold">台账字段</div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">通用字段</div>
+                    <div className="space-y-2">{ledgerFieldCommonColumns.map(renderColumnSettingItem)}</div>
+                  </div>
+
+                  {ledgerFieldHostOnlyColumns.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Host 专属</div>
+                      <div className="space-y-2">{ledgerFieldHostOnlyColumns.map(renderColumnSettingItem)}</div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <DialogFooter>
@@ -1456,45 +1906,183 @@ export default function AssetsPage() {
           </Dialog>
 
           <Dialog
-            open={editMachineNameOpen}
+            open={editAssetOpen}
             onOpenChange={(open) => {
-              setEditMachineNameOpen(open);
-              if (!open) {
-                setEditTarget(null);
-                setEditMachineNameValue('');
-                setEditSaving(false);
-              }
+              setEditAssetOpen(open);
+              if (!open) resetEditState();
             }}
           >
-            <DialogContent>
+            <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>编辑机器名</DialogTitle>
-                <DialogDescription>机器名优先展示“覆盖值”，采集值仍会持续入库。</DialogDescription>
+                <DialogTitle>编辑资产字段</DialogTitle>
+                <DialogDescription>
+                  可覆盖机器名 / IP / 操作系统；点击“从 SolarWinds
+                  采集”会对当前资产触发一次定向采集并填充到覆盖字段（不会自动保存）。
+                </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="machineNameOverride">机器名（覆盖显示）</Label>
-                  <Input
-                    id="machineNameOverride"
-                    value={editMachineNameValue}
-                    placeholder="留空表示不覆盖"
-                    onChange={(e) => setEditMachineNameValue(e.target.value)}
-                  />
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="asset-machineNameOverride">机器名（覆盖）</Label>
+                    <Input
+                      id="asset-machineNameOverride"
+                      value={editMachineNameValue}
+                      placeholder="留空表示不覆盖"
+                      onChange={(e) => setEditMachineNameValue(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="asset-ipOverrideText">IP（覆盖）</Label>
+                    <Input
+                      id="asset-ipOverrideText"
+                      value={editIpValue}
+                      placeholder="多个用逗号分隔；留空表示不覆盖"
+                      onChange={(e) => setEditIpValue(e.target.value)}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      支持多个 IP（逗号分隔）；资产清单展示/搜索/筛选会优先使用覆盖值。
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="asset-osOverrideText">操作系统（覆盖）</Label>
+                    <Input
+                      id="asset-osOverrideText"
+                      value={editOsValue}
+                      placeholder="留空表示不覆盖"
+                      onChange={(e) => setEditOsValue(e.target.value)}
+                    />
+                  </div>
                 </div>
 
-                <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                  <div className="text-muted-foreground">采集到的机器名</div>
-                  <div className="mt-1 font-mono">{editTarget?.machineNameCollected ?? '暂无'}</div>
+                <div className="space-y-4">
+                  <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-medium">采集值（当前）</div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!editTarget || swCollecting}
+                        onClick={() => {
+                          if (!editTarget) return;
+                          void runSolarWindsCollect({ assetUuid: editTarget.assetUuid });
+                        }}
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />从 SolarWinds 采集
+                      </Button>
+                    </div>
+
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="text-muted-foreground">机器名</div>
+                        <div className="mt-1 font-mono break-all">{editTarget?.machineNameCollected ?? '暂无'}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">IP</div>
+                        <div className="mt-1 font-mono break-all">{editTarget?.ipCollected ?? '暂无'}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">操作系统</div>
+                        <div className="mt-1 break-words">{editTarget?.osCollected ?? '暂无'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {swCandidates ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">多个 SolarWinds 节点匹配</div>
+                      <div className="text-xs text-muted-foreground">
+                        请选择一个节点继续采集（采集会填充覆盖字段，但不会自动保存）。
+                      </div>
+                      <div className="max-h-[260px] space-y-2 overflow-auto rounded-md border bg-background p-2">
+                        {swCandidates.map((c) => {
+                          const title = c.caption ?? c.sysName ?? c.dns ?? `Node ${c.nodeId}`;
+                          const subtitleParts = [
+                            c.ipAddress ? `IP: ${c.ipAddress}` : null,
+                            c.machineType ? `OS: ${c.machineType}` : null,
+                            c.unmanaged === true ? 'Unmanaged' : null,
+                            c.lastSyncIso ? `LastSync: ${formatDateTime(c.lastSyncIso)}` : null,
+                          ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+                          return (
+                            <label
+                              key={c.nodeId}
+                              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/30 ${
+                                swSelectedNodeId === c.nodeId ? 'border-primary/50 bg-muted/20' : ''
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="sw_node"
+                                className="mt-1"
+                                checked={swSelectedNodeId === c.nodeId}
+                                onChange={() => setSwSelectedNodeId(c.nodeId)}
+                              />
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="min-w-0 break-all font-medium">{title}</div>
+                                  <Badge variant="outline">NodeID: {c.nodeId}</Badge>
+                                  <Badge variant="secondary">score {c.matchScore}</Badge>
+                                </div>
+                                {subtitleParts.length > 0 ? (
+                                  <div className="mt-1 break-words text-xs text-muted-foreground">
+                                    {subtitleParts.join(' · ')}
+                                  </div>
+                                ) : null}
+                                {c.matchReasons.length > 0 ? (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    命中：{c.matchReasons.join(', ')}
+                                  </div>
+                                ) : null}
+                                {c.statusDescription ? (
+                                  <div className="mt-1 text-xs text-muted-foreground">状态：{c.statusDescription}</div>
+                                ) : null}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={swCollecting}
+                          onClick={() => {
+                            setSwCandidates(null);
+                            setSwSelectedNodeId('');
+                          }}
+                        >
+                          关闭
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={!editTarget || !swSelectedNodeId || swCollecting}
+                          onClick={() => {
+                            if (!editTarget || !swSelectedNodeId) return;
+                            void runSolarWindsCollect({ assetUuid: editTarget.assetUuid, nodeId: swSelectedNodeId });
+                          }}
+                        >
+                          选择并采集
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="text-xs text-muted-foreground">
+                    提示：SolarWinds 采集为“信号来源”，会写入 Signal 记录并更新“监控”状态；不会改写 canonical 采集结果。
+                  </div>
                 </div>
               </div>
 
               <DialogFooter>
                 <Button
                   variant="outline"
-                  disabled={editSaving}
+                  disabled={editSaving || swCollecting}
                   onClick={() => {
-                    setEditMachineNameOpen(false);
+                    setEditAssetOpen(false);
                   }}
                 >
                   取消
@@ -1505,40 +2093,59 @@ export default function AssetsPage() {
                     if (!editTarget) return;
                     setEditSaving(true);
 
-                    const nextOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
-                    const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
-                      method: 'PUT',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ machineNameOverride: nextOverride }),
-                    });
+                    try {
+                      const nextMachineNameOverride = editMachineNameValue.trim() ? editMachineNameValue.trim() : null;
+                      const nextIpOverrideText = editIpValue.trim() ? editIpValue.trim() : null;
+                      const nextOsOverrideText = editOsValue.trim() ? editOsValue.trim() : null;
 
-                    if (!res.ok) {
+                      const res = await fetch(`/api/v1/assets/${editTarget.assetUuid}`, {
+                        method: 'PUT',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                          machineNameOverride: nextMachineNameOverride,
+                          ipOverrideText: nextIpOverrideText,
+                          osOverrideText: nextOsOverrideText,
+                        }),
+                      });
+
+                      if (!res.ok) {
+                        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                        toast.error(body?.error?.message ?? '保存失败');
+                        return;
+                      }
+
+                      setItems((prev) =>
+                        prev.map((it) => {
+                          if (it.assetUuid !== editTarget.assetUuid) return it;
+
+                          const machineNameCollected = it.machineNameCollected;
+                          const machineName = nextMachineNameOverride ?? machineNameCollected;
+                          const machineNameMismatch =
+                            nextMachineNameOverride !== null &&
+                            machineNameCollected !== null &&
+                            nextMachineNameOverride !== machineNameCollected;
+
+                          const ip = nextIpOverrideText ?? it.ipCollected;
+                          const os = nextOsOverrideText ?? it.osCollected;
+
+                          return {
+                            ...it,
+                            machineNameOverride: nextMachineNameOverride,
+                            machineName,
+                            machineNameMismatch,
+                            ipOverrideText: nextIpOverrideText,
+                            ip,
+                            osOverrideText: nextOsOverrideText,
+                            os,
+                          };
+                        }),
+                      );
+
+                      toast.success('已保存');
+                      setEditAssetOpen(false);
+                    } finally {
                       setEditSaving(false);
-                      return;
                     }
-
-                    setItems((prev) =>
-                      prev.map((it) => {
-                        if (it.assetUuid !== editTarget.assetUuid) return it;
-
-                        const machineNameCollected = it.machineNameCollected;
-                        const machineName = nextOverride ?? machineNameCollected;
-                        const machineNameMismatch =
-                          nextOverride !== null &&
-                          machineNameCollected !== null &&
-                          nextOverride !== machineNameCollected;
-
-                        return {
-                          ...it,
-                          machineNameOverride: nextOverride,
-                          machineName,
-                          machineNameMismatch,
-                        };
-                      }),
-                    );
-
-                    setEditSaving(false);
-                    setEditMachineNameOpen(false);
                   }}
                 >
                   保存

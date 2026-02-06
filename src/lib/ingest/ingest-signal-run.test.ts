@@ -8,6 +8,8 @@ describe('ingestSignalRun matching helpers', () => {
       {
         uuid: '550e8400-e29b-41d4-a716-446655440000',
         assetType: 'vm',
+        machineNameOverride: null,
+        ipOverrideText: null,
         collectedHostname: null,
         collectedVmCaption: 'vm-01',
         collectedIpText: null,
@@ -33,6 +35,8 @@ describe('ingestSignalRun matching helpers', () => {
       {
         uuid: 'a1',
         assetType: 'vm',
+        machineNameOverride: null,
+        ipOverrideText: null,
         collectedHostname: null,
         collectedVmCaption: 'vm-dup',
         collectedIpText: null,
@@ -40,6 +44,8 @@ describe('ingestSignalRun matching helpers', () => {
       {
         uuid: 'a2',
         assetType: 'vm',
+        machineNameOverride: null,
+        ipOverrideText: null,
         collectedHostname: null,
         collectedVmCaption: 'vm-dup',
         collectedIpText: null,
@@ -59,6 +65,8 @@ describe('ingestSignalRun matching helpers', () => {
       {
         uuid: 'a1',
         assetType: 'vm',
+        machineNameOverride: null,
+        ipOverrideText: null,
         collectedHostname: null,
         collectedVmCaption: 'vm-01',
         collectedIpText: '192.0.2.10',

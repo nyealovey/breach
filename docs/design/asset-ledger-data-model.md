@@ -40,6 +40,7 @@
 - `source_id`：主键
 - `name`：来源名称（唯一建议：同租户内对“未删除 Source”唯一）
 - `source_type`：`aliyun` / `vcenter` / `pve` / `hyperv` / `third_party` …
+- `role`：`inventory` / `signal`（inventory 产出 canonical/source_record；signal 产出 signal_record 并更新 operational state；例如 SolarWinds 作为信号来源）
 - `enabled`：启用/停用（软删除后必须视为不可用）
 - `schedule_group_id`：调度组外键（见 2.2A；用于“分组定时触发”）
 - `config`：非敏感连接配置（JSON）
@@ -90,11 +91,25 @@
 - `asset_uuid`：主键（系统生成）
 - `asset_type`：`vm` / `host` / `cluster`
 - `display_name`：展示名称（来源填充；允许管理员人工编辑覆盖）
+- `machine_name_override`：机器名覆盖（用于 UI 展示/搜索/筛选；不阻断 canonical 持续入库）
+- `ip_override_text`：IP 覆盖文本（可空；支持逗号分隔多个 IP；用于 UI 展示/搜索/筛选）
+- `os_override_text`：操作系统覆盖文本（可空；用于 UI 展示/搜索/筛选）
 - `status`：`in_service` / `offline` / `merged`（offline 可由可见性汇总计算，也可落库缓存）
 - `merged_into_asset_uuid`：当 status=merged 时指向主资产
 - `created_at` / `updated_at`
 
 > 说明：统一字段（例如 CPU/内存/IP 等）固定通过 `asset_run_snapshot.canonical`（canonical-v1 JSON）表达，且必须可追溯来源（见 source_record 与审计）。
+
+### 2.4A asset_operational_state（资产运行覆盖状态：信号来源派生）
+
+> 该实体用于承接“信号来源”（例如 SolarWinds）对资产的监控覆盖与状态；属于 best-effort 的派生视图，不改变资产库存语义（不改写 `asset.status`）。
+
+- `asset_uuid`：主键 / 外键 → asset
+- `monitor_covered`：是否被监控覆盖（例如 SolarWinds）
+- `monitor_state`：规范化监控状态（`up` / `down` / `warning` / `unmanaged` / `unknown`）
+- `monitor_status`：原始状态描述（可空，用于 UI tooltip）
+- `monitor_updated_at`：最近一次信号更新时间
+- `created_at` / `updated_at`
 
 ### 2.5 asset_source_link（统一资产与来源对象的绑定，用于持续追踪 + 软删除）
 
@@ -118,6 +133,29 @@
 
 - 唯一：`(source_id, external_kind, external_id)` 唯一  
   解释：同一来源同一对象只能对应一个绑定记录，确保“持续追踪”确定性。
+
+### 2.5A asset_signal_link（统一资产与信号来源对象绑定：定向采集/持续追踪）
+
+> `asset_source_link` 面向“库存采集”（inventory）；`asset_signal_link` 面向“信号采集”（signal，例如 SolarWinds）。
+> 两者都用于“持续追踪”，但语义与生命周期不同：signal 允许存在歧义候选并由管理员手工绑定。
+
+- `id`：主键
+- `asset_uuid`：外键 → asset（可空；歧义/未绑定时允许为空）
+- `source_id`：外键 → source（要求 `role=signal`）
+- `external_kind`：外部对象类型（建议与资产类型对齐；例如 `host`）
+- `external_id`：外部对象强标识（例如 SolarWinds NodeID）
+- `match_type`：`auto` / `manual`
+- `match_confidence`：0-100（可选）
+- `match_reason`：原因摘要（可选）
+- `match_evidence`：证据（JSON，可选）
+- `ambiguous`：是否存在歧义（bool）
+- `ambiguous_candidates`：歧义候选（JSON，可选；用于 UI 选择）
+- `first_seen_at` / `last_seen_at`
+- `last_seen_run_id`：外键 → run（最近一次信号采集 run）
+
+**关键约束（建议）**
+
+- 唯一：`(source_id, external_kind, external_id)` 唯一
 
 ### 2.6 source_record（来源记录：每次采集的原始快照，永久保留）
 
@@ -157,6 +195,27 @@
 - `network.management_ip`（host，可为 in-band 管理 IP）
 - `network.bmc_ip`（host，out-of-band 管理 IP；推荐优先提供）
 - 辅助键（用于解释与人工研判，不强制计分）：`os.fingerprint`、`resource.profile`、`identity.cloud_native_id`
+
+### 2.6A signal_record（信号记录：每次信号采集的原始快照，永久保留）
+
+> 与 `source_record` 结构相似，但来源限定为 `source.role=signal`；用于存储监控/备份等“运行状态信号”，并支撑 `asset_operational_state` 的派生更新。
+
+- `id`：主键（可与 `collected_at` 组成复合主键，便于分区）
+- `collected_at`：采集到该条信号的时间（分区键）
+- `run_id`：外键 → run
+- `source_id`：外键 → source
+- `link_id`：外键 → asset_signal_link
+- `asset_uuid`：外键 → asset（可空；未绑定时允许为空）
+- `external_kind` / `external_id`：外部对象类型与强标识
+- `normalized`：标准化信号字段（JSON）
+- `raw`：原始数据内容（压缩 bytes；脱敏）
+- `raw_compression` / `raw_size_bytes` / `raw_hash` / `raw_mime_type` / `raw_inline_excerpt`
+
+**分区策略**
+
+- **分区键**：`collected_at`
+- **分区粒度**：按月分区
+- **索引**：`(run_id)`、`(link_id)`、`(asset_uuid, collected_at desc)`、`(source_id, collected_at desc)`
 
 ### 2.7 relation_record（关系来源记录：每次采集的关系 raw 快照，永久保留）
 

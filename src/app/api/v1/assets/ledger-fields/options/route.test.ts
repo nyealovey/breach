@@ -37,7 +37,10 @@ describe('GET /api/v1/assets/ledger-fields/options', () => {
       .mockResolvedValueOnce([{ systemLevel: 'L2' }, { systemLevel: 'L1' }, { systemLevel: '  ' }])
       .mockResolvedValueOnce([{ bizOwner: ' Alice ' }, { bizOwner: null }, { bizOwner: 'Bob' }]);
 
-    (prisma.$queryRaw as any).mockResolvedValue([{ osName: '  Ubuntu  ' }, { osName: '' }, { osName: 'Windows' }]);
+    (prisma.$queryRaw as any)
+      .mockResolvedValueOnce([{ osName: '  Ubuntu  ' }, { osName: '' }, { osName: 'Windows' }])
+      .mockResolvedValueOnce([{ brand: '  Dell  ' }, { brand: '' }, { brand: 'Dell' }, { brand: null }])
+      .mockResolvedValueOnce([{ model: ' R740 ' }, { model: '' }, { model: 'R640' }, { model: 'R740' }]);
 
     const res = await GET(new Request('http://localhost/api/v1/assets/ledger-fields/options'));
 
@@ -93,7 +96,7 @@ describe('GET /api/v1/assets/ledger-fields/options', () => {
         select: { bizOwner: true },
       }),
     );
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
 
     const body = (await res.json()) as any;
     expect(body.data).toEqual({
@@ -104,6 +107,8 @@ describe('GET /api/v1/assets/ledger-fields/options', () => {
       systemLevels: ['L1', 'L2'],
       bizOwners: ['Alice', 'Bob'],
       osNames: ['Ubuntu', 'Windows'],
+      brands: ['Dell'],
+      models: ['R640', 'R740'],
     });
   });
 });

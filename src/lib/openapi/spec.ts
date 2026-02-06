@@ -41,29 +41,6 @@ const failResponse = z.object({ error: AppErrorSchema, meta: ResponseMetaSchema 
 
 // ===== Schemas used by MVP UI =====
 
-const AssetListItemSchema = z.object({
-  assetUuid: z.string(),
-  assetType: z.string(),
-  status: z.string(),
-  machineName: z.string().nullable(),
-  machineNameOverride: z.string().nullable(),
-  machineNameCollected: z.string().nullable(),
-  machineNameMismatch: z.boolean(),
-  hostName: z.string().nullable(),
-  vmName: z.string().nullable(),
-  os: z.string().nullable(),
-  vmPowerState: z.string().nullable(),
-  toolsRunning: z.boolean().nullable(),
-  ip: z.string().nullable(),
-  monitorCovered: z.boolean().nullable(),
-  monitorState: z.string().nullable(),
-  monitorStatus: z.string().nullable(),
-  monitorUpdatedAt: z.string().nullable(),
-  cpuCount: z.number().int().nullable(),
-  memoryBytes: z.number().int().nullable(),
-  totalDiskBytes: z.number().int().nullable(),
-});
-
 const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party', 'solarwinds']);
 const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const ScheduleGroupRunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
@@ -90,6 +67,73 @@ const AssetOperationalStateSchema = z.object({
   monitorStatus: z.string().nullable(),
   monitorUpdatedAt: z.string().nullable(),
 });
+
+const AssetListItemSchema = z.object({
+  assetUuid: z.string(),
+  assetType: z.string(),
+  status: z.string(),
+  brand: z.string().nullable(),
+  model: z.string().nullable(),
+  machineName: z.string().nullable(),
+  machineNameOverride: z.string().nullable(),
+  machineNameCollected: z.string().nullable(),
+  machineNameMismatch: z.boolean(),
+  hostName: z.string().nullable(),
+  vmName: z.string().nullable(),
+  os: z.string().nullable(),
+  osCollected: z.string().nullable(),
+  osOverrideText: z.string().nullable(),
+  vmPowerState: z.string().nullable(),
+  toolsRunning: z.boolean().nullable(),
+  ip: z.string().nullable(),
+  ipCollected: z.string().nullable(),
+  ipOverrideText: z.string().nullable(),
+  recordedAt: z.string(),
+  monitorCovered: z.boolean().nullable(),
+  monitorState: z.string().nullable(),
+  monitorStatus: z.string().nullable(),
+  monitorUpdatedAt: z.string().nullable(),
+  ledgerFields: LedgerFieldsV1Schema,
+  cpuCount: z.number().int().nullable(),
+  memoryBytes: z.number().int().nullable(),
+  totalDiskBytes: z.number().int().nullable(),
+});
+
+const SolarWindsNodeCandidateSchema = z.object({
+  nodeId: z.string(),
+  caption: z.string().nullable(),
+  sysName: z.string().nullable(),
+  dns: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  machineType: z.string().nullable(),
+  status: z.union([z.number().int(), z.string()]).nullable(),
+  statusDescription: z.string().nullable(),
+  unmanaged: z.boolean().nullable(),
+  lastSyncIso: z.string().nullable(),
+});
+
+const SolarWindsCollectCandidateSchema = SolarWindsNodeCandidateSchema.extend({
+  matchScore: z.number().int(),
+  matchReasons: z.array(z.string()),
+});
+
+const SolarWindsTargetedCollectResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('no_source') }),
+  z.object({ status: z.literal('no_match'), hints: z.unknown().optional() }),
+  z.object({ status: z.literal('ambiguous'), candidates: z.array(SolarWindsCollectCandidateSchema) }),
+  z.object({
+    status: z.literal('ok'),
+    runId: z.string(),
+    linkId: z.string(),
+    collectedAt: z.string(),
+    node: SolarWindsNodeCandidateSchema,
+    fields: z.object({
+      machineName: z.string().nullable(),
+      ipText: z.string().nullable(),
+      osText: z.string().nullable(),
+    }),
+  }),
+]);
 
 const CredentialListItemSchema = z.object({
   credentialId: z.string(),
@@ -193,6 +237,9 @@ registry.registerPath({
       pageSize: z.coerce.number().int().positive().optional(),
       q: z.string().optional(),
       asset_type: z.string().optional(),
+      status: z.enum(['in_service', 'offline']).optional(),
+      brand: z.string().optional(),
+      model: z.string().optional(),
       source_id: z.string().optional(),
       exclude_asset_type: z.string().optional(),
       region: z.string().optional(),
@@ -295,7 +342,7 @@ registry.registerPath({
   },
 });
 
-const PreferenceKeySchema = z.literal('assets.table.columns.v1');
+const PreferenceKeySchema = z.enum(['assets.table.columns.v1', 'assets.table.columns.v2']);
 const AssetsTableColumnsPreferenceValueSchema = z.object({
   visibleColumns: z.array(z.string()).min(1),
 });
@@ -520,6 +567,8 @@ registry.registerPath({
               mergedIntoAssetUuid: z.string().nullable(),
               displayName: z.string().nullable(),
               machineNameOverride: z.string().nullable(),
+              ipOverrideText: z.string().nullable(),
+              osOverrideText: z.string().nullable(),
               lastSeenAt: z.string().nullable(),
               ledgerFields: LedgerFieldsV1Schema,
               operationalState: AssetOperationalStateSchema,
@@ -548,7 +597,11 @@ registry.registerPath({
     body: {
       content: {
         'application/json': {
-          schema: z.object({ machineNameOverride: z.string().nullable().optional() }),
+          schema: z.object({
+            machineNameOverride: z.string().nullable().optional(),
+            ipOverrideText: z.string().nullable().optional(),
+            osOverrideText: z.string().nullable().optional(),
+          }),
         },
       },
     },
@@ -558,7 +611,14 @@ registry.registerPath({
       description: 'OK',
       content: {
         'application/json': {
-          schema: okResponse(z.object({ assetUuid: z.string(), machineNameOverride: z.string().nullable() })),
+          schema: okResponse(
+            z.object({
+              assetUuid: z.string(),
+              machineNameOverride: z.string().nullable(),
+              ipOverrideText: z.string().nullable(),
+              osOverrideText: z.string().nullable(),
+            }),
+          ),
         },
       },
     },
@@ -566,6 +626,38 @@ registry.registerPath({
     401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
     404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/assets/{uuid}/solarwinds/collect',
+  tags: ['assets'],
+  request: {
+    params: z.object({ uuid: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ nodeId: z.string().min(1).optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: okResponse(SolarWindsTargetedCollectResponseSchema),
+        },
+      },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: failResponse } } },
+    502: { description: 'Bad gateway', content: { 'application/json': { schema: failResponse } } },
   },
 });
 

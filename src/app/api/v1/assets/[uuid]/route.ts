@@ -9,6 +9,8 @@ import { buildLedgerFieldsV1FromRow } from '@/lib/ledger/ledger-fields-v1';
 
 const AssetUpdateBodySchema = z.object({
   machineNameOverride: z.string().nullable().optional(),
+  ipOverrideText: z.string().nullable().optional(),
+  osOverrideText: z.string().nullable().optional(),
 });
 
 export async function GET(request: Request, context: { params: Promise<{ uuid: string }> }) {
@@ -26,6 +28,8 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       mergedIntoAssetUuid: true,
       displayName: true,
       machineNameOverride: true,
+      ipOverrideText: true,
+      osOverrideText: true,
       lastSeenAt: true,
       operationalState: {
         select: {
@@ -76,6 +80,8 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       mergedIntoAssetUuid: asset.mergedIntoAssetUuid ?? null,
       displayName: asset.displayName,
       machineNameOverride: asset.machineNameOverride,
+      ipOverrideText: asset.ipOverrideText ?? null,
+      osOverrideText: asset.osOverrideText ?? null,
       lastSeenAt: asset.lastSeenAt?.toISOString() ?? null,
       ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
       operationalState: {
@@ -109,7 +115,11 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
     );
   }
 
-  if (body.machineNameOverride === undefined) {
+  if (
+    body.machineNameOverride === undefined &&
+    body.ipOverrideText === undefined &&
+    body.osOverrideText === undefined
+  ) {
     return fail(
       { code: ErrorCode.CONFIG_INVALID_REQUEST, category: 'config', message: 'No fields to update', retryable: false },
       400,
@@ -117,8 +127,16 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
     );
   }
 
-  const nextOverride =
-    body.machineNameOverride === null ? null : body.machineNameOverride.trim() ? body.machineNameOverride.trim() : null;
+  const nextMachineNameOverride =
+    body.machineNameOverride === null
+      ? null
+      : body.machineNameOverride?.trim()
+        ? body.machineNameOverride.trim()
+        : null;
+  const nextIpOverrideText =
+    body.ipOverrideText === null ? null : body.ipOverrideText?.trim() ? body.ipOverrideText.trim() : null;
+  const nextOsOverrideText =
+    body.osOverrideText === null ? null : body.osOverrideText?.trim() ? body.osOverrideText.trim() : null;
 
   const existing = await prisma.asset.findUnique({ where: { uuid }, select: { uuid: true } });
   if (!existing) {
@@ -130,14 +148,24 @@ export async function PUT(request: Request, context: { params: Promise<{ uuid: s
   }
 
   try {
+    const data: Record<string, unknown> = {};
+    if (body.machineNameOverride !== undefined) data.machineNameOverride = nextMachineNameOverride;
+    if (body.ipOverrideText !== undefined) data.ipOverrideText = nextIpOverrideText;
+    if (body.osOverrideText !== undefined) data.osOverrideText = nextOsOverrideText;
+
     const updated = await prisma.asset.update({
       where: { uuid },
-      data: { machineNameOverride: nextOverride },
-      select: { uuid: true, machineNameOverride: true, updatedAt: true },
+      data,
+      select: { uuid: true, machineNameOverride: true, ipOverrideText: true, osOverrideText: true, updatedAt: true },
     });
 
     return ok(
-      { assetUuid: updated.uuid, machineNameOverride: updated.machineNameOverride },
+      {
+        assetUuid: updated.uuid,
+        machineNameOverride: updated.machineNameOverride,
+        ipOverrideText: updated.ipOverrideText ?? null,
+        osOverrideText: updated.osOverrideText ?? null,
+      },
       { requestId: auth.requestId },
     );
   } catch {

@@ -99,6 +99,8 @@ function buildAssetIndex(
   rows: Array<{
     uuid: string;
     assetType: AssetType;
+    machineNameOverride: string | null;
+    ipOverrideText: string | null;
     collectedHostname: string | null;
     collectedVmCaption: string | null;
     collectedIpText: string | null;
@@ -115,11 +117,16 @@ function buildAssetIndex(
   };
 
   for (const row of rows) {
-    const nameKeys = [...deriveNameKeys(row.collectedHostname), ...deriveNameKeys(row.collectedVmCaption)];
+    const nameKeys = [
+      ...deriveNameKeys(row.machineNameOverride),
+      ...deriveNameKeys(row.collectedHostname),
+      ...deriveNameKeys(row.collectedVmCaption),
+    ];
 
     const ipKeys: string[] = [];
-    if (row.collectedIpText) {
-      const parts = row.collectedIpText
+    for (const ipText of [row.ipOverrideText, row.collectedIpText]) {
+      if (!ipText) continue;
+      const parts = ipText
         .split(',')
         .map((p) => p.trim())
         .filter((p) => p.length > 0);
@@ -258,6 +265,8 @@ export async function ingestSignalRun(args: {
       select: {
         uuid: true,
         assetType: true,
+        machineNameOverride: true,
+        ipOverrideText: true,
         collectedHostname: true,
         collectedVmCaption: true,
         collectedIpText: true,

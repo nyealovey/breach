@@ -349,6 +349,10 @@ model Asset {
   displayName        String?
   // Manual override for "机器名" display; does not block canonical collection from being stored.
   machineNameOverride String?
+  // Manual override for IP display/search/filtering; does not block canonical collection from being stored.
+  ipOverrideText      String?
+  // Manual override for OS display/search/filtering; does not block canonical collection from being stored.
+  osOverrideText      String?
   // Derived fields for UI/search/filtering (best-effort, non-authoritative).
   collectedHostname   String?
   collectedVmCaption  String?

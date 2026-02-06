@@ -6,6 +6,9 @@ export type AssetListQuery = {
   sourceId: string | undefined;
   sourceType: SourceType | undefined;
   q: string | undefined;
+  status: 'in_service' | 'offline' | undefined;
+  brand: string | undefined;
+  model: string | undefined;
   region: string | undefined;
   company: string | undefined;
   department: string | undefined;
@@ -36,6 +39,11 @@ function parseOptionalString(input: string | null): string | undefined {
   if (!input) return undefined;
   const trimmed = input.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseAssetStatus(input: string | null): AssetListQuery['status'] {
+  if (input === 'in_service' || input === 'offline') return input;
+  return undefined;
 }
 
 function parseVmPowerState(input: string | null): AssetListQuery['vmPowerState'] {
@@ -72,6 +80,9 @@ export function parseAssetListQuery(params: URLSearchParams): AssetListQuery {
     sourceId: parseOptionalString(params.get('source_id')),
     sourceType: parseSourceType(params.get('source_type')),
     q: parseOptionalString(params.get('q')),
+    status: parseAssetStatus(params.get('status')),
+    brand: parseOptionalString(params.get('brand')),
+    model: parseOptionalString(params.get('model')),
     region: parseOptionalString(params.get('region')),
     company: parseOptionalString(params.get('company')),
     department: parseOptionalString(params.get('department')),
@@ -114,6 +125,9 @@ export function buildAssetListWhere(query: {
   sourceId?: string;
   sourceType?: SourceType;
   q?: string;
+  status?: AssetListQuery['status'];
+  brand?: string;
+  model?: string;
   region?: string;
   company?: string;
   department?: string;
@@ -137,9 +151,42 @@ export function buildAssetListWhere(query: {
   if (query.sourceId) and.push({ sourceLinks: { some: { sourceId: query.sourceId } } });
   if (query.sourceType) and.push({ sourceLinks: { some: { source: { sourceType: query.sourceType } } } });
 
+  if (query.status) and.push({ status: query.status });
+
   if (query.createdWithinDays && query.createdWithinDays > 0) {
     const cutoffMs = Date.now() - query.createdWithinDays * 24 * 60 * 60 * 1000;
     and.push({ createdAt: { gte: new Date(cutoffMs) } });
+  }
+
+  // Host-only filters (from canonical fields).
+  if (query.brand || query.model) {
+    and.push({ assetType: AssetType.host });
+  }
+  if (query.brand) {
+    and.push({
+      runSnapshots: {
+        some: {
+          canonical: {
+            path: ['fields', 'identity', 'vendor', 'value'],
+            string_contains: query.brand,
+            mode: 'insensitive',
+          },
+        },
+      },
+    });
+  }
+  if (query.model) {
+    and.push({
+      runSnapshots: {
+        some: {
+          canonical: {
+            path: ['fields', 'identity', 'model', 'value'],
+            string_contains: query.model,
+            mode: 'insensitive',
+          },
+        },
+      },
+    });
   }
 
   // Ledger-fields-v1 filters (case-insensitive substring).
@@ -158,11 +205,16 @@ export function buildAssetListWhere(query: {
 
   if (query.os) {
     and.push({
-      runSnapshots: {
-        some: {
-          canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: query.os, mode: 'insensitive' },
+      OR: [
+        { osOverrideText: { contains: query.os, mode: 'insensitive' } },
+        {
+          runSnapshots: {
+            some: {
+              canonical: { path: ['fields', 'os', 'name', 'value'], string_contains: query.os, mode: 'insensitive' },
+            },
+          },
         },
-      },
+      ],
     });
   }
 
@@ -176,13 +228,22 @@ export function buildAssetListWhere(query: {
 
   if (query.assetType === AssetType.vm && query.ipMissing === true) {
     and.push({
-      OR: [
+      AND: [
+        { OR: [{ ipOverrideText: null }, { ipOverrideText: '' }] },
         {
-          runSnapshots: {
-            some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: Prisma.AnyNull } },
-          },
+          OR: [
+            {
+              runSnapshots: {
+                some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: Prisma.AnyNull } },
+              },
+            },
+            {
+              runSnapshots: {
+                some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: [] } },
+              },
+            },
+          ],
         },
-        { runSnapshots: { some: { canonical: { path: ['fields', 'network', 'ip_addresses', 'value'], equals: [] } } } },
       ],
     });
   }
@@ -215,6 +276,8 @@ export function buildAssetListWhere(query: {
         { collectedHostname: { contains: token, mode: 'insensitive' } },
         { collectedVmCaption: { contains: token, mode: 'insensitive' } },
         { collectedIpText: { contains: token, mode: 'insensitive' } },
+        { ipOverrideText: { contains: token, mode: 'insensitive' } },
+        { osOverrideText: { contains: token, mode: 'insensitive' } },
         { sourceLinks: { some: { externalId: { contains: token, mode: 'insensitive' } } } },
         // Ledger-fields-v1: must always be searchable (case-insensitive substring).
         { ledgerFields: { is: { region: { contains: token, mode: 'insensitive' } } } },

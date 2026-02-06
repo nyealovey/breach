@@ -7,8 +7,9 @@ import { fail, ok } from '@/lib/http/response';
 
 import type { Prisma } from '@prisma/client';
 
-const AssetsTableColumnsKey = 'assets.table.columns.v1' as const;
-const AllowedPreferenceKeySchema = z.literal(AssetsTableColumnsKey);
+const AssetsTableColumnsKeyV1 = 'assets.table.columns.v1' as const;
+const AssetsTableColumnsKeyV2 = 'assets.table.columns.v2' as const;
+const AllowedPreferenceKeySchema = z.union([z.literal(AssetsTableColumnsKeyV1), z.literal(AssetsTableColumnsKeyV2)]);
 
 const AssetsTableColumnsValueSchema = z.object({
   visibleColumns: z.array(z.string().min(1)).min(1),
@@ -94,7 +95,7 @@ export async function PUT(request: Request) {
   }
 
   let value: Prisma.InputJsonValue;
-  if (key === AssetsTableColumnsKey) {
+  if (key === AssetsTableColumnsKeyV1 || key === AssetsTableColumnsKeyV2) {
     let parsedValue: z.infer<typeof AssetsTableColumnsValueSchema>;
     try {
       parsedValue = AssetsTableColumnsValueSchema.parse(body.value);

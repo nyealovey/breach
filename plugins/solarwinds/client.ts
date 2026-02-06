@@ -7,6 +7,16 @@ function joinUrl(base: string, path: string) {
   return `${base.replace(/\/+$/, '')}${path}`;
 }
 
+function normalizeSwisQueryUrl(endpoint: string): string {
+  const trimmed = endpoint.trim();
+  const normalized = trimmed.replace(/\/+$/, '');
+  const path = '/SolarWinds/InformationService/v3/Json/Query';
+  const lower = normalized.toLowerCase();
+  const pathLower = path.toLowerCase();
+  if (lower.endsWith(pathLower)) return normalized;
+  return joinUrl(normalized, path);
+}
+
 function toBooleanValue(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -132,7 +142,7 @@ export function createSwisClient(input: {
   username: string;
   password: string;
 }): SwisClient {
-  const queryUrl = joinUrl(input.endpoint, '/SolarWinds/InformationService/v3/Json/Query');
+  const queryUrl = normalizeSwisQueryUrl(input.endpoint);
   const auth = `Basic ${encodeBasicAuth(input.username, input.password)}`;
 
   const query = async (swql: string, parameters: Record<string, unknown> = {}) => {

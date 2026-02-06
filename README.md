@@ -166,11 +166,16 @@ List of websites that started off with Next.js TypeScript Starter:
   - 清单：支持搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）
   - 清单：支持按「虚拟化技术」筛选（vCenter / PVE / Hyper-V；命中规则：资产任一来源属于该类型即可）
   - 清单：暂不展示 Cluster（Cluster 定位为“虚拟资产”，后续再讨论如何在清单中展示）
+  - 清单：状态列展示 `Asset.status`（`in_service/offline` → `在服/离线`）；并提供对应筛选
+  - 清单：Host 增加品牌/型号列（来自 canonical：`fields.identity.vendor/model`，best-effort）；并提供对应筛选（选择后自动切到 Host）
+  - 清单：监控列展示 SolarWinds 监控覆盖与状态（信号来源；不影响库存 status）
   - 清单：电源列展示 `fields.runtime.power_state`（VM/Host；`POWERED_ON/OFF/SUSPENDED` → `运行/关机/挂起`）
   - 清单：IP 列默认过滤 `169.254.*`（APIPA/link-local），避免混入无效地址
   - 清单：录入时间列位于电源列之后
   - 快捷筛选：仅 IP 缺失 / 仅机器名缺失 / 仅机器名≠虚拟机名 / 仅最近新增（7 天）
   - 操作区：列设置（图标）、批量设置台账字段（图标）、导出台账 CSV
+  - 操作列（admin）：支持覆盖编辑机器名/IP/操作系统；并提供“从 SolarWinds 采集”（仅针对当前资产触发一次定向采集，多命中需选择 Node；采集会填充覆盖字段但不会自动保存）
+  - 列设置：弹窗按「资产字段/台账字段」两栏展示，并在每栏内按「通用/VM/Host」分组；列配置 key 升级为 `assets.table.columns.v2`（v1 不再自动沿用）
   - 分页：每页条数选择在列表底部左侧
   - 详情：左右等宽两列；左侧为盘点摘要（机器名/虚拟机名/操作系统/IP/CPU/内存/总分配磁盘/电源/Tools 等）+「磁盘（可选）」明细（Host 来自 `storage.datastores`；VM 来自 `hardware.disks`，展示名称/容量/类型）/台账字段/结构化字段（仅字段 ID），右侧为关系链/调试（canonical JSON）/来源明细（默认仅 NEW/CHANGED，带 tag）
   - 清单/详情：当 VM 上电且 Tools / Guest 服务未运行导致 guest 信息缺失时，机器名/操作系统/IP 会显示 `- (Tools 未运行)`（vCenter≈VMware Tools；PVE≈QEMU Guest Agent；Hyper-V≈来宾集成服务，best-effort）

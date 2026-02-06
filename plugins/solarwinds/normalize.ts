@@ -8,6 +8,11 @@ type NormalizedV1 = {
   network?: {
     ip_addresses?: string[];
   };
+  os?: {
+    name?: string;
+    version?: string;
+    fingerprint?: string;
+  };
   attributes?: Record<string, string | number | boolean | null>;
 };
 
@@ -78,6 +83,7 @@ export function normalizeNode(row: Record<string, unknown>): NormalizedAsset | n
   const sysName = cleanString(row.SysName ?? row.sysName ?? row.systemName);
   const dns = cleanString(row.DNS ?? row.dns);
   const ip = cleanString(row.IPAddress ?? row.ipAddress ?? row.ip);
+  const machineType = cleanString(row.MachineType ?? row.machineType);
 
   const hostname = sysName ?? dns ?? null;
   const displayCaption = caption ?? sysName ?? dns ?? null;
@@ -114,6 +120,11 @@ export function normalizeNode(row: Record<string, unknown>): NormalizedAsset | n
       ...(ip
         ? {
             network: { ip_addresses: [ip] },
+          }
+        : {}),
+      ...(machineType
+        ? {
+            os: { fingerprint: machineType },
           }
         : {}),
       attributes,

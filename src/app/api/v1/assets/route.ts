@@ -100,6 +100,12 @@ function pickToolsRunning(fields: unknown): boolean | null {
   return null;
 }
 
+function pickTrimmedString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function GET(request: Request) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
@@ -171,6 +177,14 @@ export async function GET(request: Request) {
       const machineNameMismatch =
         machineNameOverride !== null && machineNameCollected !== null && machineNameOverride !== machineNameCollected;
 
+      const ipOverrideText = asset.ipOverrideText?.trim() ? asset.ipOverrideText.trim() : null;
+      const ipCollected = pickPrimaryIp(fields, privateIpPrefixes);
+      const ip = ipOverrideText ?? ipCollected;
+
+      const osOverrideText = asset.osOverrideText?.trim() ? asset.osOverrideText.trim() : null;
+      const osCollected = pickOs(fields, asset.assetType);
+      const os = osOverrideText ?? osCollected;
+
       const vmName = asset.assetType === 'vm' ? (pickVmName(fields) ?? asset.displayName ?? asset.uuid) : null;
       const hostName = asset.assetType === 'vm' ? pickRunsOnHostName(canonical) : null;
       const recordedAt = (asset.ledgerFields?.createdAt ?? asset.createdAt).toISOString();
@@ -179,17 +193,25 @@ export async function GET(request: Request) {
         assetUuid: asset.uuid,
         assetType: asset.assetType,
         status: asset.status,
+        brand:
+          asset.assetType === 'host' ? pickTrimmedString(getCanonicalFieldValue(fields, ['identity', 'vendor'])) : null,
+        model:
+          asset.assetType === 'host' ? pickTrimmedString(getCanonicalFieldValue(fields, ['identity', 'model'])) : null,
         machineName,
         machineNameOverride,
         machineNameCollected,
         machineNameMismatch,
         vmName,
         hostName,
-        os: pickOs(fields, asset.assetType),
+        os,
+        osCollected,
+        osOverrideText,
         // Power state is primarily VM-focused but can also exist for Hosts (e.g. ESXi).
         vmPowerState: pickPowerState(fields),
         toolsRunning: asset.assetType === 'vm' ? pickToolsRunning(fields) : null,
-        ip: pickPrimaryIp(fields, privateIpPrefixes),
+        ip,
+        ipCollected,
+        ipOverrideText,
         recordedAt,
         monitorCovered: asset.operationalState?.monitorCovered ?? null,
         monitorState: asset.operationalState?.monitorState ?? null,
