@@ -187,6 +187,30 @@
 | 密码     | `type="password"` + 显示/隐藏切换 | 不回显（显示"已配置"） |
 | 凭证     | 同上                              | 不回显                 |
 
+### 3.5 来源配置（阿里云 / aliyun）
+
+> 说明：后端创建 Source 目前统一要求 `config.endpoint` 非空。对阿里云来源，endpoint 仅作为占位字段用于通过统一校验，插件不依赖该字段。
+
+字段与交互（建议实现）：
+
+- `endpoint`（必填，占位）
+  - 默认值：`https://ecs.aliyuncs.com`
+  - UI：选择来源类型为“阿里云”时自动填充，并提示“占位必填，插件不依赖”
+- `regions`（必填）
+  - UI：逗号分隔输入（示例：`cn-hangzhou,cn-beijing`）
+  - 提交时：trim/去空/去重后存为 string[]
+- `include_ecs`（默认 true）
+  - UI：开关；关闭后不采集 ECS
+- `include_rds`（默认 true）
+  - UI：开关；关闭后不采集 RDS
+- 约束：`include_ecs/include_rds` 至少一个为 true，否则提交时报错
+- `include_stopped`（默认 true；仅 ECS）
+  - UI：当 `include_ecs=true` 时显示；用于控制是否包含已停止 ECS
+- `timeout_ms`（默认 60_000）
+  - UI：数字输入；用于控制单次请求超时（插件侧）
+- `max_parallel_regions`（默认 3）
+  - UI：数字输入；用于控制 region 并发，降低限流风险
+
 ## 4. 冲突字段标记规范
 
 ### 4.1 冲突标识

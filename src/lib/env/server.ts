@@ -37,6 +37,7 @@ export const serverEnv = createEnv({
     ASSET_LEDGER_VCENTER_PLUGIN_PATH: z.string().min(1).default('plugins/vcenter/index.ts'),
     ASSET_LEDGER_PVE_PLUGIN_PATH: z.string().min(1).default('plugins/pve/index.ts'),
     ASSET_LEDGER_HYPERV_PLUGIN_PATH: z.string().min(1).default('plugins/hyperv/index.ts'),
+    ASSET_LEDGER_ALIYUN_PLUGIN_PATH: z.string().min(1).default('plugins/aliyun/index.ts'),
     ASSET_LEDGER_VEEAM_PLUGIN_PATH: z.string().min(1).default('plugins/veeam/index.ts'),
     ASSET_LEDGER_SOLARWINDS_PLUGIN_PATH: z.string().min(1).default('plugins/solarwinds/index.ts'),
     ASSET_LEDGER_AD_PLUGIN_PATH: z.string().min(1).default('plugins/activedirectory/index.ts'),

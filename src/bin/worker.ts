@@ -115,6 +115,7 @@ function getPluginPath(source: Source): string | null {
   if (source.sourceType === 'vcenter') return serverEnv.ASSET_LEDGER_VCENTER_PLUGIN_PATH ?? null;
   if (source.sourceType === 'pve') return serverEnv.ASSET_LEDGER_PVE_PLUGIN_PATH ?? null;
   if (source.sourceType === 'hyperv') return serverEnv.ASSET_LEDGER_HYPERV_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'aliyun') return serverEnv.ASSET_LEDGER_ALIYUN_PLUGIN_PATH ?? null;
   if (source.sourceType === 'veeam') return serverEnv.ASSET_LEDGER_VEEAM_PLUGIN_PATH ?? null;
   if (source.sourceType === 'solarwinds') return serverEnv.ASSET_LEDGER_SOLARWINDS_PLUGIN_PATH ?? null;
   if (source.sourceType === 'activedirectory') return serverEnv.ASSET_LEDGER_AD_PLUGIN_PATH ?? null;

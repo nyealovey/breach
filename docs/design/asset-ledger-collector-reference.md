@@ -398,15 +398,24 @@ flowchart TD
 - VM 强标识：Hyper-V VM ID（GUID）。
 - Cluster：若是 Failover Cluster，可输出 Host→Cluster；否则 cluster 为空即可。
 
-### 5.4 阿里云 ECS（VM 为主；Host/Cluster 为空）
+### 5.4 阿里云 ECS + RDS（VM 为主；Host/Cluster 为空）
 
 推荐路线：使用官方 SDK v2，插件只做分页/限流/字段映射。
 
+- TypeScript（bun）：
+  - `@alicloud/ecs20140526` + `@alicloud/openapi-core` + `@darabonba/typescript`
+  - `@alicloud/rds20140815`
 - Go：
   - `aliyun/alibabacloud-go-sdk`（v2）
-    采集要点：
 
-- `external_id`：实例 ID（instanceId）。
+采集要点：
+
+- 本期不新增资产类型：ECS/RDS 均作为 `vm` 资产入账（Host/Cluster 为空）。
+- 强标识：
+  - `identity.cloud_native_id`：ECS `InstanceId`；RDS `DBInstanceId`
+- `external_id`（同一 Source 内稳定且不冲突）：
+  - ECS：`ecs:<instanceId>`
+  - RDS：`rds:<dbInstanceId>`
 - 关系：不输出 runs_on/member_of（默认空）。
 - Cluster：为空（不映射 region/zone/vpc）。
 

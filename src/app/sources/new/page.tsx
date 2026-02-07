@@ -29,6 +29,7 @@ type AgentItem = {
 
 export default function NewSourcePage() {
   const router = useRouter();
+  const aliyunEndpointPlaceholder = 'https://ecs.aliyuncs.com';
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('vcenter');
   const [endpoint, setEndpoint] = useState('');
@@ -63,6 +64,12 @@ export default function NewSourcePage() {
   const [adTlsVerify, setAdTlsVerify] = useState(true);
   const [adTimeoutMs, setAdTimeoutMs] = useState(60_000);
   const [adUserFilter, setAdUserFilter] = useState('');
+  const [aliyunRegionsText, setAliyunRegionsText] = useState('');
+  const [aliyunTimeoutMs, setAliyunTimeoutMs] = useState(60_000);
+  const [aliyunMaxParallelRegions, setAliyunMaxParallelRegions] = useState(3);
+  const [aliyunIncludeStopped, setAliyunIncludeStopped] = useState(true);
+  const [aliyunIncludeEcs, setAliyunIncludeEcs] = useState(true);
+  const [aliyunIncludeRds, setAliyunIncludeRds] = useState(true);
   const [enabled, setEnabled] = useState(true);
   const [credentialId, setCredentialId] = useState('');
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
@@ -120,6 +127,16 @@ export default function NewSourcePage() {
       ),
     );
 
+  const parseAliyunRegions = () =>
+    Array.from(
+      new Set(
+        aliyunRegionsText
+          .split(',')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -147,6 +164,24 @@ export default function NewSourcePage() {
       }
       if (!credentialId) {
         toast.error('认证用途的 AD Source 必须绑定凭据');
+        return;
+      }
+    }
+    if (sourceType === 'aliyun') {
+      if (!endpoint.trim()) {
+        toast.error('请填写 endpoint（占位必填）');
+        return;
+      }
+      if (parseAliyunRegions().length === 0) {
+        toast.error('请填写 regions');
+        return;
+      }
+      if (!aliyunIncludeEcs && !aliyunIncludeRds) {
+        toast.error('ECS/RDS 至少启用一个');
+        return;
+      }
+      if (!credentialId) {
+        toast.error('阿里云来源必须绑定凭据');
         return;
       }
     }
@@ -219,6 +254,16 @@ export default function NewSourcePage() {
                   ...(adUserFilter.trim() ? { user_filter: adUserFilter.trim() } : {}),
                 }
               : {}),
+            ...(sourceType === 'aliyun'
+              ? {
+                  regions: parseAliyunRegions(),
+                  timeout_ms: aliyunTimeoutMs,
+                  max_parallel_regions: aliyunMaxParallelRegions,
+                  include_ecs: aliyunIncludeEcs,
+                  include_rds: aliyunIncludeRds,
+                  include_stopped: aliyunIncludeStopped,
+                }
+              : {}),
           },
           credentialId: credentialId ? credentialId : null,
         }),
@@ -262,7 +307,8 @@ export default function NewSourcePage() {
                   id="sourceType"
                   value={sourceType}
                   onChange={(e) => {
-                    setSourceType(e.target.value);
+                    const nextType = e.target.value;
+                    setSourceType(nextType);
                     setCredentialId('');
                     setPreferredVcenterVersion('7.0-8.x');
                     setPveTlsVerify(true);
@@ -295,6 +341,14 @@ export default function NewSourcePage() {
                     setAdTlsVerify(true);
                     setAdTimeoutMs(60_000);
                     setAdUserFilter('');
+                    setAliyunRegionsText('');
+                    setAliyunTimeoutMs(60_000);
+                    setAliyunMaxParallelRegions(3);
+                    setAliyunIncludeStopped(true);
+                    setAliyunIncludeEcs(true);
+                    setAliyunIncludeRds(true);
+
+                    if (nextType === 'aliyun') setEndpoint(aliyunEndpointPlaceholder);
                   }}
                 >
                   <option value="vcenter">vCenter</option>
@@ -310,7 +364,77 @@ export default function NewSourcePage() {
               <div className="space-y-2">
                 <Label htmlFor="endpoint">{sourceType === 'activedirectory' ? 'LDAP Server URL' : 'Endpoint'}</Label>
                 <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+                {sourceType === 'aliyun' ? (
+                  <div className="text-xs text-muted-foreground">
+                    占位必填，插件不依赖该字段（建议保留默认值：{aliyunEndpointPlaceholder}）。
+                  </div>
+                ) : null}
               </div>
+              {sourceType === 'aliyun' ? (
+                <div className="space-y-3 rounded-md border bg-background p-3">
+                  <div className="text-sm font-medium">阿里云（ECS + RDS）配置</div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="aliyunRegions">regions（逗号分隔）</Label>
+                    <Input
+                      id="aliyunRegions"
+                      value={aliyunRegionsText}
+                      onChange={(e) => setAliyunRegionsText(e.target.value)}
+                      placeholder="cn-hangzhou,cn-beijing"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      说明：将按配置的 regions 全量枚举；漏配 region 将导致资产缺口。
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">采集 ECS</div>
+                      <div className="text-xs text-muted-foreground">ECS 实例入账为 VM</div>
+                    </div>
+                    <Switch checked={aliyunIncludeEcs} onCheckedChange={setAliyunIncludeEcs} />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">采集 RDS</div>
+                      <div className="text-xs text-muted-foreground">RDS 实例以 VM 入账（external_id 前缀 rds:）</div>
+                    </div>
+                    <Switch checked={aliyunIncludeRds} onCheckedChange={setAliyunIncludeRds} />
+                  </div>
+
+                  {aliyunIncludeEcs ? (
+                    <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                      <div className="text-sm">
+                        <div className="font-medium">包含已停止 ECS</div>
+                        <div className="text-xs text-muted-foreground">关闭则仅保留运行中实例</div>
+                      </div>
+                      <Switch checked={aliyunIncludeStopped} onCheckedChange={setAliyunIncludeStopped} />
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="aliyunTimeoutMs">timeout_ms</Label>
+                    <Input
+                      id="aliyunTimeoutMs"
+                      type="number"
+                      value={String(aliyunTimeoutMs)}
+                      onChange={(e) => setAliyunTimeoutMs(Number(e.target.value))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="aliyunMaxParallelRegions">max_parallel_regions</Label>
+                    <Input
+                      id="aliyunMaxParallelRegions"
+                      type="number"
+                      value={String(aliyunMaxParallelRegions)}
+                      onChange={(e) => setAliyunMaxParallelRegions(Number(e.target.value))}
+                    />
+                    <div className="text-xs text-muted-foreground">说明：提高并发会加重限流风险。</div>
+                  </div>
+                </div>
+              ) : null}
               {sourceType === 'vcenter' ? (
                 <div className="space-y-2">
                   <Label htmlFor="preferredVcenterVersion">vCenter 版本范围</Label>
