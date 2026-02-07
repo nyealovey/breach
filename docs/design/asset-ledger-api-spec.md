@@ -1,7 +1,7 @@
 # 资产台账 API 规范
 
-版本：v1.2
-日期：2026-02-06
+版本：v1.3
+日期：2026-02-07
 
 ## 文档简介
 
@@ -821,6 +821,13 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
 }
 ```
 
+**信号状态字段（列表直接返回；不属于库存采集 canonical）**：
+
+- SolarWinds（监控）：
+  - `monitorCovered` / `monitorState` / `monitorStatus` / `monitorUpdatedAt`
+- Veeam（备份）：
+  - `backupCovered` / `backupState` / `backupLastSuccessAt` / `backupLastResult` / `backupUpdatedAt`
+
 **字段口径补充（列表聚合字段）**：
 
 - `cpuCount`：
@@ -916,6 +923,13 @@ v1.0 不提供取消能力；后续如需要，可新增 `POST /api/v1/runs/:run
   "meta": { "requestId": "req_xxx", "timestamp": "..." }
 }
 ```
+
+**补充字段（信号来源）**：
+
+- `operationalState`：
+  - SolarWinds（监控）：`monitorCovered/monitorState/monitorStatus/monitorUpdatedAt`
+  - Veeam（备份）：`backupCovered/backupState/backupLastSuccessAt/backupLastResult/backupUpdatedAt`
+- `backupLast7`：最近 7 次备份记录（仅 Veeam 信号提供；不提供完整备份列表）
 
 ### 6.3 获取 Asset 来源明细
 

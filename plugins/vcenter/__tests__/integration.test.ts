@@ -3,11 +3,13 @@ import { createServer } from 'node:http';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { resolveBunBin } from '../../__tests__/bun-bin';
+
 type PluginResult = { exitCode: number | null; stdout: string; stderr: string };
 
 function runCollector(request: unknown): Promise<PluginResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn('bun', ['plugins/vcenter/index.ts'], {
+    const child = spawn(resolveBunBin(), ['plugins/vcenter/index.ts'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
     });

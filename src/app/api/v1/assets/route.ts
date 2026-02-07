@@ -126,6 +126,11 @@ export async function GET(request: Request) {
       include: {
         operationalState: {
           select: {
+            backupCovered: true,
+            backupState: true,
+            backupLastSuccessAt: true,
+            backupLastResult: true,
+            backupUpdatedAt: true,
             monitorCovered: true,
             monitorState: true,
             monitorStatus: true,
@@ -205,6 +210,11 @@ export async function GET(request: Request) {
         monitorState: asset.operationalState?.monitorState ?? null,
         monitorStatus: asset.operationalState?.monitorStatus ?? null,
         monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
+        backupCovered: asset.operationalState?.backupCovered ?? null,
+        backupState: asset.operationalState?.backupState ?? null,
+        backupLastSuccessAt: asset.operationalState?.backupLastSuccessAt?.toISOString() ?? null,
+        backupLastResult: asset.operationalState?.backupLastResult ?? null,
+        backupUpdatedAt: asset.operationalState?.backupUpdatedAt?.toISOString() ?? null,
         ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
         cpuCount:
           asset.assetType === 'host' && typeof osName === 'string' && osName.trim() === 'ESXi'

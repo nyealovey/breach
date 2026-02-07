@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { getOrCreateRequestId } from '@/lib/http/request-id';
 import { fail, ok } from '@/lib/http/response';
+import { validateAndNormalizeAdSourceConfig } from '@/lib/sources/ad-source';
 import { AgentType, SourceRole, SourceType } from '@prisma/client';
 
 import type { Prisma } from '@prisma/client';
@@ -13,6 +14,7 @@ const VcenterPreferredVersionSchema = z.enum(['6.5-6.7', '7.0-8.x']);
 const PveAuthTypeSchema = z.enum(['api_token', 'user_password']);
 const PveScopeSchema = z.enum(['auto', 'standalone', 'cluster']);
 const HypervConnectionMethodSchema = z.enum(['winrm', 'agent']);
+const AdPurposeSchema = z.enum(['auth_collect', 'collect_only', 'auth_only']);
 
 const SourceConfigSchema = z
   .object({
@@ -24,6 +26,11 @@ const SourceConfigSchema = z
     scope: PveScopeSchema.optional(),
     max_parallel_nodes: z.number().int().positive().optional(),
     auth_type: PveAuthTypeSchema.optional(),
+    purpose: AdPurposeSchema.optional(),
+    server_url: z.string().optional(),
+    base_dn: z.string().optional(),
+    upn_suffixes: z.array(z.string()).optional(),
+    user_filter: z.string().optional(),
 
     // Hyper-V（B 方案）：Windows Agent
     connection_method: HypervConnectionMethodSchema.optional(),
@@ -196,7 +203,28 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
-  const endpoint = typeof body.config.endpoint === 'string' ? body.config.endpoint.trim() : '';
+  const normalizedConfigResult = await validateAndNormalizeAdSourceConfig({
+    prisma,
+    sourceType: body.sourceType,
+    config: body.config as Record<string, unknown>,
+    credentialId: credentialId ?? null,
+    excludeSourceId: id,
+  });
+  if (!normalizedConfigResult.ok) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: normalizedConfigResult.message,
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+  const normalizedConfig = normalizedConfigResult.normalizedConfig;
+
+  const endpoint = typeof normalizedConfig.endpoint === 'string' ? normalizedConfig.endpoint.trim() : '';
   if (!endpoint) {
     return fail(
       {
@@ -212,7 +240,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
   const role =
     body.role ??
-    (body.sourceType === SourceType.solarwinds
+    (body.sourceType === SourceType.solarwinds || body.sourceType === SourceType.veeam
       ? SourceRole.signal
       : existing.role === SourceRole.signal
         ? SourceRole.inventory
@@ -229,12 +257,36 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       { requestId: auth.requestId },
     );
   }
-  if (role === SourceRole.signal && body.sourceType !== SourceType.solarwinds) {
+  if (body.sourceType === SourceType.veeam && role !== SourceRole.signal) {
     return fail(
       {
         code: ErrorCode.CONFIG_INVALID_REQUEST,
         category: 'config',
-        message: 'role=signal is only supported for solarwinds sources',
+        message: 'veeam sources must use role=signal',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+  if (role === SourceRole.signal && body.sourceType !== SourceType.solarwinds && body.sourceType !== SourceType.veeam) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'role=signal is only supported for solarwinds/veeam sources',
+        retryable: false,
+      },
+      400,
+      { requestId: auth.requestId },
+    );
+  }
+  if (body.sourceType === SourceType.activedirectory && role === SourceRole.signal) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_INVALID_REQUEST,
+        category: 'config',
+        message: 'activedirectory sources must use role=inventory',
         retryable: false,
       },
       400,
@@ -308,7 +360,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       scheduleGroupId: scheduleGroupId ?? null,
       agentId: agentId ?? null,
       // `request.json()` guarantees JSON-compatible types; Zod passthrough uses `unknown` for values.
-      config: body.config as unknown as Prisma.InputJsonValue,
+      config: normalizedConfig as unknown as Prisma.InputJsonValue,
       credentialId: credentialId ?? null,
     },
     include: {

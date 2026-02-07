@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/auth/require-user';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
+import { decompressRaw } from '@/lib/ingest/raw';
 import { buildLedgerFieldsV1FromRow, LEDGER_FIELDS_V1_DB_SELECT } from '@/lib/ledger/ledger-fields-v1';
 
 const AssetUpdateBodySchema = z.object({
@@ -33,6 +34,11 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       lastSeenAt: true,
       operationalState: {
         select: {
+          backupCovered: true,
+          backupState: true,
+          backupLastSuccessAt: true,
+          backupLastResult: true,
+          backupUpdatedAt: true,
           monitorCovered: true,
           monitorState: true,
           monitorStatus: true,
@@ -58,6 +64,23 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
     select: { runId: true, canonical: true, createdAt: true },
   });
 
+  let backupLast7: unknown[] = [];
+  const latestVeeamSignal = await prisma.signalRecord.findFirst({
+    where: { assetUuid: uuid, source: { sourceType: 'veeam' } },
+    orderBy: { collectedAt: 'desc' },
+    select: { raw: true, rawCompression: true },
+  });
+  if (latestVeeamSignal?.raw) {
+    try {
+      const raw = await decompressRaw(latestVeeamSignal.raw);
+      const history =
+        raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).history_last7 : null;
+      backupLast7 = Array.isArray(history) ? history.slice(0, 7) : [];
+    } catch {
+      backupLast7 = [];
+    }
+  }
+
   return ok(
     {
       assetUuid: asset.uuid,
@@ -71,11 +94,17 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
       lastSeenAt: asset.lastSeenAt?.toISOString() ?? null,
       ledgerFields: buildLedgerFieldsV1FromRow(asset.ledgerFields),
       operationalState: {
+        backupCovered: asset.operationalState?.backupCovered ?? null,
+        backupState: asset.operationalState?.backupState ?? null,
+        backupLastSuccessAt: asset.operationalState?.backupLastSuccessAt?.toISOString() ?? null,
+        backupLastResult: asset.operationalState?.backupLastResult ?? null,
+        backupUpdatedAt: asset.operationalState?.backupUpdatedAt?.toISOString() ?? null,
         monitorCovered: asset.operationalState?.monitorCovered ?? null,
         monitorState: asset.operationalState?.monitorState ?? null,
         monitorStatus: asset.operationalState?.monitorStatus ?? null,
         monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
       },
+      backupLast7,
       latestSnapshot: snapshot
         ? { runId: snapshot.runId, createdAt: snapshot.createdAt.toISOString(), canonical: snapshot.canonical }
         : null,

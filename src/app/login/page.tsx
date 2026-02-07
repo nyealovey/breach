@@ -14,7 +14,7 @@ import type { FormEvent } from 'react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -45,7 +45,7 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
-      <PageHeader title="管理员登录" description="仅支持 admin（用户名固定为 admin）。" />
+      <PageHeader title="登录" description="支持本地 admin 与 AD UPN（例如 user@example.com）。" />
 
       <Card>
         <CardContent className="pt-6">
@@ -57,6 +57,7 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                placeholder="admin 或 user@example.com"
               />
             </div>
             <div className="space-y-2">

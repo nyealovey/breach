@@ -1,0 +1,5 @@
+{
+  "name": "@breach/activedirectory-collector",
+  "private": true,
+  "type": "module"
+}

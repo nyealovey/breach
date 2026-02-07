@@ -84,3 +84,62 @@ describe('ingestSignalRun matching helpers', () => {
     expect(result.confidence).toBeGreaterThanOrEqual(90);
   });
 });
+
+describe('ingestSignalRun backup helpers', () => {
+  it('extracts backup summary from normalized attributes', () => {
+    const summary = (__private__ as any).extractBackupSummary({
+      attributes: {
+        backup_covered: true,
+        backup_state: 'success',
+        backup_last_end_at: '2026-02-07T00:09:59.000Z',
+        backup_last_result: 'Success',
+        backup_last_message: 'OK',
+        backup_last_success_at: '2026-02-07T00:09:59.000Z',
+      },
+    });
+
+    expect(summary).toMatchObject({
+      covered: true,
+      state: 'success',
+      lastEndAt: '2026-02-07T00:09:59.000Z',
+      lastSuccessAt: '2026-02-07T00:09:59.000Z',
+      lastResultText: 'Success: OK',
+    });
+  });
+
+  it('merges multiple signals by latest end_at and max success_at', () => {
+    const merge = (__private__ as any).mergeBackupAggregate as (cur: any, next: any) => any;
+    const extract = (__private__ as any).extractBackupSummary as (normalized: any) => any;
+
+    const a = extract({
+      attributes: {
+        backup_covered: true,
+        backup_state: 'success',
+        backup_last_end_at: '2026-02-07T00:00:10.000Z',
+        backup_last_result: 'Success',
+        backup_last_success_at: '2026-02-07T00:00:10.000Z',
+      },
+    });
+    const b = extract({
+      attributes: {
+        backup_covered: true,
+        backup_state: 'failed',
+        backup_last_end_at: '2026-02-07T00:00:20.000Z',
+        backup_last_result: 'Failed',
+        backup_last_message: 'Network error',
+        backup_last_success_at: '2026-02-07T00:00:10.000Z',
+      },
+    });
+
+    const merged = merge(null, a);
+    const merged2 = merge(merged, b);
+
+    expect(merged2).toMatchObject({
+      covered: true,
+      lastEndAt: '2026-02-07T00:00:20.000Z',
+      state: 'failed',
+      lastResultText: 'Failed: Network error',
+      lastSuccessAt: '2026-02-07T00:00:10.000Z',
+    });
+  });
+});

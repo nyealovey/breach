@@ -736,7 +736,7 @@ async function ensureAssetLedgerExport(args: {
   params: unknown;
   rowCount?: number | null;
   fileName?: string | null;
-  fileBytes?: Buffer | null;
+  fileBytes?: Uint8Array | null;
   fileSha256?: string | null;
   error?: unknown;
   createdAt: Date;
@@ -757,7 +757,7 @@ async function ensureAssetLedgerExport(args: {
       rowCount: args.rowCount ?? null,
       fileName: args.fileName ?? null,
       fileSizeBytes: args.fileBytes ? args.fileBytes.byteLength : null,
-      fileBytes: args.fileBytes ?? null,
+      fileBytes: args.fileBytes ? Uint8Array.from(args.fileBytes) : null,
       fileSha256: args.fileSha256 ?? null,
       error: args.error === undefined ? undefined : asJson(args.error),
       createdAt: args.createdAt,
@@ -1204,7 +1204,7 @@ async function main() {
     assetType: 'vm',
     status: 'merged',
     displayName: 'vm-app-legacy-01',
-    mergedIntoAssetUuid: vmAssets[0].uuid,
+    mergedIntoAssetUuid: vmAssets[0]!.uuid,
     collectedHostname: 'guest-app-legacy-01.example.com',
     collectedVmCaption: 'vm-app-legacy-01',
     collectedIpText: '203.0.113.199',
@@ -1345,10 +1345,10 @@ async function main() {
             hostname: seed.collectedHostname ?? seed.displayName,
             caption: seed.displayName,
             osName:
-              seed.uuid === vmAssets[2].uuid ? 'Ubuntu' : seed.uuid === vmAssets[8].uuid ? 'Windows' : 'Rocky Linux',
-            osVersion: seed.uuid === vmAssets[2].uuid ? '22.04' : seed.uuid === vmAssets[8].uuid ? '2022' : '9.4',
+              seed.uuid === vmAssets[2]!.uuid ? 'Ubuntu' : seed.uuid === vmAssets[8]!.uuid ? 'Windows' : 'Rocky Linux',
+            osVersion: seed.uuid === vmAssets[2]!.uuid ? '22.04' : seed.uuid === vmAssets[8]!.uuid ? '2022' : '9.4',
             ipAddresses:
-              seed.uuid === vmAssets[6].uuid
+              seed.uuid === vmAssets[6]!.uuid
                 ? []
                 : seed.collectedIpText
                   ? seed.collectedIpText.split(',').map((item) => item.trim())
@@ -1437,9 +1437,9 @@ async function main() {
   });
 
   await ensureAssetSourceLink({
-    asset: mustGetAsset(assetsByUuid, vmAssets[10].uuid),
+    asset: mustGetAsset(assetsByUuid, vmAssets[10]!.uuid),
     source: hypervSource,
-    externalId: `hyperv:${vmAssets[10].displayName}`,
+    externalId: `hyperv:${vmAssets[10]!.displayName}`,
     firstSeenAt: t.d5,
     lastSeenAt: t.d2,
     presenceStatus: 'present',
@@ -1576,8 +1576,8 @@ async function main() {
 
   await ensureDuplicateCandidate({
     id: 'dev_seed_dup_open_1',
-    assetUuidA: vmAssets[2].uuid,
-    assetUuidB: vmAssets[8].uuid,
+    assetUuidA: vmAssets[2]!.uuid,
+    assetUuidB: vmAssets[8]!.uuid,
     score: 94,
     reasons: [
       { rule: 'hostname_similarity', score: 60, evidence: ['guest-app-03.example.com', 'guest-app-09.example.com'] },
@@ -1589,8 +1589,8 @@ async function main() {
 
   await ensureDuplicateCandidate({
     id: 'dev_seed_dup_ignored_1',
-    assetUuidA: vmAssets[3].uuid,
-    assetUuidB: vmAssets[9].uuid,
+    assetUuidA: vmAssets[3]!.uuid,
+    assetUuidB: vmAssets[9]!.uuid,
     score: 81,
     reasons: [{ rule: 'ip_overlap', score: 81, evidence: ['198.51.100.104'] }],
     status: 'ignored',

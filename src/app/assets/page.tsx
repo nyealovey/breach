@@ -3,23 +3,10 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleSlash2,
-  ClipboardPenLine,
-  Columns3,
-  Download,
-  Eye,
-  HelpCircle,
-  MinusCircle,
-  Pencil,
-  RefreshCw,
-  Trash2,
-  XCircle,
-} from 'lucide-react';
+import { ClipboardPenLine, Columns3, Download, Eye, HelpCircle, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { SolarWindsMark, VeeamMark } from '@/components/icons/signal-sources';
 import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +26,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
+import {
+  clearAssetListStateInSession,
+  readAssetListStateFromSession,
+  writeAssetListStateToSession,
+} from '@/lib/assets/asset-list-persistence';
+import { backupStateDisplay } from '@/lib/assets/backup-state';
 import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { getOverrideVisualMeta, normalizeOptionalText } from '@/lib/assets/override-visual';
 import { normalizePowerState, powerStateLabelZh } from '@/lib/assets/power-state';
@@ -76,6 +69,11 @@ type AssetListItem = {
   monitorState: string | null;
   monitorStatus: string | null;
   monitorUpdatedAt: string | null;
+  backupCovered: boolean | null;
+  backupState: string | null;
+  backupLastSuccessAt: string | null;
+  backupLastResult: string | null;
+  backupUpdatedAt: string | null;
   recordedAt: string;
   ledgerFields: LedgerFieldsV1;
   cpuCount: number | null;
@@ -102,6 +100,30 @@ type LedgerFieldFilterOptions = {
   osNames: string[];
   brands: string[];
   models: string[];
+};
+
+type AssetListFiltersState = {
+  qInput: string;
+  assetTypeInput: 'all' | 'vm' | 'host';
+  sourceIdInput: 'all' | string;
+  sourceTypeInput: 'all' | 'vcenter' | 'pve' | 'hyperv';
+  statusInput: 'all' | 'in_service' | 'offline';
+  vmPowerStateInput: 'all' | VmPowerStateParam;
+  ipMissingInput: boolean;
+  machineNameMissingInput: boolean;
+  machineNameVmNameMismatchInput: boolean;
+  recentAddedInput: boolean;
+  brandInput: string;
+  modelInput: string;
+  regionInput: string;
+  companyInput: string;
+  departmentInput: string;
+  systemCategoryInput: string;
+  systemLevelInput: string;
+  bizOwnerInput: string;
+  osInput: string;
+  page: number;
+  pageSize: number;
 };
 
 type AssetListColumnId =
@@ -140,7 +162,7 @@ const BASE_ASSET_LIST_COLUMNS: Array<{
   { id: 'memoryBytes', label: '内存' },
   { id: 'totalDiskBytes', label: '总分配磁盘' },
   { id: 'vmPowerState', label: '电源', description: '电源状态（poweredOn/off/suspended）。' },
-  { id: 'monitorState', label: '监控', description: 'SolarWinds 监控覆盖与状态（信号来源；不影响库存）。' },
+  { id: 'monitorState', label: '监控', description: 'SolarWinds 监控 + Veeam 备份（信号来源；不影响库存）。' },
   { id: 'recordedAt', label: '录入时间', description: '若未录入台账字段，默认显示第一次采集时间。' },
 ];
 
@@ -279,11 +301,54 @@ function formatBytes(bytes: number | null) {
   return `${bytes} B`;
 }
 
+function filtersStateFromUrlState(state: AssetListUrlState): AssetListFiltersState {
+  return {
+    qInput: state.q ?? '',
+    assetTypeInput: state.assetType ?? 'all',
+    sourceIdInput: state.sourceId ?? 'all',
+    sourceTypeInput: state.sourceType ?? 'all',
+    statusInput: state.status ?? 'all',
+    vmPowerStateInput: state.vmPowerState ?? 'all',
+    ipMissingInput: state.ipMissing === true,
+    machineNameMissingInput: state.machineNameMissing === true,
+    machineNameVmNameMismatchInput: state.machineNameVmNameMismatch === true,
+    recentAddedInput: state.createdWithinDays === 7,
+    brandInput: state.brand ?? '',
+    modelInput: state.model ?? '',
+    regionInput: state.region ?? '',
+    companyInput: state.company ?? '',
+    departmentInput: state.department ?? '',
+    systemCategoryInput: state.systemCategory ?? '',
+    systemLevelInput: state.systemLevel ?? '',
+    bizOwnerInput: state.bizOwner ?? '',
+    osInput: state.os ?? '',
+    page: state.page,
+    pageSize: state.pageSize,
+  };
+}
+
+function createDefaultFiltersState(): AssetListFiltersState {
+  return filtersStateFromUrlState(parseAssetListUrlState(new URLSearchParams()));
+}
+
+function buildAssetListUiSearchParams(state: AssetListUrlState): URLSearchParams {
+  return buildAssetListUrlSearchParams({
+    ...state,
+    // `exclude_asset_type=cluster` is an implementation detail for API querying; keep URL focused on user filters.
+    excludeAssetType: undefined,
+  });
+}
+
+function hasActiveAssetListQuery(state: AssetListUrlState): boolean {
+  return buildAssetListUiSearchParams(state).toString().length > 0;
+}
+
 export default function AssetsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const skipNextUrlSyncRef = useRef(false);
+  const skipNextSessionSyncRef = useRef(false);
   const swCollectingRef = useRef(false);
 
   const [items, setItems] = useState<AssetListItem[]>([]);
@@ -311,28 +376,9 @@ export default function AssetsPage() {
   const [bulkValue, setBulkValue] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  const [qInput, setQInput] = useState('');
-  const [assetTypeInput, setAssetTypeInput] = useState<'all' | 'vm' | 'host'>('all');
-  const [sourceIdInput, setSourceIdInput] = useState<'all' | string>('all');
-  const [sourceTypeInput, setSourceTypeInput] = useState<'all' | 'vcenter' | 'pve' | 'hyperv'>('all');
-  const [statusInput, setStatusInput] = useState<'all' | 'in_service' | 'offline'>('all');
-  const [vmPowerStateInput, setVmPowerStateInput] = useState<'all' | VmPowerStateParam>('all');
-  const [ipMissingInput, setIpMissingInput] = useState(false);
-  const [machineNameMissingInput, setMachineNameMissingInput] = useState(false);
-  const [machineNameVmNameMismatchInput, setMachineNameVmNameMismatchInput] = useState(false);
-  const [recentAddedInput, setRecentAddedInput] = useState(false);
-  const [brandInput, setBrandInput] = useState('');
-  const [modelInput, setModelInput] = useState('');
-  const [regionInput, setRegionInput] = useState('');
-  const [companyInput, setCompanyInput] = useState('');
-  const [departmentInput, setDepartmentInput] = useState('');
-  const [systemCategoryInput, setSystemCategoryInput] = useState('');
-  const [systemLevelInput, setSystemLevelInput] = useState('');
-  const [bizOwnerInput, setBizOwnerInput] = useState('');
-  const [osInput, setOsInput] = useState('');
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [filters, setFilters] = useState<AssetListFiltersState>(() =>
+    filtersStateFromUrlState(parseAssetListUrlState(new URLSearchParams(searchParams.toString()))),
+  );
 
   const [editAssetOpen, setEditAssetOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AssetListItem | null>(null);
@@ -358,17 +404,17 @@ export default function AssetsPage() {
   const hasOverrideDraft =
     editMachineNameValue.trim().length > 0 || editIpValue.trim().length > 0 || editOsValue.trim().length > 0;
 
-  const query = useMemo(() => {
-    const assetType = assetTypeInput === 'all' ? undefined : assetTypeInput;
-    const sourceType = sourceTypeInput === 'all' ? undefined : sourceTypeInput;
-    const status = statusInput === 'all' ? undefined : statusInput;
-    const vmPowerState = vmPowerStateInput === 'all' ? undefined : vmPowerStateInput;
-    const ipMissing = ipMissingInput ? true : undefined;
-    const machineNameMissing = machineNameMissingInput ? true : undefined;
-    const machineNameVmNameMismatch = machineNameVmNameMismatchInput ? true : undefined;
-    const createdWithinDays = recentAddedInput ? 7 : undefined;
-    const brand = brandInput.trim() ? brandInput.trim() : undefined;
-    const model = modelInput.trim() ? modelInput.trim() : undefined;
+  const query = useMemo<AssetListUrlState>(() => {
+    const assetType = filters.assetTypeInput === 'all' ? undefined : filters.assetTypeInput;
+    const sourceType = filters.sourceTypeInput === 'all' ? undefined : filters.sourceTypeInput;
+    const status = filters.statusInput === 'all' ? undefined : filters.statusInput;
+    const vmPowerState = filters.vmPowerStateInput === 'all' ? undefined : filters.vmPowerStateInput;
+    const ipMissing = filters.ipMissingInput ? true : undefined;
+    const machineNameMissing = filters.machineNameMissingInput ? true : undefined;
+    const machineNameVmNameMismatch = filters.machineNameVmNameMismatchInput ? true : undefined;
+    const createdWithinDays = filters.recentAddedInput ? 7 : undefined;
+    const brand = filters.brandInput.trim() ? filters.brandInput.trim() : undefined;
+    const model = filters.modelInput.trim() ? filters.modelInput.trim() : undefined;
 
     // VM-only filters imply `asset_type=vm`.
     const impliedAssetType =
@@ -379,60 +425,40 @@ export default function AssetsPage() {
           : assetType;
 
     return {
-      q: qInput.trim() ? qInput.trim() : undefined,
+      q: filters.qInput.trim() ? filters.qInput.trim() : undefined,
       assetType: impliedAssetType,
       // Cluster is treated as a virtual asset type and is intentionally hidden from the assets page for now.
       excludeAssetType: 'cluster' as const,
-      sourceId: sourceIdInput === 'all' ? undefined : sourceIdInput,
+      sourceId: filters.sourceIdInput === 'all' ? undefined : filters.sourceIdInput,
       sourceType,
       status,
       brand,
       model,
-      region: regionInput.trim() ? regionInput.trim() : undefined,
-      company: companyInput.trim() ? companyInput.trim() : undefined,
-      department: departmentInput.trim() ? departmentInput.trim() : undefined,
-      systemCategory: systemCategoryInput.trim() ? systemCategoryInput.trim() : undefined,
-      systemLevel: systemLevelInput.trim() ? systemLevelInput.trim() : undefined,
-      bizOwner: bizOwnerInput.trim() ? bizOwnerInput.trim() : undefined,
-      os: osInput.trim() ? osInput.trim() : undefined,
+      region: filters.regionInput.trim() ? filters.regionInput.trim() : undefined,
+      company: filters.companyInput.trim() ? filters.companyInput.trim() : undefined,
+      department: filters.departmentInput.trim() ? filters.departmentInput.trim() : undefined,
+      systemCategory: filters.systemCategoryInput.trim() ? filters.systemCategoryInput.trim() : undefined,
+      systemLevel: filters.systemLevelInput.trim() ? filters.systemLevelInput.trim() : undefined,
+      bizOwner: filters.bizOwnerInput.trim() ? filters.bizOwnerInput.trim() : undefined,
+      os: filters.osInput.trim() ? filters.osInput.trim() : undefined,
       vmPowerState,
       ipMissing,
       machineNameMissing,
       machineNameVmNameMismatch,
       createdWithinDays,
-      page,
-      pageSize,
+      page: filters.page,
+      pageSize: filters.pageSize,
     };
-  }, [
-    assetTypeInput,
-    brandInput,
-    bizOwnerInput,
-    companyInput,
-    machineNameMissingInput,
-    machineNameVmNameMismatchInput,
-    departmentInput,
-    ipMissingInput,
-    modelInput,
-    osInput,
-    page,
-    pageSize,
-    qInput,
-    recentAddedInput,
-    regionInput,
-    sourceIdInput,
-    sourceTypeInput,
-    statusInput,
-    systemCategoryInput,
-    systemLevelInput,
-    vmPowerStateInput,
-  ]);
+  }, [filters]);
+
+  const hasActiveFilters = useMemo(() => hasActiveAssetListQuery(query), [query]);
 
   const visibleColumnsForTable = useMemo(() => {
     const cols = ensureCoreVisibleColumns(visibleColumns);
-    if (assetTypeInput === 'host') {
+    if (filters.assetTypeInput === 'host') {
       return cols.filter((id) => !VM_ONLY_COLUMNS.includes(id as (typeof VM_ONLY_COLUMNS)[number]));
     }
-    if (assetTypeInput === 'vm') {
+    if (filters.assetTypeInput === 'vm') {
       return cols.filter((id) => {
         if (HOST_ONLY_COLUMNS.includes(id as (typeof HOST_ONLY_COLUMNS)[number])) return false;
         if (id.startsWith('ledger.')) {
@@ -443,35 +469,35 @@ export default function AssetsPage() {
       });
     }
     return cols;
-  }, [assetTypeInput, visibleColumns]);
+  }, [filters.assetTypeInput, visibleColumns]);
+
+  const handleClearFilters = () => {
+    clearAssetListStateInSession();
+    setSelectedAssetUuids([]);
+    setFilters(createDefaultFiltersState());
+  };
 
   useEffect(() => {
-    // When URL changes (e.g. external navigation/back/forward), update local state from URL.
-    // Also skip the next "state -> URL" sync to avoid oscillation while state catches up.
-    skipNextUrlSyncRef.current = true;
     const parsed = parseAssetListUrlState(new URLSearchParams(searchParams.toString()));
-    setQInput(parsed.q ?? '');
-    setAssetTypeInput(parsed.assetType ?? 'all');
-    setSourceIdInput(parsed.sourceId ?? 'all');
-    setSourceTypeInput(parsed.sourceType ?? 'all');
-    setStatusInput(parsed.status ?? 'all');
-    setBrandInput(parsed.brand ?? '');
-    setModelInput(parsed.model ?? '');
-    setRegionInput(parsed.region ?? '');
-    setCompanyInput(parsed.company ?? '');
-    setDepartmentInput(parsed.department ?? '');
-    setSystemCategoryInput(parsed.systemCategory ?? '');
-    setSystemLevelInput(parsed.systemLevel ?? '');
-    setBizOwnerInput(parsed.bizOwner ?? '');
-    setOsInput(parsed.os ?? '');
-    setVmPowerStateInput(parsed.vmPowerState ?? 'all');
-    setIpMissingInput(parsed.ipMissing === true);
-    setMachineNameMissingInput(parsed.machineNameMissing === true);
-    setMachineNameVmNameMismatchInput(parsed.machineNameVmNameMismatch === true);
-    setRecentAddedInput(parsed.createdWithinDays === 7);
-    setPage(parsed.page);
-    setPageSize(parsed.pageSize);
-  }, [searchParams]);
+    const persisted = readAssetListStateFromSession();
+    const resolved = hasActiveAssetListQuery(parsed)
+      ? parsed
+      : persisted && hasActiveAssetListQuery(persisted)
+        ? persisted
+        : parsed;
+
+    // When URL changes (e.g. external navigation/back/forward), update local state from URL/session.
+    // Also skip the next "state -> URL" + "state -> session" sync to avoid oscillation while state catches up.
+    skipNextUrlSyncRef.current = true;
+    skipNextSessionSyncRef.current = true;
+    setFilters(filtersStateFromUrlState(resolved));
+
+    const current = searchParams.toString();
+    const next = buildAssetListUiSearchParams(resolved).toString();
+    if (next !== current) {
+      router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
+    }
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (skipNextUrlSyncRef.current) {
@@ -480,36 +506,26 @@ export default function AssetsPage() {
     }
 
     const current = searchParams.toString();
-
-    const nextParams = buildAssetListUrlSearchParams({
-      q: query.q,
-      assetType: query.assetType,
-      excludeAssetType: query.excludeAssetType,
-      sourceId: query.sourceId,
-      sourceType: query.sourceType,
-      status: query.status,
-      brand: query.brand,
-      model: query.model,
-      region: query.region,
-      company: query.company,
-      department: query.department,
-      systemCategory: query.systemCategory,
-      systemLevel: query.systemLevel,
-      bizOwner: query.bizOwner,
-      os: query.os,
-      vmPowerState: query.vmPowerState,
-      ipMissing: query.ipMissing,
-      machineNameMissing: query.machineNameMissing,
-      machineNameVmNameMismatch: query.machineNameVmNameMismatch,
-      createdWithinDays: query.createdWithinDays,
-      page: query.page,
-      pageSize: query.pageSize,
-    } satisfies AssetListUrlState);
+    const nextParams = buildAssetListUiSearchParams(query);
 
     const next = nextParams.toString();
     if (next === current) return;
     router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false });
   }, [pathname, query, router, searchParams]);
+
+  useEffect(() => {
+    if (skipNextSessionSyncRef.current) {
+      skipNextSessionSyncRef.current = false;
+      return;
+    }
+
+    if (hasActiveFilters) {
+      writeAssetListStateToSession(query);
+      return;
+    }
+
+    clearAssetListStateInSession();
+  }, [hasActiveFilters, query]);
 
   useEffect(() => {
     let active = true;
@@ -589,38 +605,7 @@ export default function AssetsPage() {
     const load = async () => {
       setLoading(true);
 
-      const params = new URLSearchParams();
-
-      // Keep API request params consistent with URL params.
-      const urlParams = buildAssetListUrlSearchParams({
-        q: query.q,
-        assetType: query.assetType,
-        excludeAssetType: query.excludeAssetType,
-        sourceId: query.sourceId,
-        sourceType: query.sourceType,
-        status: query.status,
-        brand: query.brand,
-        model: query.model,
-        region: query.region,
-        company: query.company,
-        department: query.department,
-        systemCategory: query.systemCategory,
-        systemLevel: query.systemLevel,
-        bizOwner: query.bizOwner,
-        os: query.os,
-        vmPowerState: query.vmPowerState,
-        ipMissing: query.ipMissing,
-        machineNameMissing: query.machineNameMissing,
-        machineNameVmNameMismatch: query.machineNameVmNameMismatch,
-        createdWithinDays: query.createdWithinDays,
-        page: query.page,
-        pageSize: query.pageSize,
-      } satisfies AssetListUrlState);
-
-      urlParams.forEach((value, key) => {
-        params.set(key, value);
-      });
-
+      const params = buildAssetListUrlSearchParams(query);
       const res = await fetch(`/api/v1/assets?${params.toString()}`);
       if (!res.ok) {
         if (active) {
@@ -657,7 +642,8 @@ export default function AssetsPage() {
       col.id.startsWith('ledger.') && LEDGER_HOST_ONLY_KEY_SET.has(col.id.slice('ledger.'.length) as LedgerFieldKey);
     const hostOnly = hostOnlyAsset || hostOnlyLedger;
 
-    const disabled = locked || (vmOnly && assetTypeInput === 'host') || (hostOnly && assetTypeInput === 'vm');
+    const disabled =
+      locked || (vmOnly && filters.assetTypeInput === 'host') || (hostOnly && filters.assetTypeInput === 'vm');
     const checked = locked ? true : columnDraft.includes(col.id);
 
     return (
@@ -881,14 +867,19 @@ export default function AssetsPage() {
 
       <Card>
         <CardContent className="space-y-4 pt-6">
-          <Input
-            placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）"
-            value={qInput}
-            onChange={(e) => {
-              setPage(1);
-              setQInput(e.target.value);
-            }}
-          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              className="sm:flex-1"
+              placeholder="搜索（机器名/虚拟机名/宿主机名/操作系统/IP/地区/公司/部门/系统分类/系统分级/业务对接人员/管理IP）"
+              value={filters.qInput}
+              onChange={(e) => {
+                setFilters((prev) => ({ ...prev, page: 1, qInput: e.target.value }));
+              }}
+            />
+            <Button type="button" variant="outline" disabled={!hasActiveFilters} onClick={handleClearFilters}>
+              清除筛选
+            </Button>
+          </div>
 
           <details open className="rounded-md border bg-background p-3">
             <summary className="cursor-pointer select-none text-sm font-medium">快捷筛选</summary>
@@ -899,15 +890,14 @@ export default function AssetsPage() {
                   <div className="text-xs text-muted-foreground">仅 VM 且 IP 缺失</div>
                 </div>
                 <Switch
-                  checked={ipMissingInput}
+                  checked={filters.ipMissingInput}
                   onCheckedChange={(checked) => {
-                    setPage(1);
-                    setIpMissingInput(checked);
-                    if (checked) {
-                      setAssetTypeInput('vm');
-                      setBrandInput('');
-                      setModelInput('');
-                    }
+                    setFilters((prev) => ({
+                      ...prev,
+                      page: 1,
+                      ipMissingInput: checked,
+                      ...(checked ? { assetTypeInput: 'vm', brandInput: '', modelInput: '' } : {}),
+                    }));
                   }}
                 />
               </div>
@@ -918,15 +908,14 @@ export default function AssetsPage() {
                   <div className="text-xs text-muted-foreground">仅 VM 且机器名缺失</div>
                 </div>
                 <Switch
-                  checked={machineNameMissingInput}
+                  checked={filters.machineNameMissingInput}
                   onCheckedChange={(checked) => {
-                    setPage(1);
-                    setMachineNameMissingInput(checked);
-                    if (checked) {
-                      setAssetTypeInput('vm');
-                      setBrandInput('');
-                      setModelInput('');
-                    }
+                    setFilters((prev) => ({
+                      ...prev,
+                      page: 1,
+                      machineNameMissingInput: checked,
+                      ...(checked ? { assetTypeInput: 'vm', brandInput: '', modelInput: '' } : {}),
+                    }));
                   }}
                 />
               </div>
@@ -937,15 +926,14 @@ export default function AssetsPage() {
                   <div className="text-xs text-muted-foreground">仅 VM 且机器名与虚拟机名不一致</div>
                 </div>
                 <Switch
-                  checked={machineNameVmNameMismatchInput}
+                  checked={filters.machineNameVmNameMismatchInput}
                   onCheckedChange={(checked) => {
-                    setPage(1);
-                    setMachineNameVmNameMismatchInput(checked);
-                    if (checked) {
-                      setAssetTypeInput('vm');
-                      setBrandInput('');
-                      setModelInput('');
-                    }
+                    setFilters((prev) => ({
+                      ...prev,
+                      page: 1,
+                      machineNameVmNameMismatchInput: checked,
+                      ...(checked ? { assetTypeInput: 'vm', brandInput: '', modelInput: '' } : {}),
+                    }));
                   }}
                 />
               </div>
@@ -956,10 +944,9 @@ export default function AssetsPage() {
                   <div className="text-xs text-muted-foreground">最近 7 天创建</div>
                 </div>
                 <Switch
-                  checked={recentAddedInput}
+                  checked={filters.recentAddedInput}
                   onCheckedChange={(checked) => {
-                    setPage(1);
-                    setRecentAddedInput(checked);
+                    setFilters((prev) => ({ ...prev, page: 1, recentAddedInput: checked }));
                   }}
                 />
               </div>
@@ -970,24 +957,27 @@ export default function AssetsPage() {
             <summary className="cursor-pointer select-none text-sm font-medium">资产字段</summary>
             <div className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
               <Select
-                value={assetTypeInput}
+                value={filters.assetTypeInput}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setAssetTypeInput(value as typeof assetTypeInput);
+                  setFilters((prev) => {
+                    const next = { ...prev, page: 1, assetTypeInput: value as typeof prev.assetTypeInput };
 
-                  // VM-only filters don't apply to other types; reset them to avoid confusing empty results.
-                  if (value !== 'vm') {
-                    setVmPowerStateInput('all');
-                    setIpMissingInput(false);
-                    setMachineNameMissingInput(false);
-                    setMachineNameVmNameMismatchInput(false);
-                  }
+                    // VM-only filters don't apply to other types; reset them to avoid confusing empty results.
+                    if (value !== 'vm') {
+                      next.vmPowerStateInput = 'all';
+                      next.ipMissingInput = false;
+                      next.machineNameMissingInput = false;
+                      next.machineNameVmNameMismatchInput = false;
+                    }
 
-                  // Host-only filters don't apply to other types; reset them to avoid confusing empty results.
-                  if (value !== 'host') {
-                    setBrandInput('');
-                    setModelInput('');
-                  }
+                    // Host-only filters don't apply to other types; reset them to avoid confusing empty results.
+                    if (value !== 'host') {
+                      next.brandInput = '';
+                      next.modelInput = '';
+                    }
+
+                    return next;
+                  });
                 }}
               >
                 <SelectTrigger className="w-full md:w-[150px]">
@@ -1001,10 +991,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={statusInput}
+                value={filters.statusInput}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setStatusInput(value as typeof statusInput);
+                  setFilters((prev) => ({ ...prev, page: 1, statusInput: value as typeof prev.statusInput }));
                 }}
               >
                 <SelectTrigger className="w-full md:w-[160px]">
@@ -1018,10 +1007,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={sourceIdInput}
+                value={filters.sourceIdInput}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setSourceIdInput(value);
+                  setFilters((prev) => ({ ...prev, page: 1, sourceIdInput: value }));
                 }}
               >
                 <SelectTrigger className="w-full md:w-[240px]">
@@ -1038,10 +1026,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={sourceTypeInput}
+                value={filters.sourceTypeInput}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setSourceTypeInput(value as typeof sourceTypeInput);
+                  setFilters((prev) => ({ ...prev, page: 1, sourceTypeInput: value as typeof prev.sourceTypeInput }));
                 }}
               >
                 <SelectTrigger className="w-full md:w-[180px]">
@@ -1056,18 +1043,19 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={brandInput || 'all'}
+                value={filters.brandInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setBrandInput(value === 'all' ? '' : value);
-
-                  if (value !== 'all') {
-                    setAssetTypeInput('host');
-                    setVmPowerStateInput('all');
-                    setIpMissingInput(false);
-                    setMachineNameMissingInput(false);
-                    setMachineNameVmNameMismatchInput(false);
-                  }
+                  setFilters((prev) => {
+                    const next = { ...prev, page: 1, brandInput: value === 'all' ? '' : value };
+                    if (value !== 'all') {
+                      next.assetTypeInput = 'host';
+                      next.vmPowerStateInput = 'all';
+                      next.ipMissingInput = false;
+                      next.machineNameMissingInput = false;
+                      next.machineNameVmNameMismatchInput = false;
+                    }
+                    return next;
+                  });
                 }}
               >
                 <SelectTrigger className="w-full md:w-[200px]">
@@ -1075,8 +1063,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部品牌</SelectItem>
-                  {brandInput && !ledgerFieldFilterOptions.brands.includes(brandInput) ? (
-                    <SelectItem value={brandInput}>{brandInput}（当前）</SelectItem>
+                  {filters.brandInput && !ledgerFieldFilterOptions.brands.includes(filters.brandInput) ? (
+                    <SelectItem value={filters.brandInput}>{filters.brandInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.brands.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1087,18 +1075,19 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={modelInput || 'all'}
+                value={filters.modelInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setModelInput(value === 'all' ? '' : value);
-
-                  if (value !== 'all') {
-                    setAssetTypeInput('host');
-                    setVmPowerStateInput('all');
-                    setIpMissingInput(false);
-                    setMachineNameMissingInput(false);
-                    setMachineNameVmNameMismatchInput(false);
-                  }
+                  setFilters((prev) => {
+                    const next = { ...prev, page: 1, modelInput: value === 'all' ? '' : value };
+                    if (value !== 'all') {
+                      next.assetTypeInput = 'host';
+                      next.vmPowerStateInput = 'all';
+                      next.ipMissingInput = false;
+                      next.machineNameMissingInput = false;
+                      next.machineNameVmNameMismatchInput = false;
+                    }
+                    return next;
+                  });
                 }}
               >
                 <SelectTrigger className="w-full md:w-[200px]">
@@ -1106,8 +1095,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部型号</SelectItem>
-                  {modelInput && !ledgerFieldFilterOptions.models.includes(modelInput) ? (
-                    <SelectItem value={modelInput}>{modelInput}（当前）</SelectItem>
+                  {filters.modelInput && !ledgerFieldFilterOptions.models.includes(filters.modelInput) ? (
+                    <SelectItem value={filters.modelInput}>{filters.modelInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.models.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1118,16 +1107,21 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={vmPowerStateInput}
+                value={filters.vmPowerStateInput}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setVmPowerStateInput(value as typeof vmPowerStateInput);
-
-                  if (value !== 'all') {
-                    setAssetTypeInput('vm');
-                    setBrandInput('');
-                    setModelInput('');
-                  }
+                  setFilters((prev) => {
+                    const next = {
+                      ...prev,
+                      page: 1,
+                      vmPowerStateInput: value as typeof prev.vmPowerStateInput,
+                    };
+                    if (value !== 'all') {
+                      next.assetTypeInput = 'vm';
+                      next.brandInput = '';
+                      next.modelInput = '';
+                    }
+                    return next;
+                  });
                 }}
               >
                 <SelectTrigger className="w-full md:w-[160px]">
@@ -1142,10 +1136,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={osInput || 'all'}
+                value={filters.osInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setOsInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, osInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger className="w-full md:w-[220px]">
@@ -1153,8 +1146,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部操作系统</SelectItem>
-                  {osInput && !ledgerFieldFilterOptions.osNames.includes(osInput) ? (
-                    <SelectItem value={osInput}>{osInput}（当前）</SelectItem>
+                  {filters.osInput && !ledgerFieldFilterOptions.osNames.includes(filters.osInput) ? (
+                    <SelectItem value={filters.osInput}>{filters.osInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.osNames.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1170,10 +1163,9 @@ export default function AssetsPage() {
             <summary className="cursor-pointer select-none text-sm font-medium">台账字段</summary>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <Select
-                value={regionInput || 'all'}
+                value={filters.regionInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setRegionInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, regionInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1181,8 +1173,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部地区</SelectItem>
-                  {regionInput && !ledgerFieldFilterOptions.regions.includes(regionInput) ? (
-                    <SelectItem value={regionInput}>{regionInput}（当前）</SelectItem>
+                  {filters.regionInput && !ledgerFieldFilterOptions.regions.includes(filters.regionInput) ? (
+                    <SelectItem value={filters.regionInput}>{filters.regionInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.regions.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1193,10 +1185,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={companyInput || 'all'}
+                value={filters.companyInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setCompanyInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, companyInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1204,8 +1195,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部公司</SelectItem>
-                  {companyInput && !ledgerFieldFilterOptions.companies.includes(companyInput) ? (
-                    <SelectItem value={companyInput}>{companyInput}（当前）</SelectItem>
+                  {filters.companyInput && !ledgerFieldFilterOptions.companies.includes(filters.companyInput) ? (
+                    <SelectItem value={filters.companyInput}>{filters.companyInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.companies.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1216,10 +1207,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={departmentInput || 'all'}
+                value={filters.departmentInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setDepartmentInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, departmentInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1227,8 +1217,9 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部部门</SelectItem>
-                  {departmentInput && !ledgerFieldFilterOptions.departments.includes(departmentInput) ? (
-                    <SelectItem value={departmentInput}>{departmentInput}（当前）</SelectItem>
+                  {filters.departmentInput &&
+                  !ledgerFieldFilterOptions.departments.includes(filters.departmentInput) ? (
+                    <SelectItem value={filters.departmentInput}>{filters.departmentInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.departments.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1239,10 +1230,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={systemCategoryInput || 'all'}
+                value={filters.systemCategoryInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setSystemCategoryInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, systemCategoryInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1250,8 +1240,9 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部系统分类</SelectItem>
-                  {systemCategoryInput && !ledgerFieldFilterOptions.systemCategories.includes(systemCategoryInput) ? (
-                    <SelectItem value={systemCategoryInput}>{systemCategoryInput}（当前）</SelectItem>
+                  {filters.systemCategoryInput &&
+                  !ledgerFieldFilterOptions.systemCategories.includes(filters.systemCategoryInput) ? (
+                    <SelectItem value={filters.systemCategoryInput}>{filters.systemCategoryInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.systemCategories.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1262,10 +1253,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={systemLevelInput || 'all'}
+                value={filters.systemLevelInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setSystemLevelInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, systemLevelInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1273,8 +1263,9 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部系统分级</SelectItem>
-                  {systemLevelInput && !ledgerFieldFilterOptions.systemLevels.includes(systemLevelInput) ? (
-                    <SelectItem value={systemLevelInput}>{systemLevelInput}（当前）</SelectItem>
+                  {filters.systemLevelInput &&
+                  !ledgerFieldFilterOptions.systemLevels.includes(filters.systemLevelInput) ? (
+                    <SelectItem value={filters.systemLevelInput}>{filters.systemLevelInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.systemLevels.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1285,10 +1276,9 @@ export default function AssetsPage() {
               </Select>
 
               <Select
-                value={bizOwnerInput || 'all'}
+                value={filters.bizOwnerInput || 'all'}
                 onValueChange={(value) => {
-                  setPage(1);
-                  setBizOwnerInput(value === 'all' ? '' : value);
+                  setFilters((prev) => ({ ...prev, page: 1, bizOwnerInput: value === 'all' ? '' : value }));
                 }}
               >
                 <SelectTrigger>
@@ -1296,8 +1286,8 @@ export default function AssetsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部业务对接人员</SelectItem>
-                  {bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(bizOwnerInput) ? (
-                    <SelectItem value={bizOwnerInput}>{bizOwnerInput}（当前）</SelectItem>
+                  {filters.bizOwnerInput && !ledgerFieldFilterOptions.bizOwners.includes(filters.bizOwnerInput) ? (
+                    <SelectItem value={filters.bizOwnerInput}>{filters.bizOwnerInput}（当前）</SelectItem>
                   ) : null}
                   {ledgerFieldFilterOptions.bizOwners.map((v) => (
                     <SelectItem key={v} value={v}>
@@ -1553,50 +1543,68 @@ export default function AssetsPage() {
                             monitorCovered: item.monitorCovered,
                             monitorState: item.monitorState,
                           });
-                          if (!display)
+                          const backupDisplay = backupStateDisplay({
+                            backupCovered: item.backupCovered,
+                            backupState: item.backupState,
+                          });
+
+                          if (!display && !backupDisplay) {
                             return (
                               <TableCell key={colId} className="text-center">
-                                <span className="inline-flex items-center justify-center" title="无监控信息">
+                                <span className="inline-flex items-center justify-center" title="无监控/备份信息">
                                   <HelpCircle
                                     className="h-4 w-4 text-slate-400 dark:text-slate-500"
                                     aria-hidden="true"
                                   />
-                                  <span className="sr-only">无监控信息</span>
+                                  <span className="sr-only">无监控/备份信息</span>
                                 </span>
                               </TableCell>
                             );
-
-                          const tooltipParts: string[] = [];
-                          if (item.monitorStatus) tooltipParts.push(`SolarWinds: ${item.monitorStatus}`);
-                          if (item.monitorUpdatedAt)
-                            tooltipParts.push(`更新：${formatDateTime(item.monitorUpdatedAt)}`);
-                          const tooltip = tooltipParts.length > 0 ? tooltipParts.join(' · ') : null;
-                          const title = tooltip ? `${display.labelZh} · ${tooltip}` : display.labelZh;
-
-                          let Icon = HelpCircle;
-                          let iconClassName = 'text-slate-500';
-                          if (display.state === 'up') {
-                            Icon = CheckCircle2;
-                            iconClassName = 'text-emerald-600 dark:text-emerald-500';
-                          } else if (display.state === 'warning') {
-                            Icon = AlertTriangle;
-                            iconClassName = 'text-amber-600 dark:text-amber-500';
-                          } else if (display.state === 'down') {
-                            Icon = XCircle;
-                            iconClassName = 'text-red-600 dark:text-red-500';
-                          } else if (display.state === 'unmanaged') {
-                            Icon = CircleSlash2;
-                            iconClassName = 'text-slate-500 dark:text-slate-400';
-                          } else if (display.state === 'not_covered') {
-                            Icon = MinusCircle;
-                            iconClassName = 'text-slate-400 dark:text-slate-500';
                           }
+
+                          const solarwindsTitleParts: string[] = [];
+                          if (display) {
+                            solarwindsTitleParts.push(`SolarWinds：${display.labelZh}`);
+                            if (item.monitorStatus) solarwindsTitleParts.push(item.monitorStatus);
+                            if (item.monitorUpdatedAt)
+                              solarwindsTitleParts.push(`更新：${formatDateTime(item.monitorUpdatedAt)}`);
+                          }
+                          const solarwindsTitle = solarwindsTitleParts.join(' · ');
+
+                          const veeamTitleParts: string[] = [];
+                          if (backupDisplay) {
+                            veeamTitleParts.push(`Veeam：${backupDisplay.labelZh}`);
+                            if (item.backupLastResult) veeamTitleParts.push(`结果：${item.backupLastResult}`);
+                            if (item.backupLastSuccessAt)
+                              veeamTitleParts.push(`最近成功：${formatDateTime(item.backupLastSuccessAt)}`);
+                            if (item.backupUpdatedAt)
+                              veeamTitleParts.push(`更新：${formatDateTime(item.backupUpdatedAt)}`);
+                          }
+                          const veeamTitle = veeamTitleParts.join(' · ');
+
+                          const solarwindsTone =
+                            display?.state === 'up'
+                              ? ('good' as const)
+                              : display?.state === 'warning'
+                                ? ('warning' as const)
+                                : display?.state === 'down'
+                                  ? ('bad' as const)
+                                  : ('muted' as const);
+
+                          const veeamTone =
+                            backupDisplay?.state === 'success'
+                              ? ('good' as const)
+                              : backupDisplay?.state === 'warning'
+                                ? ('warning' as const)
+                                : backupDisplay?.state === 'failed'
+                                  ? ('bad' as const)
+                                  : ('muted' as const);
 
                           return (
                             <TableCell key={colId} className="text-center">
-                              <span className="inline-flex items-center justify-center" title={title}>
-                                <Icon className={`h-4 w-4 ${iconClassName}`} aria-hidden="true" />
-                                <span className="sr-only">{display.labelZh}</span>
+                              <span className="inline-flex items-center justify-center gap-1">
+                                {display ? <SolarWindsMark tone={solarwindsTone} title={solarwindsTitle} /> : null}
+                                {backupDisplay ? <VeeamMark tone={veeamTone} title={veeamTitle} /> : null}
                               </span>
                             </TableCell>
                           );
@@ -1706,10 +1714,9 @@ export default function AssetsPage() {
                 <div className="flex items-center gap-2">
                   <div className="text-xs text-muted-foreground">每页</div>
                   <Select
-                    value={String(pageSize)}
+                    value={String(filters.pageSize)}
                     onValueChange={(value) => {
-                      setPage(1);
-                      setPageSize(Number(value));
+                      setFilters((prev) => ({ ...prev, page: 1, pageSize: Number(value) }));
                     }}
                   >
                     <SelectTrigger className="w-[120px]">
@@ -1729,11 +1736,16 @@ export default function AssetsPage() {
                     size="sm"
                     variant="outline"
                     disabled={!canPrev}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                   >
                     上一页
                   </Button>
-                  <Button size="sm" variant="outline" disabled={!canNext} onClick={() => setPage((p) => p + 1)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canNext}
+                    onClick={() => setFilters((prev) => ({ ...prev, page: prev.page + 1 }))}
+                  >
                     下一页
                   </Button>
                 </div>

@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { SourceType } from '@prisma/client';
 
 const VcenterPayload = z.object({ username: z.string().min(1), password: z.string().min(1) }).strict();
+const VeeamPayload = z.object({ username: z.string().min(1), password: z.string().min(1) }).strict();
 const SolarWindsPayload = z.object({ username: z.string().min(1), password: z.string().min(1) }).strict();
 const HypervWinrmPayloadV2 = z
   .object({
@@ -43,13 +44,28 @@ const PveUserPasswordPayload = z
 const PvePayload = z.union([PveApiTokenPayload, PveUserPasswordPayload]);
 const AliyunPayload = z.object({ accessKeyId: z.string().min(1), accessKeySecret: z.string().min(1) });
 const ThirdPartyPayload = z.object({ token: z.string().min(1) });
+const ActiveDirectoryPayload = z
+  .object({
+    bindUpn: z.string().min(1),
+    bindPassword: z.string().min(1),
+  })
+  .strict();
 
 export const CredentialTypeSchema = z.nativeEnum(SourceType);
 
 export const CredentialCreateSchema = z.object({
   name: z.string().min(1),
   type: CredentialTypeSchema,
-  payload: z.union([VcenterPayload, SolarWindsPayload, HypervPayload, PvePayload, AliyunPayload, ThirdPartyPayload]),
+  payload: z.union([
+    VcenterPayload,
+    VeeamPayload,
+    SolarWindsPayload,
+    HypervPayload,
+    PvePayload,
+    AliyunPayload,
+    ThirdPartyPayload,
+    ActiveDirectoryPayload,
+  ]),
 });
 
 export const CredentialUpdateSchema = z.object({
@@ -63,7 +79,9 @@ export function payloadSchemaByType(type: SourceType) {
   if (type === 'hyperv') return HypervPayload;
   if (type === 'aliyun') return AliyunPayload;
   if (type === 'third_party') return ThirdPartyPayload;
+  if (type === 'veeam') return VeeamPayload;
   if (type === 'solarwinds') return SolarWindsPayload;
+  if (type === 'activedirectory') return ActiveDirectoryPayload;
   // vcenter：username/password
   return VcenterPayload;
 }

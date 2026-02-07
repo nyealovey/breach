@@ -13,6 +13,10 @@ export type CollectorResponseV1 = {
     raw_payload?: unknown;
   }>;
   relations?: unknown[];
+  directory?: {
+    domains?: unknown[];
+    users?: unknown[];
+  };
   stats?: unknown;
   errors?: unknown[];
 };
@@ -212,6 +216,30 @@ export function validateCollectorResponse(response: unknown): { ok: true } | { o
         },
       },
     };
+  }
+
+  const directory = (response as CollectorResponseV1).directory;
+  if (directory !== undefined) {
+    if (!directory || typeof directory !== 'object' || Array.isArray(directory)) {
+      return {
+        ok: false,
+        error: schemaError('directory must be an object when provided'),
+      };
+    }
+
+    if (directory.domains !== undefined && !Array.isArray(directory.domains)) {
+      return {
+        ok: false,
+        error: schemaError('directory.domains must be an array when provided'),
+      };
+    }
+
+    if (directory.users !== undefined && !Array.isArray(directory.users)) {
+      return {
+        ok: false,
+        error: schemaError('directory.users must be an array when provided'),
+      };
+    }
   }
 
   return { ok: true };

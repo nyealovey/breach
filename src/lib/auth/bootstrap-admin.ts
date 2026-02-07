@@ -5,7 +5,15 @@ import { hashPassword } from './password';
 
 export async function bootstrapAdmin() {
   const existing = await prisma.user.findUnique({ where: { username: 'admin' } });
-  if (existing) return existing;
+  if (existing) {
+    if (existing.authType !== 'local' || !existing.enabled) {
+      return prisma.user.update({
+        where: { id: existing.id },
+        data: { authType: 'local', enabled: true, externalAuthId: null },
+      });
+    }
+    return existing;
+  }
 
   const plain = serverEnv.ASSET_LEDGER_ADMIN_PASSWORD;
   if (!plain) {
@@ -18,7 +26,9 @@ export async function bootstrapAdmin() {
   const passwordHash = await hashPassword(plain);
 
   try {
-    return await prisma.user.create({ data: { username: 'admin', role: 'admin', passwordHash } });
+    return await prisma.user.create({
+      data: { username: 'admin', role: 'admin', authType: 'local', enabled: true, externalAuthId: null, passwordHash },
+    });
   } catch (err) {
     // If concurrent bootstrap happens, treat "already exists" as success.
     const again = await prisma.user.findUnique({ where: { username: 'admin' } });

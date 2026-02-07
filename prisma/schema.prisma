@@ -13,7 +13,9 @@ enum SourceType {
   hyperv
   aliyun
   third_party
+  veeam
   solarwinds
+  activedirectory
 }
 
 enum SourceRole {
@@ -55,6 +57,11 @@ enum RunStatus {
 enum UserRole {
   admin
   user
+}
+
+enum UserAuthType {
+  local
+  ldap
 }
 
 enum AssetType {
@@ -169,6 +176,9 @@ model Source {
   relations      Relation[]
   signalLinks    AssetSignalLink[]
   signalRecords  SignalRecord[]
+  directoryDomains DirectoryDomain[]
+  directoryUsers DirectoryUser[]
+  directoryUserSnapshots DirectoryUserSnapshot[]
 
   @@index([enabled])
   @@index([scheduleGroupId])
@@ -224,6 +234,8 @@ model Run {
   lastSeenSignalLinks AssetSignalLink[] @relation("AssetSignalLinkLastSeenRun")
   duplicateCandidateJob DuplicateCandidateJob?
   signalRecords SignalRecord[]
+  directoryDomains DirectoryDomain[]
+  directoryUserSnapshots DirectoryUserSnapshot[]
 
   @@index([status, createdAt])
   @@index([sourceId, status, createdAt])
@@ -231,12 +243,16 @@ model Run {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  role         UserRole @default(admin)
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String       @id @default(cuid())
+  username       String       @unique
+  role           UserRole     @default(admin)
+  authType       UserAuthType @default(local)
+  externalAuthId String?      @unique
+  passwordHash   String?
+  enabled        Boolean      @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   sessions                 Session[]
   auditEvents              AuditEvent[]        @relation("AuditActor")
@@ -244,6 +260,8 @@ model User {
   assetLedgerExports       AssetLedgerExport[] @relation("AssetLedgerExportRequestedBy")
   preferences              UserPreference[]
   ignoredDuplicateCandidates DuplicateCandidate[] @relation("DuplicateCandidateIgnoredBy")
+
+  @@index([authType, enabled])
 }
 
 model Session {
@@ -546,6 +564,68 @@ model SignalRecord {
   @@index([runId])
   @@index([linkId])
   @@index([assetUuid, collectedAt(sort: Desc)])
+  @@index([sourceId, collectedAt(sort: Desc)])
+}
+
+model DirectoryDomain {
+  id          String   @id @default(cuid())
+  sourceId    String
+  runId       String
+  domainDn    String
+  dnsRoot     String?
+  netbiosName String?
+  objectGuid  String?
+  raw         Json
+  collectedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run    Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, domainDn])
+  @@index([runId])
+  @@index([sourceId, collectedAt(sort: Desc)])
+}
+
+model DirectoryUser {
+  id             String    @id @default(cuid())
+  sourceId       String
+  objectGuid     String
+  dn             String
+  upn            String?
+  samAccountName String?
+  displayName    String?
+  mail           String?
+  enabled        Boolean?
+  lastSeenAt     DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  source    Source                @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  snapshots DirectoryUserSnapshot[]
+
+  @@unique([sourceId, objectGuid])
+  @@index([sourceId, upn])
+  @@index([sourceId, samAccountName])
+  @@index([sourceId, lastSeenAt(sort: Desc)])
+}
+
+model DirectoryUserSnapshot {
+  id              String   @id @default(cuid())
+  directoryUserId String
+  sourceId        String
+  runId           String
+  profile         Json
+  raw             Json
+  collectedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  directoryUser DirectoryUser @relation(fields: [directoryUserId], references: [id], onDelete: Cascade)
+  source        Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run           Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([directoryUserId, collectedAt(sort: Desc)])
   @@index([sourceId, collectedAt(sort: Desc)])
 }
 

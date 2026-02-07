@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 
 import type { FormEvent } from 'react';
 
-type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'aliyun' | 'third_party';
+type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'activedirectory' | 'aliyun' | 'third_party';
 
 type CredentialDetail = {
   credentialId: string;
@@ -46,6 +46,8 @@ export default function EditCredentialPage() {
   const [domain, setDomain] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [bindUpn, setBindUpn] = useState('');
+  const [bindPassword, setBindPassword] = useState('');
   const [hypervAgentToken, setHypervAgentToken] = useState('');
   const [apiTokenId, setApiTokenId] = useState('');
   const [apiTokenSecret, setApiTokenSecret] = useState('');
@@ -81,6 +83,7 @@ export default function EditCredentialPage() {
   const payload = useMemo(() => {
     if (type === 'aliyun') return { accessKeyId, accessKeySecret };
     if (type === 'third_party') return { token };
+    if (type === 'activedirectory') return { bindUpn, bindPassword };
     if (type === 'pve') {
       return pveAuthType === 'api_token'
         ? { auth_type: 'api_token', api_token_id: apiTokenId, api_token_secret: apiTokenSecret }
@@ -98,6 +101,8 @@ export default function EditCredentialPage() {
     apiTokenId,
     apiTokenSecret,
     domain,
+    bindPassword,
+    bindUpn,
     hypervAgentToken,
     hypervAuth,
     password,
@@ -115,6 +120,7 @@ export default function EditCredentialPage() {
     if (type === 'aliyun' && (!accessKeyId.trim() || !accessKeySecret.trim()))
       return '请填写 accessKeyId/accessKeySecret';
     if (type === 'third_party' && !token.trim()) return '请填写 token';
+    if (type === 'activedirectory' && (!bindUpn.trim() || !bindPassword.trim())) return '请填写 bindUpn/bindPassword';
     if (type === 'pve') {
       if (pveAuthType === 'api_token' && (!apiTokenId.trim() || !apiTokenSecret.trim()))
         return '请填写 api_token_id/api_token_secret';
@@ -275,6 +281,25 @@ export default function EditCredentialPage() {
                       </div>
                     </>
                   )}
+                </>
+              )}
+
+              {updateSecret && type === 'activedirectory' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="bindUpn">bindUpn</Label>
+                    <Input id="bindUpn" value={bindUpn} onChange={(e) => setBindUpn(e.target.value)} />
+                    <div className="text-xs text-muted-foreground">示例：svc_ldap@example.com</div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bindPassword">bindPassword</Label>
+                    <Input
+                      id="bindPassword"
+                      type="password"
+                      value={bindPassword}
+                      onChange={(e) => setBindPassword(e.target.value)}
+                    />
+                  </div>
                 </>
               )}
 

@@ -23,6 +23,19 @@ export async function PUT(request: Request) {
     );
   }
 
+  if (session.user.authType !== 'local' || !session.user.passwordHash) {
+    return fail(
+      {
+        code: ErrorCode.AUTH_PASSWORD_CHANGE_NOT_ALLOWED,
+        category: 'auth',
+        message: 'Password change is not allowed for this account',
+        retryable: false,
+      },
+      403,
+      { requestId },
+    );
+  }
+
   let body: z.infer<typeof BodySchema>;
   try {
     body = BodySchema.parse(await request.json());

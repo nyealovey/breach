@@ -35,6 +35,9 @@ type SourceDetail = {
     preferred_vcenter_version?: string;
     tls_verify?: boolean;
     timeout_ms?: number;
+    api_version?: string;
+    sessions_limit?: number;
+    task_sessions_limit?: number;
     page_size?: number;
     include_unmanaged?: boolean;
     scope?: 'auto' | 'standalone' | 'cluster';
@@ -43,6 +46,11 @@ type SourceDetail = {
     auth_method?: 'auto' | 'kerberos' | 'ntlm' | 'basic';
     scheme?: 'https' | 'http';
     port?: number;
+    purpose?: 'auth_collect' | 'collect_only' | 'auth_only';
+    server_url?: string;
+    base_dn?: string;
+    upn_suffixes?: string[];
+    user_filter?: string;
   };
 };
 type CredentialItem = { credentialId: string; name: string; type: string };
@@ -70,6 +78,11 @@ export default function EditSourcePage() {
   const [pveScope, setPveScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [pveMaxParallelNodes, setPveMaxParallelNodes] = useState(5);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
+  const [veeamTlsVerify, setVeeamTlsVerify] = useState(true);
+  const [veeamTimeoutMs, setVeeamTimeoutMs] = useState(60_000);
+  const [veeamApiVersion, setVeeamApiVersion] = useState('1.2-rev1');
+  const [veeamSessionsLimit, setVeeamSessionsLimit] = useState(200);
+  const [veeamTaskSessionsLimit, setVeeamTaskSessionsLimit] = useState(2000);
   const [solarwindsTlsVerify, setSolarwindsTlsVerify] = useState(true);
   const [solarwindsTimeoutMs, setSolarwindsTimeoutMs] = useState(60_000);
   const [solarwindsPageSize, setSolarwindsPageSize] = useState(500);
@@ -87,6 +100,12 @@ export default function EditSourcePage() {
   const [hypervScope, setHypervScope] = useState<'auto' | 'standalone' | 'cluster'>('auto');
   const [hypervMaxParallelNodes, setHypervMaxParallelNodes] = useState(5);
   const [hypervAuthMethod, setHypervAuthMethod] = useState<'auto' | 'kerberos' | 'ntlm' | 'basic'>('auto');
+  const [adPurpose, setAdPurpose] = useState<'auth_collect' | 'collect_only' | 'auth_only'>('auth_collect');
+  const [adBaseDn, setAdBaseDn] = useState('');
+  const [adUpnSuffixes, setAdUpnSuffixes] = useState('');
+  const [adTlsVerify, setAdTlsVerify] = useState(true);
+  const [adTimeoutMs, setAdTimeoutMs] = useState(60_000);
+  const [adUserFilter, setAdUserFilter] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [scheduleGroupId, setScheduleGroupId] = useState<string | null>(null);
   const [scheduleGroupName, setScheduleGroupName] = useState<string | null>(null);
@@ -121,6 +140,30 @@ export default function EditSourcePage() {
                 : 5,
             );
             setPveAuthType(source.config?.auth_type ?? 'api_token');
+          }
+          if (source.sourceType === 'veeam') {
+            setVeeamTlsVerify(source.config?.tls_verify ?? true);
+            setVeeamTimeoutMs(
+              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+                ? source.config.timeout_ms
+                : 60_000,
+            );
+            setVeeamApiVersion(
+              typeof source.config?.api_version === 'string' && source.config.api_version.trim()
+                ? source.config.api_version.trim()
+                : '1.2-rev1',
+            );
+            setVeeamSessionsLimit(
+              typeof source.config?.sessions_limit === 'number' && Number.isFinite(source.config.sessions_limit)
+                ? source.config.sessions_limit
+                : 200,
+            );
+            setVeeamTaskSessionsLimit(
+              typeof source.config?.task_sessions_limit === 'number' &&
+                Number.isFinite(source.config.task_sessions_limit)
+                ? source.config.task_sessions_limit
+                : 2000,
+            );
           }
           if (source.sourceType === 'solarwinds') {
             setSolarwindsTlsVerify(source.config?.tls_verify ?? true);
@@ -172,6 +215,18 @@ export default function EditSourcePage() {
                 ? source.config.max_parallel_nodes
                 : 5,
             );
+          }
+          if (source.sourceType === 'activedirectory') {
+            setAdPurpose(source.config?.purpose ?? 'auth_collect');
+            setAdBaseDn(source.config?.base_dn ?? '');
+            setAdUpnSuffixes(Array.isArray(source.config?.upn_suffixes) ? source.config.upn_suffixes.join(',') : '');
+            setAdTlsVerify(source.config?.tls_verify ?? true);
+            setAdTimeoutMs(
+              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+                ? source.config.timeout_ms
+                : 60_000,
+            );
+            setAdUserFilter(source.config?.user_filter ?? '');
           }
           setEnabled(source.enabled);
           setScheduleGroupId(source.scheduleGroupId ?? null);
@@ -234,10 +289,24 @@ export default function EditSourcePage() {
     };
   }, [hypervConnectionMethod, hypervAgentId, sourceType]);
 
+  const parseAdSuffixes = () =>
+    Array.from(
+      new Set(
+        adUpnSuffixes
+          .split(',')
+          .map((item) => item.trim().toLowerCase().replace(/^@/, ''))
+          .filter((item) => item.length > 0),
+      ),
+    );
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (submitting) return;
 
+    if (sourceType === 'veeam' && !endpoint.trim()) {
+      toast.error('请填写 endpoint');
+      return;
+    }
     if (sourceType === 'hyperv' && !endpoint.trim()) {
       toast.error('请填写 endpoint');
       return;
@@ -251,6 +320,20 @@ export default function EditSourcePage() {
       toast.error('请选择代理');
       return;
     }
+    if (sourceType === 'activedirectory' && !adBaseDn.trim()) {
+      toast.error('请填写 base_dn');
+      return;
+    }
+    if (sourceType === 'activedirectory' && (adPurpose === 'auth_collect' || adPurpose === 'auth_only')) {
+      if (parseAdSuffixes().length === 0) {
+        toast.error('认证用途的 AD Source 需要 upn_suffixes');
+        return;
+      }
+      if (!credentialId) {
+        toast.error('认证用途的 AD Source 必须绑定凭据');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       const res = await fetch(`/api/v1/sources/${params.id}`, {
@@ -259,7 +342,7 @@ export default function EditSourcePage() {
         body: JSON.stringify({
           name,
           sourceType,
-          role: sourceType === 'solarwinds' ? 'signal' : 'inventory',
+          role: sourceType === 'solarwinds' || sourceType === 'veeam' ? 'signal' : 'inventory',
           enabled,
           agentId:
             sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && hypervAgentId ? hypervAgentId : null,
@@ -273,6 +356,15 @@ export default function EditSourcePage() {
                   scope: pveScope,
                   max_parallel_nodes: pveMaxParallelNodes,
                   auth_type: pveAuthType,
+                }
+              : {}),
+            ...(sourceType === 'veeam'
+              ? {
+                  tls_verify: veeamTlsVerify,
+                  timeout_ms: veeamTimeoutMs,
+                  api_version: veeamApiVersion.trim(),
+                  sessions_limit: veeamSessionsLimit,
+                  task_sessions_limit: veeamTaskSessionsLimit,
                 }
               : {}),
             ...(sourceType === 'solarwinds'
@@ -307,6 +399,17 @@ export default function EditSourcePage() {
                     scope: hypervScope,
                     max_parallel_nodes: hypervMaxParallelNodes,
                   }
+              : {}),
+            ...(sourceType === 'activedirectory'
+              ? {
+                  purpose: adPurpose,
+                  server_url: endpoint.trim(),
+                  base_dn: adBaseDn.trim(),
+                  upn_suffixes: parseAdSuffixes(),
+                  tls_verify: adTlsVerify,
+                  timeout_ms: adTimeoutMs,
+                  ...(adUserFilter.trim() ? { user_filter: adUserFilter.trim() } : {}),
+                }
               : {}),
           },
           credentialId: credentialId ? credentialId : null,
@@ -406,6 +509,11 @@ export default function EditSourcePage() {
                     setPveScope('auto');
                     setPveMaxParallelNodes(5);
                     setPveAuthType('api_token');
+                    setVeeamTlsVerify(true);
+                    setVeeamTimeoutMs(60_000);
+                    setVeeamApiVersion('1.2-rev1');
+                    setVeeamSessionsLimit(200);
+                    setVeeamTaskSessionsLimit(2000);
                     setSolarwindsTlsVerify(true);
                     setSolarwindsTimeoutMs(60_000);
                     setSolarwindsPageSize(500);
@@ -423,18 +531,26 @@ export default function EditSourcePage() {
                     setHypervScope('auto');
                     setHypervMaxParallelNodes(5);
                     setHypervAuthMethod('auto');
+                    setAdPurpose('auth_collect');
+                    setAdBaseDn('');
+                    setAdUpnSuffixes('');
+                    setAdTlsVerify(true);
+                    setAdTimeoutMs(60_000);
+                    setAdUserFilter('');
                   }}
                 >
                   <option value="vcenter">vCenter</option>
                   <option value="solarwinds">SolarWinds（Orion）</option>
+                  <option value="veeam">Veeam（VBR）</option>
                   <option value="pve">PVE</option>
                   <option value="hyperv">Hyper-V</option>
+                  <option value="activedirectory">Active Directory</option>
                   <option value="aliyun">阿里云</option>
                   <option value="third_party">第三方</option>
                 </NativeSelect>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endpoint">Endpoint</Label>
+                <Label htmlFor="endpoint">{sourceType === 'activedirectory' ? 'LDAP Server URL' : 'Endpoint'}</Label>
                 <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
               </div>
               {sourceType === 'vcenter' ? (
@@ -450,6 +566,71 @@ export default function EditSourcePage() {
                   </NativeSelect>
                   <div className="text-xs text-muted-foreground">
                     说明：该字段用于选择采集 driver；detect 会给出建议，但不会自动改写配置。
+                  </div>
+                </div>
+              ) : null}
+              {sourceType === 'activedirectory' ? (
+                <div className="space-y-3 rounded-md border bg-background p-3">
+                  <div className="text-sm font-medium">Active Directory 配置</div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adPurpose">用途</Label>
+                    <NativeSelect
+                      id="adPurpose"
+                      value={adPurpose}
+                      onChange={(e) => setAdPurpose(e.target.value as typeof adPurpose)}
+                    >
+                      <option value="auth_collect">认证 + 采集</option>
+                      <option value="collect_only">仅采集</option>
+                      <option value="auth_only">仅认证</option>
+                    </NativeSelect>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adBaseDn">base_dn</Label>
+                    <Input id="adBaseDn" value={adBaseDn} onChange={(e) => setAdBaseDn(e.target.value)} />
+                    <div className="text-xs text-muted-foreground">示例：DC=example,DC=com</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adUpnSuffixes">upn_suffixes（逗号分隔）</Label>
+                    <Input
+                      id="adUpnSuffixes"
+                      value={adUpnSuffixes}
+                      onChange={(e) => setAdUpnSuffixes(e.target.value)}
+                      placeholder="example.com,sub.example.com"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      仅认证用途（auth_collect/auth_only）必填，用于多域 UPN 路由。
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adUserFilter">user_filter（可选）</Label>
+                    <Input
+                      id="adUserFilter"
+                      value={adUserFilter}
+                      onChange={(e) => setAdUserFilter(e.target.value)}
+                      placeholder="(memberOf=CN=AssetUsers,OU=Groups,DC=example,DC=com)"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">TLS 校验</div>
+                      <div className="text-xs text-muted-foreground">建议生产环境开启</div>
+                    </div>
+                    <Switch checked={adTlsVerify} onCheckedChange={setAdTlsVerify} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adTimeoutMs">timeout_ms</Label>
+                    <Input
+                      id="adTimeoutMs"
+                      type="number"
+                      value={String(adTimeoutMs)}
+                      onChange={(e) => setAdTimeoutMs(Number(e.target.value))}
+                    />
                   </div>
                 </div>
               ) : null}
@@ -510,6 +691,65 @@ export default function EditSourcePage() {
                       <option value="user_password">user_password</option>
                     </NativeSelect>
                     <div className="text-xs text-muted-foreground">说明：该字段用于指导凭据结构（credential）。</div>
+                  </div>
+                </div>
+              ) : null}
+              {sourceType === 'veeam' ? (
+                <div className="space-y-3 rounded-md border bg-background p-3">
+                  <div className="text-sm font-medium">Veeam（VBR）配置</div>
+
+                  <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">TLS 校验</div>
+                      <div className="text-xs text-muted-foreground">关闭仅用于自签名/内网环境（有安全风险）</div>
+                    </div>
+                    <Switch checked={veeamTlsVerify} onCheckedChange={setVeeamTlsVerify} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="veeamTimeoutMs">timeout_ms</Label>
+                    <Input
+                      id="veeamTimeoutMs"
+                      type="number"
+                      value={String(veeamTimeoutMs)}
+                      onChange={(e) => setVeeamTimeoutMs(Number(e.target.value))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="veeamApiVersion">x-api-version</Label>
+                    <Input
+                      id="veeamApiVersion"
+                      value={veeamApiVersion}
+                      onChange={(e) => setVeeamApiVersion(e.target.value)}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      示例：1.2-rev1（VBR 12 常见）或 1.3-rev1（VBR 13）。
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="veeamSessionsLimit">sessions_limit</Label>
+                    <Input
+                      id="veeamSessionsLimit"
+                      type="number"
+                      value={String(veeamSessionsLimit)}
+                      onChange={(e) => setVeeamSessionsLimit(Number(e.target.value))}
+                    />
+                    <div className="text-xs text-muted-foreground">说明：拉取最近 N 个 Sessions（越大越慢）。</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="veeamTaskSessionsLimit">task_sessions_limit</Label>
+                    <Input
+                      id="veeamTaskSessionsLimit"
+                      type="number"
+                      value={String(veeamTaskSessionsLimit)}
+                      onChange={(e) => setVeeamTaskSessionsLimit(Number(e.target.value))}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      说明：单个 Session 下最多拉取 N 个 TaskSessions（避免大作业导致超时/爆量）。
+                    </div>
                   </div>
                 </div>
               ) : null}

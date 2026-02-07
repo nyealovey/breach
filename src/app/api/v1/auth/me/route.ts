@@ -24,5 +24,14 @@ export async function GET(request: Request) {
     );
   }
 
-  return ok({ userId: session.user.id, username: session.user.username, role: session.user.role }, { requestId });
+  return ok(
+    {
+      userId: session.user.id,
+      username: session.user.username,
+      role: session.user.role,
+      authType: session.user.authType,
+      enabled: session.user.enabled,
+    },
+    { requestId },
+  );
 }

@@ -21,6 +21,7 @@ import {
   normalizeOptionalText,
   resolveOverrideAndCurrentValue,
 } from '@/lib/assets/override-visual';
+import { backupStateDisplay } from '@/lib/assets/backup-state';
 import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
@@ -50,11 +51,33 @@ type AssetDetail = {
   osOverrideText?: string | null;
   lastSeenAt: string | null;
   operationalState: {
+    backupCovered: boolean | null;
+    backupState: string | null;
+    backupLastSuccessAt: string | null;
+    backupLastResult: string | null;
+    backupUpdatedAt: string | null;
     monitorCovered: boolean | null;
     monitorState: string | null;
     monitorStatus: string | null;
     monitorUpdatedAt: string | null;
   };
+  backupLast7: Array<{
+    end_time: string | null;
+    start_time: string | null;
+    result: string | null;
+    message: string | null;
+    state: string | null;
+    job_id: string | null;
+    job_name: string | null;
+    session_id: string | null;
+    session_name: string | null;
+    task_session_id: string | null;
+    repository_id: string | null;
+    processed_size: number | null;
+    read_size: number | null;
+    transferred_size: number | null;
+    duration: string | null;
+  }>;
   ledgerFields: LedgerFieldsV1;
   latestSnapshot: { runId: string; createdAt: string; canonical: unknown } | null;
 };
@@ -134,6 +157,38 @@ function formatAssetType(input: string) {
 
 function powerStateLabel(powerState: string) {
   return powerStateLabelZh(powerState);
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '-';
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+
+function backupResultLabelZh(result: string | null): string {
+  if (result === 'Success') return '成功';
+  if (result === 'Warning') return '告警';
+  if (result === 'Failed') return '失败';
+  if (result === 'None') return '未知';
+  return result ?? '-';
+}
+
+function backupResultBadgeVariant(result: string | null): BadgeVariant {
+  if (result === 'Failed') return 'destructive';
+  if (result === 'Warning') return 'secondary';
+  if (result === 'Success') return 'default';
+  return 'outline';
 }
 
 function pickLatestFieldValue(flattened: FlattenedField[], path: string): unknown {
@@ -646,8 +701,21 @@ export default function AssetDetailPage() {
   if (asset.operationalState.monitorStatus)
     monitorTooltipParts.push(`SolarWinds: ${asset.operationalState.monitorStatus}`);
   if (asset.operationalState.monitorUpdatedAt)
-    monitorTooltipParts.push(`更新：${asset.operationalState.monitorUpdatedAt}`);
+    monitorTooltipParts.push(`更新：${formatDateTime(asset.operationalState.monitorUpdatedAt)}`);
   const monitorTooltip = monitorTooltipParts.length > 0 ? monitorTooltipParts.join(' · ') : undefined;
+
+  const backupDisplay = backupStateDisplay({
+    backupCovered: asset.operationalState.backupCovered,
+    backupState: asset.operationalState.backupState,
+  });
+  const backupTooltipParts: string[] = [];
+  if (asset.operationalState.backupLastResult)
+    backupTooltipParts.push(`Veeam: ${asset.operationalState.backupLastResult}`);
+  if (asset.operationalState.backupLastSuccessAt)
+    backupTooltipParts.push(`最近成功：${formatDateTime(asset.operationalState.backupLastSuccessAt)}`);
+  if (asset.operationalState.backupUpdatedAt)
+    backupTooltipParts.push(`更新：${formatDateTime(asset.operationalState.backupUpdatedAt)}`);
+  const backupTooltip = backupTooltipParts.length > 0 ? backupTooltipParts.join(' · ') : undefined;
 
   return (
     <div className="space-y-6">
@@ -751,6 +819,19 @@ export default function AssetDetailPage() {
                       {monitorDisplay ? (
                         <Badge variant={monitorDisplay.variant} title={monitorTooltip}>
                           {monitorDisplay.labelZh}
+                        </Badge>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>-</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">备份</TableCell>
+                    <TableCell>
+                      {backupDisplay ? (
+                        <Badge variant={backupDisplay.variant} title={backupTooltip}>
+                          {backupDisplay.labelZh}
                         </Badge>
                       ) : (
                         '-'
@@ -950,6 +1031,69 @@ export default function AssetDetailPage() {
                   </div>
                 </details>
               ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>最近 7 次备份</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {asset.backupLast7.length < 1 ? (
+                <div className="text-sm text-muted-foreground">暂无备份记录（仅展示最近 7 次）。</div>
+              ) : (
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead className="w-[190px]">结束时间</TableHead>
+                      <TableHead className="w-[110px]">结果</TableHead>
+                      <TableHead>作业</TableHead>
+                      <TableHead className="text-right">处理</TableHead>
+                      <TableHead className="text-right">传输</TableHead>
+                      <TableHead className="text-right">耗时</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {asset.backupLast7.map((b, idx) => {
+                      const key = `${b.session_id ?? 'session'}:${b.task_session_id ?? idx}`;
+                      const resultLabel = backupResultLabelZh(b.result);
+                      const resultVariant = backupResultBadgeVariant(b.result);
+                      const resultTitle = b.message
+                        ? `${b.result ?? ''}${b.result ? ' · ' : ''}${b.message}`
+                        : undefined;
+
+                      return (
+                        <TableRow key={key}>
+                          <TableCell className="whitespace-nowrap font-mono text-xs">
+                            {formatDateTime(b.end_time)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <Badge variant={resultVariant} title={resultTitle}>
+                              {resultLabel}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[320px] whitespace-normal break-words text-sm">
+                            {b.job_name ?? '-'}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+                            {typeof b.processed_size === 'number'
+                              ? formatAssetFieldValue(b.processed_size, { formatHint: 'bytes' })
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+                            {typeof b.transferred_size === 'number'
+                              ? formatAssetFieldValue(b.transferred_size, { formatHint: 'bytes' })
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+                            {b.duration ?? '-'}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
 

@@ -53,6 +53,7 @@
 | AUTH_INVALID_CREDENTIALS                | web    | auth       | false     | 401              | 登录失败（用户名/密码错误）                                                                                      |
 | AUTH_FORBIDDEN                          | web    | permission | false     | 403              | 已登录但无权限（v1.0 仅 admin；预留）                                                                            |
 | AUTH_SESSION_EXPIRED                    | web    | auth       | false     | 401              | 会话过期（session 失效）                                                                                         |
+| AUTH_PASSWORD_CHANGE_NOT_ALLOWED        | web    | auth       | false     | 403              | 当前账号不支持在系统内修改密码（例如 LDAP 用户）                                                                 |
 | CONFIG_INVALID_REQUEST                  | web    | config     | false     | 400              | 请求参数校验失败（Zod/表单校验）                                                                                 |
 | CONFIG_LEDGER_FIELD_KEY_INVALID         | web    | config     | false     | 400              | 台账字段 key 非法/不允许                                                                                         |
 | CONFIG_LEDGER_FIELD_ASSET_TYPE_MISMATCH | web    | config     | false     | 400              | 台账字段与资产类型不匹配（例如将 host 字段写入 vm）                                                              |
@@ -157,6 +158,7 @@ export const ErrorCode = {
   AUTH_INVALID_CREDENTIALS: 'AUTH_INVALID_CREDENTIALS',
   AUTH_FORBIDDEN: 'AUTH_FORBIDDEN',
   AUTH_SESSION_EXPIRED: 'AUTH_SESSION_EXPIRED',
+  AUTH_PASSWORD_CHANGE_NOT_ALLOWED: 'AUTH_PASSWORD_CHANGE_NOT_ALLOWED',
 
   CONFIG_INVALID_REQUEST: 'CONFIG_INVALID_REQUEST',
   CONFIG_LEDGER_FIELD_KEY_INVALID: 'CONFIG_LEDGER_FIELD_KEY_INVALID',
@@ -239,6 +241,15 @@ export const ErrorCode = {
   PHYSICAL_TLS_ERROR: 'PHYSICAL_TLS_ERROR',
   PHYSICAL_PARSE_ERROR: 'PHYSICAL_PARSE_ERROR',
 
+  // ========== 插件层（VEEAM_*）==========
+  VEEAM_CONFIG_INVALID: 'VEEAM_CONFIG_INVALID',
+  VEEAM_AUTH_FAILED: 'VEEAM_AUTH_FAILED',
+  VEEAM_PERMISSION_DENIED: 'VEEAM_PERMISSION_DENIED',
+  VEEAM_NETWORK_ERROR: 'VEEAM_NETWORK_ERROR',
+  VEEAM_TLS_ERROR: 'VEEAM_TLS_ERROR',
+  VEEAM_RATE_LIMIT: 'VEEAM_RATE_LIMIT',
+  VEEAM_PARSE_ERROR: 'VEEAM_PARSE_ERROR',
+
   // ========== 插件层（SOLARWINDS_*）==========
   SOLARWINDS_CONFIG_INVALID: 'SOLARWINDS_CONFIG_INVALID',
   SOLARWINDS_AUTH_FAILED: 'SOLARWINDS_AUTH_FAILED',
@@ -273,6 +284,7 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
 | `HYPERV_`     | Plugin | Hyper-V 插件专用（预留）      |
 | `ALIYUN_`     | Plugin | 阿里云插件专用（预留）        |
 | `PHYSICAL_`   | Plugin | 物理机/第三方插件专用（预留） |
+| `VEEAM_`      | Plugin | Veeam 插件专用（信号）        |
 | `SOLARWINDS_` | Plugin | SolarWinds 插件专用（信号）   |
 | `INTERNAL_`   | 通用   | 内部错误/未分类               |
 
@@ -331,6 +343,10 @@ export const ErrorMessages: Record<
   AUTH_SESSION_EXPIRED: {
     zh: '会话已过期，请重新登录',
     en: 'Session expired, please login again',
+  },
+  AUTH_PASSWORD_CHANGE_NOT_ALLOWED: {
+    zh: '当前账号不支持在系统内修改密码，请在上游身份系统修改',
+    en: 'Password change is not allowed for this account in this system',
   },
   CONFIG_INVALID_REQUEST: {
     zh: '请求参数校验失败：{{details}}',

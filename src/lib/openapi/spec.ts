@@ -41,7 +41,16 @@ const failResponse = z.object({ error: AppErrorSchema, meta: ResponseMetaSchema 
 
 // ===== Schemas used by MVP UI =====
 
-const SourceTypeSchema = z.enum(['vcenter', 'pve', 'hyperv', 'aliyun', 'third_party', 'solarwinds']);
+const SourceTypeSchema = z.enum([
+  'vcenter',
+  'pve',
+  'hyperv',
+  'aliyun',
+  'third_party',
+  'veeam',
+  'solarwinds',
+  'activedirectory',
+]);
 const RunModeSchema = z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']);
 const ScheduleGroupRunModeSchema = z.enum(['collect', 'detect', 'healthcheck']);
 
@@ -72,10 +81,33 @@ const LedgerFieldsV1Schema = z.object({
 });
 
 const AssetOperationalStateSchema = z.object({
+  backupCovered: z.boolean().nullable(),
+  backupState: z.string().nullable(),
+  backupLastSuccessAt: z.string().nullable(),
+  backupLastResult: z.string().nullable(),
+  backupUpdatedAt: z.string().nullable(),
   monitorCovered: z.boolean().nullable(),
   monitorState: z.string().nullable(),
   monitorStatus: z.string().nullable(),
   monitorUpdatedAt: z.string().nullable(),
+});
+
+const BackupLast7ItemSchema = z.object({
+  end_time: z.string().nullable(),
+  start_time: z.string().nullable(),
+  result: z.string().nullable(),
+  message: z.string().nullable(),
+  state: z.string().nullable(),
+  job_id: z.string().nullable(),
+  job_name: z.string().nullable(),
+  session_id: z.string().nullable(),
+  session_name: z.string().nullable(),
+  task_session_id: z.string().nullable(),
+  repository_id: z.string().nullable(),
+  processed_size: z.number().nullable(),
+  read_size: z.number().nullable(),
+  transferred_size: z.number().nullable(),
+  duration: z.string().nullable(),
 });
 
 const AssetListItemSchema = z.object({
@@ -103,6 +135,11 @@ const AssetListItemSchema = z.object({
   monitorState: z.string().nullable(),
   monitorStatus: z.string().nullable(),
   monitorUpdatedAt: z.string().nullable(),
+  backupCovered: z.boolean().nullable(),
+  backupState: z.string().nullable(),
+  backupLastSuccessAt: z.string().nullable(),
+  backupLastResult: z.string().nullable(),
+  backupUpdatedAt: z.string().nullable(),
   ledgerFields: LedgerFieldsV1Schema,
   cpuCount: z.number().int().nullable(),
   memoryBytes: z.number().int().nullable(),
@@ -198,6 +235,85 @@ const TriggerRunResponseSchema = z.object({
   triggerType: z.string(),
   status: z.string(),
   createdAt: z.string(),
+});
+
+const UserRoleSchema = z.enum(['admin', 'user']);
+const UserAuthTypeSchema = z.enum(['local', 'ldap']);
+const AuthLoginRequestSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
+const AuthLoginResponseSchema = z.object({
+  userId: z.string(),
+  username: z.string(),
+  role: UserRoleSchema,
+  authType: UserAuthTypeSchema,
+});
+const AuthMeResponseSchema = AuthLoginResponseSchema.extend({
+  enabled: z.boolean(),
+});
+const AuthPasswordChangeRequestSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
+});
+const AuthPasswordChangeResponseSchema = z.object({
+  message: z.string(),
+});
+
+const UserListItemSchema = z.object({
+  userId: z.string(),
+  username: z.string(),
+  role: UserRoleSchema,
+  authType: UserAuthTypeSchema,
+  externalAuthId: z.string().nullable(),
+  enabled: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+const UserCreateRequestSchema = z.object({
+  authType: UserAuthTypeSchema.optional(),
+  username: z.string().min(1).optional(),
+  externalAuthId: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+  role: UserRoleSchema,
+  enabled: z.boolean().optional(),
+});
+const UserRoleUpdateRequestSchema = z.object({
+  role: UserRoleSchema,
+});
+const UserEnabledUpdateRequestSchema = z.object({
+  enabled: z.boolean(),
+});
+const UserDeleteResponseSchema = z.object({
+  message: z.string(),
+});
+
+const DirectoryDomainListItemSchema = z.object({
+  domainId: z.string(),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  runId: z.string(),
+  domainDn: z.string(),
+  dnsRoot: z.string().nullable(),
+  netbiosName: z.string().nullable(),
+  objectGuid: z.string().nullable(),
+  collectedAt: z.string(),
+  createdAt: z.string(),
+});
+const DirectoryUserListItemSchema = z.object({
+  directoryUserId: z.string(),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  objectGuid: z.string(),
+  dn: z.string(),
+  upn: z.string().nullable(),
+  samAccountName: z.string().nullable(),
+  displayName: z.string().nullable(),
+  mail: z.string().nullable(),
+  enabled: z.boolean().nullable(),
+  lastSeenAt: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 const DuplicateCandidateStatusSchema = z.enum(['open', 'ignored', 'merged']);
@@ -530,6 +646,212 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/api/v1/auth/login',
+  tags: ['auth'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: AuthLoginRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(AuthLoginResponseSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/auth/me',
+  tags: ['auth'],
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(AuthMeResponseSchema) } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/auth/password',
+  tags: ['auth'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: AuthPasswordChangeRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okResponse(AuthPasswordChangeResponseSchema) } },
+    },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/users',
+  tags: ['users'],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().optional(),
+      q: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okPaginatedResponse(UserListItemSchema) } },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/users',
+  tags: ['users'],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: UserCreateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: okResponse(UserListItemSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/users/{id}/role',
+  tags: ['users'],
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: UserRoleUpdateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(UserListItemSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/users/{id}/enabled',
+  tags: ['users'],
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: UserEnabledUpdateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(UserListItemSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+    500: { description: 'Internal error', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/users/{id}',
+  tags: ['users'],
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: okResponse(UserDeleteResponseSchema) } } },
+    400: { description: 'Bad request', content: { 'application/json': { schema: failResponse } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/directory/domains',
+  tags: ['directory'],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().optional(),
+      sourceId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okPaginatedResponse(DirectoryDomainListItemSchema) } },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/directory/users',
+  tags: ['directory'],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      pageSize: z.coerce.number().int().positive().optional(),
+      sourceId: z.string().optional(),
+      q: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'OK',
+      content: { 'application/json': { schema: okPaginatedResponse(DirectoryUserListItemSchema) } },
+    },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: failResponse } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: failResponse } } },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/v1/credentials',
   tags: ['credentials'],
@@ -710,6 +1032,7 @@ registry.registerPath({
               lastSeenAt: z.string().nullable(),
               ledgerFields: LedgerFieldsV1Schema,
               operationalState: AssetOperationalStateSchema,
+              backupLast7: z.array(BackupLast7ItemSchema),
               latestSnapshot: z
                 .object({
                   runId: z.string(),

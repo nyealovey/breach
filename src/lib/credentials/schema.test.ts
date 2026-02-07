@@ -82,4 +82,22 @@ describe('CredentialCreateSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts activedirectory bind credentials', () => {
+    const result = CredentialCreateSchema.safeParse({
+      name: 'ad-bind',
+      type: 'activedirectory',
+      payload: { bindUpn: 'svc_ldap@example.com', bindPassword: 'secret' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects activedirectory credentials missing bindPassword', () => {
+    const result = CredentialCreateSchema.safeParse({
+      name: 'ad-bind',
+      type: 'activedirectory',
+      payload: { bindUpn: 'svc_ldap@example.com' },
+    });
+    expect(result.success).toBe(false);
+  });
 });

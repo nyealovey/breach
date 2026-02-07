@@ -82,4 +82,33 @@ describe('collector response validation', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe(ErrorCode.SCHEMA_VALIDATION_FAILED);
   });
+
+  it('accepts directory payload when domains/users are arrays', () => {
+    const response = {
+      schema_version: 'collector-response-v1',
+      assets: [],
+      relations: [],
+      directory: { domains: [], users: [] },
+      stats: { assets: 0, relations: 0, inventory_complete: true, warnings: [] },
+      errors: [],
+    };
+
+    const result = validateCollectorResponse(response);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects invalid directory payload shape', () => {
+    const response = {
+      schema_version: 'collector-response-v1',
+      assets: [],
+      relations: [],
+      directory: { domains: {} },
+      stats: { assets: 0, relations: 0, inventory_complete: true, warnings: [] },
+      errors: [],
+    };
+
+    const result = validateCollectorResponse(response);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(ErrorCode.SCHEMA_VALIDATION_FAILED);
+  });
 });

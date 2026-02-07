@@ -111,4 +111,33 @@ describe('POST /api/v1/sources/:id/runs', () => {
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
     expect(prisma.run.create).not.toHaveBeenCalled();
   });
+
+  it('rejects activedirectory collect when purpose=auth_only', async () => {
+    (requireAdmin as any).mockResolvedValue({
+      ok: true,
+      requestId: 'req_test',
+      session: { user: { id: 'u1' } },
+    } as any);
+
+    (prisma.source.findFirst as any).mockResolvedValue({
+      id: 'src_ad',
+      scheduleGroupId: 'sg_1',
+      sourceType: 'activedirectory',
+      config: { endpoint: 'ldaps://dc01.example.com:636', purpose: 'auth_only' },
+    } as any);
+
+    const req = new Request('http://localhost/api/v1/sources/src_ad/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'collect' }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: 'src_ad' }) } as any);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error?.code).toBe('CONFIG_INVALID_REQUEST');
+    expect(body.error?.message).toContain('purpose=auth_only');
+    expect(prisma.run.findFirst).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
 });

@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { created, fail, ok } from '@/lib/http/response';
+import { isAdAuthOnlySource } from '@/lib/sources/ad-source';
 
 const BodySchema = z.object({
   mode: z.enum(['collect', 'collect_hosts', 'collect_vms', 'detect', 'healthcheck']),
@@ -111,6 +112,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           code: ErrorCode.CONFIG_INVALID_REQUEST,
           category: 'config',
           message: 'auth_method is required for hyperv winrm collect runs (kerberos|ntlm|basic)',
+          retryable: false,
+        },
+        400,
+        { requestId: auth.requestId },
+      );
+    }
+  }
+
+  if (body.mode === 'collect' && source.sourceType === 'activedirectory') {
+    if (isAdAuthOnlySource(source.config)) {
+      return fail(
+        {
+          code: ErrorCode.CONFIG_INVALID_REQUEST,
+          category: 'config',
+          message: 'purpose=auth_only does not support collect runs',
           retryable: false,
         },
         400,

@@ -10,6 +10,7 @@ import {
 } from '@/lib/duplicate-candidates/job';
 import { serverEnv } from '@/lib/env/server';
 import { ErrorCode } from '@/lib/errors/error-codes';
+import { ingestDirectoryRun } from '@/lib/ingest/ingest-directory-run';
 import { ingestCollectRun } from '@/lib/ingest/ingest-run';
 import { ingestSignalRun } from '@/lib/ingest/ingest-signal-run';
 import { logEvent } from '@/lib/logging/logger';
@@ -114,7 +115,9 @@ function getPluginPath(source: Source): string | null {
   if (source.sourceType === 'vcenter') return serverEnv.ASSET_LEDGER_VCENTER_PLUGIN_PATH ?? null;
   if (source.sourceType === 'pve') return serverEnv.ASSET_LEDGER_PVE_PLUGIN_PATH ?? null;
   if (source.sourceType === 'hyperv') return serverEnv.ASSET_LEDGER_HYPERV_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'veeam') return serverEnv.ASSET_LEDGER_VEEAM_PLUGIN_PATH ?? null;
   if (source.sourceType === 'solarwinds') return serverEnv.ASSET_LEDGER_SOLARWINDS_PLUGIN_PATH ?? null;
+  if (source.sourceType === 'activedirectory') return serverEnv.ASSET_LEDGER_AD_PLUGIN_PATH ?? null;
   return null;
 }
 
@@ -164,6 +167,65 @@ type ProcessResult = {
   stats?: Prisma.InputJsonValue;
 };
 
+async function markRunFailed(input: {
+  runId: string;
+  errorSummary: string;
+  errors: Prisma.InputJsonValue;
+  finishedAt?: Date;
+  warnings?: Prisma.InputJsonValue;
+  detectResult?: Prisma.InputJsonValue;
+  stats?: Prisma.InputJsonValue;
+}) {
+  const finishedAt = input.finishedAt ?? new Date();
+
+  await prisma.run.update({
+    where: { id: input.runId },
+    data: {
+      status: 'Failed',
+      finishedAt,
+      errorSummary: input.errorSummary,
+      errors: input.errors,
+      ...(input.warnings !== undefined ? { warnings: input.warnings } : {}),
+      ...(input.detectResult !== undefined ? { detectResult: input.detectResult } : {}),
+      ...(input.stats !== undefined ? { stats: input.stats } : {}),
+    },
+  });
+}
+
+async function failRun(input: {
+  runId: string;
+  errorSummary: string;
+  error: AppError;
+  pluginExitCode: number | null;
+  finishedAt?: Date;
+  errorsToStore?: Prisma.InputJsonValue;
+  warningsToStore?: Prisma.InputJsonValue;
+  detectResult?: Prisma.InputJsonValue;
+  stats?: Prisma.InputJsonValue;
+  errorsCount?: number;
+  warningsCount?: number;
+}): Promise<ProcessResult> {
+  await markRunFailed({
+    runId: input.runId,
+    finishedAt: input.finishedAt,
+    errorSummary: input.errorSummary,
+    errors: input.errorsToStore ?? ([input.error] as Prisma.InputJsonValue),
+    warnings: input.warningsToStore,
+    detectResult: input.detectResult,
+    stats: input.stats,
+  });
+
+  return {
+    status: 'Failed',
+    error: input.error,
+    errorsCount: input.errorsCount ?? 1,
+    warningsCount: input.warningsCount ?? 0,
+    pluginExitCode: input.pluginExitCode,
+    ...(input.detectResult !== undefined ? { detectResult: input.detectResult } : {}),
+    ...(input.stats !== undefined ? { stats: input.stats } : {}),
+  };
+}
+
 async function processRun(run: Run): Promise<ProcessResult> {
   const source = await prisma.source.findUnique({
     where: { id: run.sourceId },
@@ -176,16 +238,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
       message: 'source not found',
       retryable: false,
     };
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: `source not found: ${run.sourceId}`,
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: `source not found: ${run.sourceId}`,
+      error,
+      pluginExitCode: null,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
   }
 
   const pluginPath = getPluginPath(source);
@@ -196,16 +254,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
       message: 'plugin path not configured',
       retryable: false,
     };
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: `plugin not configured for source_type=${source.sourceType}`,
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: `plugin not configured for source_type=${source.sourceType}`,
+      error,
+      pluginExitCode: null,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
   }
 
   let credential: unknown = {};
@@ -219,16 +273,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
         retryable: false,
         redacted_context: { credentialId: source.credentialId },
       };
-      await prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: 'Failed',
-          finishedAt: new Date(),
-          errorSummary: 'credential not found',
-          errors: [error],
-        },
+      return failRun({
+        runId: run.id,
+        errorSummary: 'credential not found',
+        error,
+        pluginExitCode: null,
       });
-      return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
     }
 
     try {
@@ -241,16 +291,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
         retryable: false,
         redacted_context: { cause: err instanceof Error ? err.message : String(err) },
       };
-      await prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: 'Failed',
-          finishedAt: new Date(),
-          errorSummary: 'failed to decrypt credential',
-          errors: [error],
-        },
+      return failRun({
+        runId: run.id,
+        errorSummary: 'failed to decrypt credential',
+        error,
+        pluginExitCode: null,
       });
-      return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
     }
   }
 
@@ -269,16 +315,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
           retryable: false,
           redacted_context: { agentId: source.agentId },
         };
-        await prisma.run.update({
-          where: { id: run.id },
-          data: {
-            status: 'Failed',
-            finishedAt: new Date(),
-            errorSummary: 'agent not found',
-            errors: [error],
-          },
+        return failRun({
+          runId: run.id,
+          errorSummary: 'agent not found',
+          error,
+          pluginExitCode: null,
         });
-        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
       }
 
       if (!agent.enabled) {
@@ -289,16 +331,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
           retryable: false,
           redacted_context: { agentId: agent.id },
         };
-        await prisma.run.update({
-          where: { id: run.id },
-          data: {
-            status: 'Failed',
-            finishedAt: new Date(),
-            errorSummary: 'agent is disabled',
-            errors: [error],
-          },
+        return failRun({
+          runId: run.id,
+          errorSummary: 'agent is disabled',
+          error,
+          pluginExitCode: null,
         });
-        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
       }
 
       if (agent.agentType !== 'hyperv') {
@@ -309,16 +347,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
           retryable: false,
           redacted_context: { agentId: agent.id, agentType: agent.agentType },
         };
-        await prisma.run.update({
-          where: { id: run.id },
-          data: {
-            status: 'Failed',
-            finishedAt: new Date(),
-            errorSummary: 'agent type mismatch',
-            errors: [error],
-          },
+        return failRun({
+          runId: run.id,
+          errorSummary: 'agent type mismatch',
+          error,
+          pluginExitCode: null,
         });
-        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
       }
 
       // Keep plugins backward-compatible: inject the resolved agent URL + runtime settings.
@@ -334,16 +368,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
           message: 'agentId or agent_url is required when connection_method=agent',
           retryable: false,
         };
-        await prisma.run.update({
-          where: { id: run.id },
-          data: {
-            status: 'Failed',
-            finishedAt: new Date(),
-            errorSummary: 'agent missing',
-            errors: [error],
-          },
+        return failRun({
+          runId: run.id,
+          errorSummary: 'agent missing',
+          error,
+          pluginExitCode: null,
         });
-        return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: null };
       }
     }
   }
@@ -382,16 +412,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
       retryable: false,
       redacted_context: { stderr_excerpt: stderr.slice(0, 2000) },
     };
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: 'plugin failed to start',
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: 'plugin failed to start',
+      error,
+      pluginExitCode: exitCode,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
   if (timedOut) {
@@ -402,16 +428,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
       retryable: true,
       redacted_context: { stderr_excerpt: stderr.slice(0, 2000) },
     };
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: 'plugin timed out',
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: 'plugin timed out',
+      error,
+      pluginExitCode: exitCode,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
   const parsedResult = parseCollectorResponse(stdout);
@@ -424,16 +446,12 @@ async function processRun(run: Run): Promise<ProcessResult> {
         ...(stderr ? { stderr_excerpt: stderr.slice(0, 2000) } : {}),
       },
     };
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: error.message,
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: error.message,
+      error,
+      pluginExitCode: exitCode,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
 
   const response = parsedResult.response;
@@ -441,17 +459,16 @@ async function processRun(run: Run): Promise<ProcessResult> {
   const validateResult = validateCollectorResponse(response);
   if (!validateResult.ok) {
     const error = validateResult.error;
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt: new Date(),
-        errorSummary: error.message,
-        errors: [error],
-      },
+    return failRun({
+      runId: run.id,
+      errorSummary: error.message,
+      error,
+      pluginExitCode: exitCode,
     });
-    return { status: 'Failed', error, errorsCount: 1, warningsCount: 0, pluginExitCode: exitCode };
   }
+
+  const detectResult = response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined;
+  const stats = response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined;
 
   const statsObj =
     response.stats && typeof response.stats === 'object' ? (response.stats as Record<string, unknown>) : undefined;
@@ -470,28 +487,19 @@ async function processRun(run: Run): Promise<ProcessResult> {
       redacted_context: { exit_code: exitCode, stderr_excerpt: stderr.slice(0, 2000) },
     };
     const errorsToStore = errorsValue.length > 0 ? errorsValue : [fallbackError];
-    await prisma.run.update({
-      where: { id: run.id },
-      data: {
-        status: 'Failed',
-        finishedAt,
-        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-        errors: errorsToStore as Prisma.InputJsonValue,
-        warnings: warningsValue as Prisma.InputJsonValue,
-        errorSummary: `plugin failed (exitCode=${exitCode})`,
-      },
-    });
-
-    return {
-      status: 'Failed',
+    return failRun({
+      runId: run.id,
+      finishedAt,
+      errorSummary: `plugin failed (exitCode=${exitCode})`,
       error: fallbackError,
+      errorsToStore: errorsToStore as Prisma.InputJsonValue,
+      warningsToStore: warningsValue as Prisma.InputJsonValue,
+      detectResult,
+      stats,
       errorsCount: errorsToStore.length,
       warningsCount: warningsValue.length,
       pluginExitCode: exitCode,
-      detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-      stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-    };
+    });
   }
 
   if (run.mode === 'collect' || run.mode === 'collect_hosts' || run.mode === 'collect_vms') {
@@ -509,19 +517,85 @@ async function processRun(run: Run): Promise<ProcessResult> {
         message: 'inventory not complete',
         retryable: false,
       };
-      await prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: 'Failed',
-          finishedAt,
-          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-          errors: [error],
-          warnings: warningsValue as Prisma.InputJsonValue,
-          errorSummary: 'inventory not complete',
-        },
+      return failRun({
+        runId: run.id,
+        finishedAt,
+        errorSummary: 'inventory not complete',
+        error,
+        warningsToStore: warningsValue as Prisma.InputJsonValue,
+        detectResult,
+        stats,
+        warningsCount: warningsValue.length,
+        pluginExitCode: exitCode,
       });
-      return { status: 'Failed', error, errorsCount: 1, warningsCount: warningsValue.length, pluginExitCode: exitCode };
+    }
+
+    const isDirectoryCollect = source.sourceType === 'activedirectory';
+    if (isDirectoryCollect) {
+      const directory =
+        response.directory && typeof response.directory === 'object' && !Array.isArray(response.directory)
+          ? response.directory
+          : null;
+      const domains = directory && Array.isArray(directory.domains) ? directory.domains : [];
+      const users = directory && Array.isArray(directory.users) ? directory.users : [];
+
+      try {
+        const ingestResult = await ingestDirectoryRun({
+          prisma,
+          runId: run.id,
+          sourceId: source.id,
+          collectedAt: finishedAt,
+          domains: domains as Array<Record<string, unknown>>,
+          users: users as Array<Record<string, unknown>>,
+        });
+
+        const mergedWarnings = [...warningsValue, ...ingestResult.warnings];
+
+        await prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: 'Succeeded',
+            finishedAt,
+            detectResult,
+            stats,
+            errors: [],
+            warnings: mergedWarnings as Prisma.InputJsonValue,
+            errorSummary: null,
+          },
+        });
+
+        return {
+          status: 'Succeeded',
+          errorsCount: 0,
+          warningsCount: mergedWarnings.length,
+          pluginExitCode: exitCode,
+          detectResult,
+          stats,
+        };
+      } catch (err) {
+        const error: AppError =
+          typeof err === 'object' && err && 'code' in err && 'category' in err
+            ? (err as AppError)
+            : {
+                code: ErrorCode.DB_WRITE_FAILED,
+                category: 'db',
+                message: 'directory ingest failed',
+                retryable: true,
+                redacted_context: { cause: err instanceof Error ? err.message : String(err) },
+              };
+
+        return failRun({
+          runId: run.id,
+          finishedAt,
+          errorSummary: error.message,
+          error,
+          warningsToStore: warningsValue as Prisma.InputJsonValue,
+          detectResult,
+          stats,
+          warningsCount: warningsValue.length,
+          pluginExitCode: exitCode,
+        });
+      }
     }
 
     const assets = Array.isArray((response as any).assets) ? ((response as any).assets as any[]) : null;
@@ -533,19 +607,17 @@ async function processRun(run: Run): Promise<ProcessResult> {
         message: 'collector response missing assets[]',
         retryable: false,
       };
-      await prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: 'Failed',
-          finishedAt,
-          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-          errors: [error],
-          warnings: warningsValue as Prisma.InputJsonValue,
-          errorSummary: 'collector response missing assets[]',
-        },
+      return failRun({
+        runId: run.id,
+        finishedAt,
+        errorSummary: 'collector response missing assets[]',
+        error,
+        warningsToStore: warningsValue as Prisma.InputJsonValue,
+        detectResult,
+        stats,
+        warningsCount: warningsValue.length,
+        pluginExitCode: exitCode,
       });
-      return { status: 'Failed', error, errorsCount: 1, warningsCount: warningsValue.length, pluginExitCode: exitCode };
     }
 
     try {
@@ -571,8 +643,8 @@ async function processRun(run: Run): Promise<ProcessResult> {
 
       const mergedWarnings = [...warningsValue, ...ingestResult.warnings];
 
-      // Signal sources are not inventory: do not enqueue dedup jobs (they don't create/merge assets).
-      if (source.role !== 'signal') {
+      // Signal / AD directory sources are not inventory assets: do not enqueue dedup jobs.
+      if (source.role !== 'signal' && source.sourceType !== 'activedirectory') {
         try {
           await enqueueDuplicateCandidateJob({ prisma, runId: run.id });
         } catch (err) {
@@ -595,8 +667,8 @@ async function processRun(run: Run): Promise<ProcessResult> {
         data: {
           status: 'Succeeded',
           finishedAt,
-          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+          detectResult,
+          stats,
           errors: [],
           warnings: mergedWarnings as Prisma.InputJsonValue,
           errorSummary: null,
@@ -608,8 +680,8 @@ async function processRun(run: Run): Promise<ProcessResult> {
         errorsCount: 0,
         warningsCount: mergedWarnings.length,
         pluginExitCode: exitCode,
-        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+        detectResult,
+        stats,
       };
     } catch (err) {
       const error: AppError =
@@ -623,28 +695,17 @@ async function processRun(run: Run): Promise<ProcessResult> {
               redacted_context: { cause: err instanceof Error ? err.message : String(err) },
             };
 
-      await prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: 'Failed',
-          finishedAt,
-          detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-          stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-          errors: [error],
-          warnings: warningsValue as Prisma.InputJsonValue,
-          errorSummary: error.message,
-        },
-      });
-
-      return {
-        status: 'Failed',
+      return failRun({
+        runId: run.id,
+        finishedAt,
+        errorSummary: error.message,
         error,
-        errorsCount: 1,
+        warningsToStore: warningsValue as Prisma.InputJsonValue,
+        detectResult,
+        stats,
         warningsCount: warningsValue.length,
         pluginExitCode: exitCode,
-        detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-        stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
-      };
+      });
     }
   }
 
@@ -653,8 +714,8 @@ async function processRun(run: Run): Promise<ProcessResult> {
     data: {
       status: 'Succeeded',
       finishedAt,
-      detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-      stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+      detectResult,
+      stats,
       errors: [],
       warnings: warningsValue as Prisma.InputJsonValue,
       errorSummary: null,
@@ -666,8 +727,8 @@ async function processRun(run: Run): Promise<ProcessResult> {
     errorsCount: 0,
     warningsCount: warningsValue.length,
     pluginExitCode: exitCode,
-    detectResult: response.detect !== undefined ? (response.detect as Prisma.InputJsonValue) : undefined,
-    stats: response.stats !== undefined ? (response.stats as Prisma.InputJsonValue) : undefined,
+    detectResult,
+    stats,
   };
 }
 
@@ -821,14 +882,10 @@ async function main() {
           message: err instanceof Error ? err.message : String(err),
           retryable: true,
         };
-        await prisma.run.update({
-          where: { id: run.id },
-          data: {
-            status: 'Failed',
-            finishedAt: new Date(),
-            errorSummary: 'worker crashed while processing run',
-            errors: [error],
-          },
+        await markRunFailed({
+          runId: run.id,
+          errorSummary: 'worker crashed while processing run',
+          errors: [error],
         });
         const startedAt = run.startedAt ? run.startedAt.getTime() : Date.now();
         const durationMs = Date.now() - startedAt;

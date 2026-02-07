@@ -19,6 +19,7 @@ const CONFIG_CENTER_LINKS: NavLink[] = [
   { href: '/sources', label: '来源' },
   { href: '/credentials', label: '凭据' },
   { href: '/agents', label: '代理' },
+  { href: '/users', label: '用户' },
 ];
 
 function activeNavButtonClass(active: boolean) {
@@ -139,6 +140,15 @@ export function AppTopNav({ isAdmin }: { isAdmin: boolean }) {
             className={activeNavButtonClass(isActiveHref(pathname, '/'))}
           >
             <Link href="/">概览</Link>
+          </Button>
+
+          <Button
+            asChild
+            size="sm"
+            variant={isActiveHref(pathname, '/profile') ? 'secondary' : 'ghost'}
+            className={activeNavButtonClass(isActiveHref(pathname, '/profile'))}
+          >
+            <Link href="/profile">账号</Link>
           </Button>
         </nav>
 

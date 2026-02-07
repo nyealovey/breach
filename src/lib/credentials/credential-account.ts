@@ -22,6 +22,7 @@ export function deriveCredentialAccount(type: SourceType, payload: unknown): str
   const data = parsed.data as any;
 
   if (type === SourceType.vcenter) return cleanString(data?.username);
+  if (type === SourceType.veeam) return cleanString(data?.username);
   if (type === SourceType.solarwinds) return cleanString(data?.username);
 
   if (type === SourceType.hyperv) {
@@ -50,6 +51,8 @@ export function deriveCredentialAccount(type: SourceType, payload: unknown): str
     const token = cleanString(data?.token);
     return token ? maskSecret(token) : null;
   }
+
+  if (type === SourceType.activedirectory) return cleanString(data?.bindUpn);
 
   return null;
 }

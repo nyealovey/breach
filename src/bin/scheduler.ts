@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db/prisma';
 import { serverEnv } from '@/lib/env/server';
 import { logEvent } from '@/lib/logging/logger';
 import { recycleStaleRuns } from '@/lib/runs/recycle-stale-runs';
+import { isAdAuthOnlySource } from '@/lib/sources/ad-source';
 import { getLocalParts, localDateToUtcDateOnly } from '@/lib/timezone';
 
 function log(message: string, extra?: Record<string, unknown>) {
@@ -57,8 +58,9 @@ async function enqueueDueGroups(now: Date) {
       select: { id: true, sourceType: true, config: true },
     });
     const eligibleSources = sources.filter((s) => {
-      if (s.sourceType !== 'vcenter') return true;
-      return hasVcenterPreferredVersion(s.config);
+      if (s.sourceType === 'vcenter') return hasVcenterPreferredVersion(s.config);
+      if (s.sourceType === 'activedirectory') return !isAdAuthOnlySource(s.config);
+      return true;
     });
     const sourceIds = eligibleSources.map((s) => s.id);
 

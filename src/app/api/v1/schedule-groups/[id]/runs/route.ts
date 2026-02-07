@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/require-admin';
 import { prisma } from '@/lib/db/prisma';
 import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
+import { isAdAuthOnlySource } from '@/lib/sources/ad-source';
 
 const BodySchema = z
   .object({
@@ -56,6 +57,7 @@ function hasValidCollectConfig(params: { sourceType: string; config: unknown }):
     if (getHypervConnectionMethod(params.config) === 'agent') return true;
     return hasExplicitHypervAuthMethod(params.config);
   }
+  if (params.sourceType === 'activedirectory') return !isAdAuthOnlySource(params.config);
   return true;
 }
 

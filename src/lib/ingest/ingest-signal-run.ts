@@ -205,6 +205,67 @@ function extractMonitorState(normalized: Record<string, unknown>): { state: stri
   };
 }
 
+function cleanIsoDateTime(value: unknown): string | null {
+  const s = cleanString(value);
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+type BackupAggregate = {
+  covered: boolean;
+  state: string | null;
+  lastEndAt: string | null;
+  lastSuccessAt: string | null;
+  lastResultText: string | null;
+};
+
+function extractBackupSummary(normalized: Record<string, unknown>): BackupAggregate {
+  const attributes = normalized.attributes;
+  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+    return { covered: false, state: null, lastEndAt: null, lastSuccessAt: null, lastResultText: null };
+  }
+
+  const obj = attributes as Record<string, unknown>;
+
+  const coveredAttr = typeof obj.backup_covered === 'boolean' ? obj.backup_covered : null;
+  const state = cleanString(obj.backup_state);
+  const lastEndAt = cleanIsoDateTime(obj.backup_last_end_at);
+  const lastSuccessAt = cleanIsoDateTime(obj.backup_last_success_at);
+  const lastResult = cleanString(obj.backup_last_result);
+  const lastMessage = cleanString(obj.backup_last_message);
+
+  const lastResultText = lastResult ? (lastMessage ? `${lastResult}: ${lastMessage}` : lastResult) : lastMessage;
+
+  const covered = coveredAttr ?? Boolean(state || lastEndAt || lastSuccessAt || lastResultText);
+
+  return { covered, state, lastEndAt, lastSuccessAt, lastResultText: lastResultText ?? null };
+}
+
+function isLaterIso(a: string | null, b: string | null): boolean {
+  if (!a) return false;
+  if (!b) return true;
+  return a > b;
+}
+
+function mergeBackupAggregate(cur: BackupAggregate | null, next: BackupAggregate): BackupAggregate {
+  if (!cur) return next;
+
+  const covered = cur.covered || next.covered;
+
+  const latest = isLaterIso(next.lastEndAt, cur.lastEndAt) ? next : cur;
+
+  const lastSuccessAt = isLaterIso(next.lastSuccessAt, cur.lastSuccessAt) ? next.lastSuccessAt : cur.lastSuccessAt;
+
+  return {
+    covered,
+    state: latest.state,
+    lastEndAt: latest.lastEndAt,
+    lastSuccessAt,
+    lastResultText: latest.lastResultText,
+  };
+}
+
 function chooseWorstMonitorState(states: string[]): string {
   // Higher index => "worse" (more attention needed).
   const order = ['up', 'unmanaged', 'unknown', 'warning', 'down'];
@@ -227,16 +288,20 @@ export async function ingestSignalRun(args: {
   collectedAt: Date;
   assets: CollectorAsset[];
 }): Promise<{ ingestedSignals: number; warnings: unknown[] }> {
-  // Defensive: only solarwinds is supported as a signal source today.
-  if (args.sourceType !== 'solarwinds') {
+  // Defensive: signal sources must opt-in to this ingest path.
+  const supportsSignalIngest = args.sourceType === 'solarwinds' || args.sourceType === 'veeam';
+  if (!supportsSignalIngest) {
     throw {
       code: ErrorCode.CONFIG_INVALID_REQUEST,
       category: 'config',
-      message: 'signal ingest only supported for solarwinds sources',
+      message: 'signal ingest only supported for solarwinds/veeam sources',
       retryable: false,
       redacted_context: { sourceType: args.sourceType },
     } satisfies AppError;
   }
+
+  const isSolarWinds = args.sourceType === 'solarwinds';
+  const isVeeam = args.sourceType === 'veeam';
 
   let compressedAssets: Array<{ asset: CollectorAsset; raw: Awaited<ReturnType<typeof compressRaw>> }>;
   try {
@@ -277,6 +342,7 @@ export async function ingestSignalRun(args: {
 
     const coveredNow = new Set<string>();
     const monitorStatesByAssetUuid = new Map<string, { states: string[]; status: string | null }>();
+    const backupStatesByAssetUuid = new Map<string, BackupAggregate>();
 
     let ingestedSignals = 0;
 
@@ -396,67 +462,103 @@ export async function ingestSignalRun(args: {
       ingestedSignals += 1;
 
       if (assetUuid) {
-        coveredNow.add(assetUuid);
-        const monitor = extractMonitorState(asset.normalized);
-        const cur = monitorStatesByAssetUuid.get(assetUuid) ?? { states: [], status: null };
-        cur.states.push(monitor.state);
-        // Preserve a human-readable tooltip-ish string when present.
-        cur.status = cur.status ?? monitor.status;
-        monitorStatesByAssetUuid.set(assetUuid, cur);
+        if (isSolarWinds) {
+          coveredNow.add(assetUuid);
+          const monitor = extractMonitorState(asset.normalized);
+          const cur = monitorStatesByAssetUuid.get(assetUuid) ?? { states: [], status: null };
+          cur.states.push(monitor.state);
+          // Preserve a human-readable tooltip-ish string when present.
+          cur.status = cur.status ?? monitor.status;
+          monitorStatesByAssetUuid.set(assetUuid, cur);
+        }
+
+        if (isVeeam) {
+          const summary = extractBackupSummary(asset.normalized);
+          const cur = backupStatesByAssetUuid.get(assetUuid) ?? null;
+          backupStatesByAssetUuid.set(assetUuid, mergeBackupAggregate(cur, summary));
+        }
       }
     }
 
-    // Update operational state for covered assets.
-    for (const [assetUuid, state] of monitorStatesByAssetUuid.entries()) {
-      const monitorState = chooseWorstMonitorState(state.states);
-      await tx.assetOperationalState.upsert({
-        where: { assetUuid },
-        update: {
-          monitorCovered: true,
-          monitorState,
-          monitorStatus: state.status,
-          monitorUpdatedAt: args.collectedAt,
-        },
-        create: {
-          asset: { connect: { uuid: assetUuid } },
-          monitorCovered: true,
-          monitorState,
-          monitorStatus: state.status,
-          monitorUpdatedAt: args.collectedAt,
-        },
-      });
+    if (isSolarWinds) {
+      // Update operational state for covered assets.
+      for (const [assetUuid, state] of monitorStatesByAssetUuid.entries()) {
+        const monitorState = chooseWorstMonitorState(state.states);
+        await tx.assetOperationalState.upsert({
+          where: { assetUuid },
+          update: {
+            monitorCovered: true,
+            monitorState,
+            monitorStatus: state.status,
+            monitorUpdatedAt: args.collectedAt,
+          },
+          create: {
+            asset: { connect: { uuid: assetUuid } },
+            monitorCovered: true,
+            monitorState,
+            monitorStatus: state.status,
+            monitorUpdatedAt: args.collectedAt,
+          },
+        });
+      }
     }
 
-    // Mark previously-covered assets as not covered when no mapped node was seen in this run.
-    const mapped = await tx.assetSignalLink.findMany({
-      where: { sourceId: args.sourceId, assetUuid: { not: null } },
-      select: { assetUuid: true, lastSeenRunId: true },
-    });
-    const coveredMissing = new Set<string>();
-    for (const row of mapped) {
-      if (!row.assetUuid) continue;
-      if (row.lastSeenRunId === args.runId) continue;
-      if (coveredNow.has(row.assetUuid)) continue;
-      coveredMissing.add(row.assetUuid);
+    if (isVeeam) {
+      for (const [assetUuid, state] of backupStatesByAssetUuid.entries()) {
+        const lastSuccessAt = state.lastSuccessAt ? new Date(state.lastSuccessAt) : null;
+        await tx.assetOperationalState.upsert({
+          where: { assetUuid },
+          update: {
+            backupCovered: state.covered,
+            backupState: state.covered ? (state.state ?? 'unknown') : 'not_covered',
+            backupLastSuccessAt: lastSuccessAt,
+            backupLastResult: state.lastResultText,
+            backupUpdatedAt: args.collectedAt,
+          },
+          create: {
+            asset: { connect: { uuid: assetUuid } },
+            backupCovered: state.covered,
+            backupState: state.covered ? (state.state ?? 'unknown') : 'not_covered',
+            backupLastSuccessAt: lastSuccessAt,
+            backupLastResult: state.lastResultText,
+            backupUpdatedAt: args.collectedAt,
+          },
+        });
+      }
     }
 
-    for (const assetUuid of coveredMissing) {
-      await tx.assetOperationalState.upsert({
-        where: { assetUuid },
-        update: {
-          monitorCovered: false,
-          monitorState: 'not_covered',
-          monitorStatus: null,
-          monitorUpdatedAt: args.collectedAt,
-        },
-        create: {
-          asset: { connect: { uuid: assetUuid } },
-          monitorCovered: false,
-          monitorState: 'not_covered',
-          monitorStatus: null,
-          monitorUpdatedAt: args.collectedAt,
-        },
+    if (isSolarWinds) {
+      // Mark previously-covered assets as not covered when no mapped node was seen in this run.
+      const mapped = await tx.assetSignalLink.findMany({
+        where: { sourceId: args.sourceId, assetUuid: { not: null } },
+        select: { assetUuid: true, lastSeenRunId: true },
       });
+      const coveredMissing = new Set<string>();
+      for (const row of mapped) {
+        if (!row.assetUuid) continue;
+        if (row.lastSeenRunId === args.runId) continue;
+        if (coveredNow.has(row.assetUuid)) continue;
+        coveredMissing.add(row.assetUuid);
+      }
+
+      for (const assetUuid of coveredMissing) {
+        await tx.assetOperationalState.upsert({
+          where: { assetUuid },
+          update: {
+            monitorCovered: false,
+            monitorState: 'not_covered',
+            monitorStatus: null,
+            monitorUpdatedAt: args.collectedAt,
+          },
+          create: {
+            asset: { connect: { uuid: assetUuid } },
+            monitorCovered: false,
+            monitorState: 'not_covered',
+            monitorStatus: null,
+            monitorUpdatedAt: args.collectedAt,
+          },
+        });
+      }
     }
 
     return { ingestedSignals };
@@ -470,4 +572,6 @@ export const __private__ = {
   deriveNameKeys,
   buildAssetIndex,
   matchAsset,
+  extractBackupSummary,
+  mergeBackupAggregate,
 };
