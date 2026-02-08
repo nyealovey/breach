@@ -9,6 +9,9 @@ import type {
   Agent,
   Asset,
   AssetType,
+  DirectoryDomain,
+  DirectoryUser,
+  DirectoryUserSnapshot,
   Relation,
   RelationStatus,
   Run,
@@ -16,6 +19,7 @@ import type {
   ScheduleGroup,
   SignalMatchType,
   Source,
+  User,
 } from '@prisma/client';
 
 const ALLOW_NON_LOCAL_FLAG = 'ALLOW_NON_LOCAL_DB_SEED';
@@ -270,6 +274,137 @@ async function ensureRun(args: {
   });
 }
 
+async function ensureUser(args: {
+  username: string;
+  role: User['role'];
+  authType: User['authType'];
+  externalAuthId: string | null;
+  enabled: boolean;
+}) {
+  const existing = await prisma.user.findUnique({ where: { username: args.username } });
+  if (existing) return existing;
+
+  return prisma.user.create({
+    data: {
+      username: args.username,
+      role: args.role,
+      authType: args.authType,
+      externalAuthId: args.externalAuthId,
+      enabled: args.enabled,
+      passwordHash: null,
+    },
+  });
+}
+
+async function ensureDirectoryDomain(args: {
+  id: string;
+  source: Source;
+  run: Run;
+  domainDn: string;
+  dnsRoot: string | null;
+  netbiosName: string | null;
+  objectGuid: string | null;
+  raw: Record<string, unknown>;
+  collectedAt: Date;
+}): Promise<DirectoryDomain> {
+  return prisma.directoryDomain.upsert({
+    where: {
+      sourceId_domainDn: {
+        sourceId: args.source.id,
+        domainDn: args.domainDn,
+      },
+    },
+    update: {
+      runId: args.run.id,
+      dnsRoot: args.dnsRoot,
+      netbiosName: args.netbiosName,
+      objectGuid: args.objectGuid,
+      raw: asJson(args.raw),
+      collectedAt: args.collectedAt,
+    },
+    create: {
+      id: args.id,
+      sourceId: args.source.id,
+      runId: args.run.id,
+      domainDn: args.domainDn,
+      dnsRoot: args.dnsRoot,
+      netbiosName: args.netbiosName,
+      objectGuid: args.objectGuid,
+      raw: asJson(args.raw),
+      collectedAt: args.collectedAt,
+      createdAt: args.collectedAt,
+    },
+  });
+}
+
+async function ensureDirectoryUser(args: {
+  source: Source;
+  objectGuid: string;
+  dn: string;
+  upn: string | null;
+  samAccountName: string | null;
+  displayName: string | null;
+  mail: string | null;
+  enabled: boolean | null;
+  collectedAt: Date;
+}): Promise<DirectoryUser> {
+  return prisma.directoryUser.upsert({
+    where: {
+      sourceId_objectGuid: {
+        sourceId: args.source.id,
+        objectGuid: args.objectGuid,
+      },
+    },
+    update: {
+      dn: args.dn,
+      upn: args.upn,
+      samAccountName: args.samAccountName,
+      displayName: args.displayName,
+      mail: args.mail,
+      enabled: args.enabled,
+      lastSeenAt: args.collectedAt,
+    },
+    create: {
+      sourceId: args.source.id,
+      objectGuid: args.objectGuid,
+      dn: args.dn,
+      upn: args.upn,
+      samAccountName: args.samAccountName,
+      displayName: args.displayName,
+      mail: args.mail,
+      enabled: args.enabled,
+      lastSeenAt: args.collectedAt,
+      createdAt: args.collectedAt,
+    },
+  });
+}
+
+async function ensureDirectoryUserSnapshot(args: {
+  id: string;
+  directoryUserId: string;
+  source: Source;
+  run: Run;
+  profile: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  collectedAt: Date;
+}): Promise<DirectoryUserSnapshot> {
+  const existing = await prisma.directoryUserSnapshot.findUnique({ where: { id: args.id } });
+  if (existing) return existing;
+
+  return prisma.directoryUserSnapshot.create({
+    data: {
+      id: args.id,
+      directoryUserId: args.directoryUserId,
+      sourceId: args.source.id,
+      runId: args.run.id,
+      profile: asJson(args.profile),
+      raw: asJson(args.raw),
+      collectedAt: args.collectedAt,
+      createdAt: args.collectedAt,
+    },
+  });
+}
+
 async function ensureAsset(args: SeedAsset): Promise<Asset> {
   const existing = await prisma.asset.findUnique({ where: { uuid: args.uuid } });
   if (existing) return existing;
@@ -499,11 +634,12 @@ async function ensureSourceRecord(args: {
   asset: Asset;
   externalId: string;
   normalized: Record<string, unknown>;
+  rawPayload?: unknown;
 }) {
   const existing = await prisma.sourceRecord.findFirst({ where: { id: args.id }, select: { id: true } });
   if (existing) return existing;
 
-  const raw = await compressRaw(args.normalized);
+  const raw = await compressRaw(args.rawPayload ?? args.normalized);
 
   return prisma.sourceRecord.create({
     data: {
@@ -536,11 +672,12 @@ async function ensureSignalRecord(args: {
   externalKind: AssetType;
   externalId: string;
   normalized: Record<string, unknown>;
+  rawPayload?: unknown;
 }) {
   const existing = await prisma.signalRecord.findFirst({ where: { id: args.id }, select: { id: true } });
   if (existing) return existing;
 
-  const raw = await compressRaw(args.normalized);
+  const raw = await compressRaw(args.rawPayload ?? args.normalized);
 
   return prisma.signalRecord.create({
     data: {
@@ -882,7 +1019,25 @@ async function main() {
     id: 'dev_seed_cred_solarwinds',
     name: '[DEV] SolarWinds Credential',
     type: SourceType.solarwinds,
-    payload: { username: 'user@example.com', token: 'seed-token' },
+    payload: { username: 'user@example.com', password: 'dev-password' },
+  });
+  const aliyunCred = await ensureCredential({
+    id: 'dev_seed_cred_aliyun',
+    name: '[DEV] Aliyun Credential',
+    type: SourceType.aliyun,
+    payload: { accessKeyId: 'ak_example', accessKeySecret: 'sk_example' },
+  });
+  const veeamCred = await ensureCredential({
+    id: 'dev_seed_cred_veeam',
+    name: '[DEV] Veeam Credential',
+    type: SourceType.veeam,
+    payload: { username: 'user@example.com', password: 'dev-password' },
+  });
+  const activedirectoryCred = await ensureCredential({
+    id: 'dev_seed_cred_activedirectory',
+    name: '[DEV] Active Directory Bind Credential',
+    type: SourceType.activedirectory,
+    payload: { bindUpn: 'bind-user@example.com', bindPassword: 'dev-password' },
   });
 
   const vcenterSource = await ensureSource({
@@ -939,6 +1094,72 @@ async function main() {
         endpoint: 'https://solarwinds.example.com',
         tls_verify: false,
         timeout_ms: 2000,
+      },
+    },
+  });
+
+  const aliyunSource = await ensureSource({
+    id: 'dev_seed_source_aliyun',
+    source: {
+      name: '[DEV] Aliyun (mock)',
+      sourceType: SourceType.aliyun,
+      role: SourceRole.inventory,
+      endpoint: 'https://ecs.aliyuncs.com',
+      scheduleGroupId: scheduleGroup.id,
+      credentialId: aliyunCred.id,
+      enabled: true,
+      config: {
+        endpoint: 'https://ecs.aliyuncs.com',
+        regions: ['cn-shanghai', 'cn-hangzhou'],
+        timeout_ms: 3000,
+        max_parallel_regions: 2,
+        include_stopped: true,
+        include_ecs: true,
+        include_rds: true,
+      },
+    },
+  });
+
+  const veeamSource = await ensureSource({
+    id: 'dev_seed_source_veeam',
+    source: {
+      name: '[DEV] Veeam (mock)',
+      sourceType: SourceType.veeam,
+      role: SourceRole.signal,
+      endpoint: 'https://vbr.example.com:9419',
+      scheduleGroupId: null,
+      credentialId: veeamCred.id,
+      enabled: true,
+      config: {
+        endpoint: 'https://vbr.example.com:9419',
+        tls_verify: false,
+        timeout_ms: 3000,
+        api_version: '1.2-rev1',
+        sessions_limit: 200,
+        task_sessions_limit: 2000,
+      },
+    },
+  });
+
+  const activedirectorySource = await ensureSource({
+    id: 'dev_seed_source_activedirectory',
+    source: {
+      name: '[DEV] Active Directory (mock)',
+      sourceType: SourceType.activedirectory,
+      role: SourceRole.inventory,
+      endpoint: 'ldaps://dc01.example.com:636',
+      scheduleGroupId: scheduleGroup.id,
+      credentialId: activedirectoryCred.id,
+      enabled: true,
+      config: {
+        endpoint: 'ldaps://dc01.example.com:636',
+        server_url: 'ldaps://dc01.example.com:636',
+        purpose: 'collect_only',
+        base_dn: 'DC=example,DC=com',
+        upn_suffixes: [],
+        tls_verify: false,
+        timeout_ms: 5000,
+        user_filter: '(mail=*)',
       },
     },
   });
@@ -1024,6 +1245,150 @@ async function main() {
     finishedAt: new Date(t.h2.getTime() + 10_000),
     stats: { links: 4, matched: 2, ambiguous: 1, unmatched: 1 },
   });
+
+  const aliyunRun = await ensureRun({
+    id: 'dev_seed_run_aliyun_1',
+    source: aliyunSource,
+    scheduleGroupId: scheduleGroup.id,
+    triggerType: 'manual',
+    mode: 'collect',
+    status: 'Succeeded',
+    createdAt: t.h12,
+    startedAt: t.h12,
+    finishedAt: new Date(t.h12.getTime() + 18_000),
+    stats: { assets: 3, relations: 0, inventoryComplete: true, warnings: [] },
+  });
+
+  const veeamRun = await ensureRun({
+    id: 'dev_seed_run_veeam_1',
+    source: veeamSource,
+    scheduleGroupId: null,
+    triggerType: 'manual',
+    mode: 'collect',
+    status: 'Succeeded',
+    createdAt: t.h2,
+    startedAt: t.h2,
+    finishedAt: new Date(t.h2.getTime() + 9_000),
+    stats: { links: 1, matched: 1, ambiguous: 0, unmatched: 0 },
+  });
+
+  const activedirectoryRun = await ensureRun({
+    id: 'dev_seed_run_ad_1',
+    source: activedirectorySource,
+    scheduleGroupId: scheduleGroup.id,
+    triggerType: 'manual',
+    mode: 'collect',
+    status: 'Succeeded',
+    createdAt: t.h6,
+    startedAt: t.h6,
+    finishedAt: new Date(t.h6.getTime() + 12_000),
+    stats: { domains: 1, users: 3, inventoryComplete: true },
+  });
+
+  // LDAP whitelist users for /users (no real LDAP traffic; used for UI/API coverage only).
+  await ensureUser({
+    username: 'user@example.com',
+    role: 'user',
+    authType: 'ldap',
+    externalAuthId: 'user@example.com',
+    enabled: true,
+  });
+  await ensureUser({
+    username: 'disabled.user@example.com',
+    role: 'user',
+    authType: 'ldap',
+    externalAuthId: 'disabled.user@example.com',
+    enabled: false,
+  });
+
+  // Seed directory data for /api/v1/directory/*.
+  const adDomainDn = 'DC=example,DC=com';
+  await ensureDirectoryDomain({
+    id: 'dev_seed_ad_domain_1',
+    source: activedirectorySource,
+    run: activedirectoryRun,
+    domainDn: adDomainDn,
+    dnsRoot: 'example.com',
+    netbiosName: 'EXAMPLE',
+    objectGuid: 'ad-domain-guid-0001',
+    raw: {
+      domain_dn: adDomainDn,
+      dns_root: 'example.com',
+      netbios_name: 'EXAMPLE',
+      object_guid: 'ad-domain-guid-0001',
+    },
+    collectedAt: activedirectoryRun.finishedAt ?? t.h6,
+  });
+
+  const adUsers = [
+    {
+      objectGuid: 'ad-user-guid-0001',
+      dn: 'CN=User Example,OU=Users,DC=example,DC=com',
+      upn: 'user@example.com',
+      samAccountName: 'user',
+      displayName: 'User Example',
+      mail: 'user@example.com',
+      enabled: true,
+    },
+    {
+      objectGuid: 'ad-user-guid-0002',
+      dn: 'CN=Disabled User,OU=Users,DC=example,DC=com',
+      upn: 'disabled.user@example.com',
+      samAccountName: 'disabled.user',
+      displayName: 'Disabled User',
+      mail: null,
+      enabled: false,
+    },
+    {
+      objectGuid: 'ad-user-guid-0003',
+      dn: 'CN=Backup Service,OU=Service Accounts,DC=example,DC=com',
+      upn: 'svc.backup@example.com',
+      samAccountName: 'svc_backup',
+      displayName: 'Backup Service',
+      mail: null,
+      enabled: true,
+    },
+  ];
+
+  for (const [idx, u] of adUsers.entries()) {
+    const directoryUser = await ensureDirectoryUser({
+      source: activedirectorySource,
+      objectGuid: u.objectGuid,
+      dn: u.dn,
+      upn: u.upn,
+      samAccountName: u.samAccountName,
+      displayName: u.displayName,
+      mail: u.mail,
+      enabled: u.enabled,
+      collectedAt: activedirectoryRun.finishedAt ?? t.h6,
+    });
+
+    await ensureDirectoryUserSnapshot({
+      id: `dev_seed_ad_user_snapshot_${String(idx + 1).padStart(2, '0')}`,
+      directoryUserId: directoryUser.id,
+      source: activedirectorySource,
+      run: activedirectoryRun,
+      profile: {
+        object_guid: u.objectGuid,
+        dn: u.dn,
+        upn: u.upn,
+        sam_account_name: u.samAccountName,
+        display_name: u.displayName,
+        mail: u.mail,
+        enabled: u.enabled,
+      },
+      raw: {
+        object_guid: u.objectGuid,
+        dn: u.dn,
+        upn: u.upn,
+        sam_account_name: u.samAccountName,
+        display_name: u.displayName,
+        mail: u.mail,
+        enabled: u.enabled,
+      },
+      collectedAt: activedirectoryRun.finishedAt ?? t.h6,
+    });
+  }
 
   const clusterA: SeedAsset = {
     uuid: toUuid(100),
@@ -1213,7 +1578,79 @@ async function main() {
     lastSeenAt: t.d5,
   };
 
-  const assetsSeed = [clusterA, clusterB, hostA, hostB, hostC, hostMerged, ...vmAssets, vmMerged];
+  const aliyunEcsA: SeedAsset = {
+    uuid: toUuid(3001),
+    assetType: 'vm',
+    status: 'in_service',
+    displayName: 'aliyun-ecs-01',
+    collectedHostname: 'aliyun-ecs-01.example.com',
+    collectedVmCaption: 'aliyun-ecs-01',
+    collectedIpText: '192.0.2.210',
+    createdAt: t.d2,
+    lastSeenAt: t.h12,
+    ledger: {
+      regionSource: 'cn-shanghai',
+      companySource: 'example.com',
+      departmentSource: 'platform',
+      systemCategorySource: 'business',
+      systemLevelSource: 'L2',
+      bizOwnerSource: 'owner-a',
+    },
+  };
+
+  const aliyunEcsB: SeedAsset = {
+    uuid: toUuid(3002),
+    assetType: 'vm',
+    status: 'in_service',
+    displayName: 'aliyun-ecs-02',
+    collectedHostname: 'aliyun-ecs-02.example.com',
+    collectedVmCaption: 'aliyun-ecs-02',
+    collectedIpText: '198.51.100.210',
+    createdAt: t.d2,
+    lastSeenAt: t.h12,
+    ledger: {
+      regionSource: 'cn-hangzhou',
+      companySource: 'example.com',
+      departmentSource: 'platform',
+      systemCategorySource: 'business',
+      systemLevelSource: 'L2',
+      bizOwnerSource: 'owner-a',
+    },
+  };
+
+  const aliyunRdsA: SeedAsset = {
+    uuid: toUuid(3003),
+    assetType: 'vm',
+    status: 'in_service',
+    displayName: 'aliyun-rds-01',
+    collectedHostname: 'aliyun-rds-01.example.com',
+    collectedVmCaption: 'aliyun-rds-01',
+    collectedIpText: '203.0.113.210',
+    createdAt: t.d2,
+    lastSeenAt: t.h12,
+    ledger: {
+      regionSource: 'cn-hangzhou',
+      companySource: 'example.com',
+      departmentSource: 'platform',
+      systemCategorySource: 'data-platform',
+      systemLevelSource: 'L2',
+      bizOwnerSource: 'owner-a',
+    },
+  };
+
+  const assetsSeed = [
+    clusterA,
+    clusterB,
+    hostA,
+    hostB,
+    hostC,
+    hostMerged,
+    ...vmAssets,
+    vmMerged,
+    aliyunEcsA,
+    aliyunEcsB,
+    aliyunRdsA,
+  ];
 
   const assetsByUuid: Record<string, Asset | undefined> = {};
   for (const seed of assetsSeed) {
@@ -1411,6 +1848,123 @@ async function main() {
     snapshotsCreated += 1;
   }
 
+  const aliyunInventorySeeds = [
+    {
+      seed: aliyunEcsA,
+      externalId: 'ecs:i-ecs-0001',
+      cloudNativeId: 'i-ecs-0001',
+      region: 'cn-shanghai',
+      powerState: 'poweredOn' as const,
+      ip: '192.0.2.210',
+      rawPayload: {
+        instanceId: 'i-ecs-0001',
+        instanceName: 'aliyun-ecs-01',
+        hostName: 'aliyun-ecs-01.example.com',
+        cpu: 2,
+        memory: 4096,
+        status: 'Running',
+        OSName: 'Ubuntu 22.04',
+        innerIpAddress: { ipAddress: ['192.0.2.210'] },
+      },
+    },
+    {
+      seed: aliyunEcsB,
+      externalId: 'ecs:i-ecs-0002',
+      cloudNativeId: 'i-ecs-0002',
+      region: 'cn-hangzhou',
+      powerState: 'poweredOff' as const,
+      ip: '198.51.100.210',
+      rawPayload: {
+        instanceId: 'i-ecs-0002',
+        instanceName: 'aliyun-ecs-02',
+        hostName: 'aliyun-ecs-02.example.com',
+        cpu: 4,
+        memory: 8192,
+        status: 'Stopped',
+        OSName: 'Rocky Linux 9',
+        innerIpAddress: { ipAddress: ['198.51.100.210'] },
+      },
+    },
+    {
+      seed: aliyunRdsA,
+      externalId: 'rds:rm-0001',
+      cloudNativeId: 'rm-0001',
+      region: 'cn-hangzhou',
+      powerState: 'poweredOn' as const,
+      ip: '203.0.113.210',
+      rawPayload: {
+        DBInstanceId: 'rm-0001',
+        DBInstanceDescription: 'aliyun-rds-01',
+        DBInstanceStatus: 'Running',
+        engine: 'mysql',
+        engineVersion: '8.0',
+        connectionMode: 'Standard',
+        connectionString: '203.0.113.210:3306',
+      },
+    },
+  ];
+
+  for (const row of aliyunInventorySeeds) {
+    const asset = mustGetAsset(assetsByUuid, row.seed.uuid);
+
+    const normalized: Record<string, unknown> = {
+      identity: {
+        hostname: row.seed.collectedHostname ?? row.seed.displayName,
+        caption: row.seed.displayName,
+        cloud_native_id: row.cloudNativeId,
+      },
+      location: { region: row.region },
+      runtime: { power_state: row.powerState },
+      network: { ip_addresses: [row.ip] },
+      ...(row.externalId.startsWith('rds:')
+        ? {
+            attributes: {
+              rds_engine: 'mysql',
+              rds_engine_version: '8.0',
+              rds_connection_string: '203.0.113.210:3306',
+            },
+          }
+        : {}),
+    };
+
+    const link = await ensureAssetSourceLink({
+      asset,
+      source: aliyunSource,
+      externalId: row.externalId,
+      firstSeenAt: row.seed.createdAt,
+      lastSeenAt: row.seed.lastSeenAt,
+      presenceStatus: 'present',
+      lastSeenRunId: aliyunRun.id,
+    });
+
+    await ensureSourceRecord({
+      id: `dev_seed_source_record_aliyun_${asset.uuid}`,
+      collectedAt: row.seed.lastSeenAt,
+      run: aliyunRun,
+      source: aliyunSource,
+      linkId: link.id,
+      asset,
+      externalId: link.externalId,
+      normalized,
+      rawPayload: row.rawPayload,
+    });
+    sourceRecordsCreated += 1;
+
+    const canonical = buildCanonicalV1({
+      assetUuid: asset.uuid,
+      assetType: asset.assetType,
+      status: asset.status,
+      sourceId: aliyunSource.id,
+      runId: aliyunRun.id,
+      collectedAt: row.seed.lastSeenAt.toISOString(),
+      normalized,
+      outgoingRelations: [],
+    });
+
+    await ensureSnapshot({ asset, run: aliyunRun, createdAt: row.seed.lastSeenAt, canonical });
+    snapshotsCreated += 1;
+  }
+
   const mergedAssets = [hostMerged, vmMerged];
   for (const seed of mergedAssets) {
     const asset = mustGetAsset(assetsByUuid, seed.uuid);
@@ -1572,6 +2126,130 @@ async function main() {
     monitorState: 'down',
     monitorStatus: 'Down',
     monitorUpdatedAt: t.h2,
+  });
+
+  // ===== Veeam backup signals (Success-only sample) =====
+  const veeamTargetVm = vmAssets[0]!;
+  const veeamExternalId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa|vm-app-01';
+
+  const veeamLink = await ensureAssetSignalLink({
+    source: veeamSource,
+    link: {
+      externalKind: 'vm',
+      externalId: veeamExternalId,
+      assetUuid: veeamTargetVm.uuid,
+      firstSeenAt: t.d1,
+      lastSeenAt: t.h2,
+      matchType: 'manual',
+      matchConfidence: 100,
+      matchReason: 'manual',
+      matchEvidence: { assigned_by: 'admin' },
+      ambiguous: false,
+      ambiguousCandidates: null,
+    },
+    lastSeenRunId: veeamRun.id,
+  });
+
+  const veeamLastEndAt = new Date(t.h2.getTime() - 1_000);
+  const veeamLastSuccessAt = veeamLastEndAt;
+
+  const veeamHistoryLast7 = [
+    {
+      end_time: veeamLastEndAt.toISOString(),
+      start_time: new Date(veeamLastEndAt.getTime() - 9 * 60 * 1000).toISOString(),
+      result: 'Success',
+      message: 'OK',
+      state: 'Stopped',
+      job_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      job_name: 'Job A',
+      session_id: '11111111-1111-1111-1111-111111111111',
+      session_name: 'Job A',
+      task_session_id: '22222222-2222-2222-2222-222222222222',
+      repository_id: '33333333-3333-3333-3333-333333333333',
+      processed_size: 123_456_789_012,
+      read_size: 124_000_000_000,
+      transferred_size: 12_345_678_901,
+      duration: '00:09:49',
+    },
+    {
+      end_time: new Date(t.h6.getTime() - 2_000).toISOString(),
+      start_time: new Date(t.h6.getTime() - 11 * 60 * 1000).toISOString(),
+      result: 'Success',
+      message: 'OK',
+      state: 'Stopped',
+      job_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      job_name: 'Job A',
+      session_id: '11111111-1111-1111-1111-111111111110',
+      session_name: 'Job A',
+      task_session_id: '22222222-2222-2222-2222-222222222220',
+      repository_id: '33333333-3333-3333-3333-333333333333',
+      processed_size: 122_000_000_000,
+      read_size: 123_000_000_000,
+      transferred_size: 10_000_000_000,
+      duration: '00:08:42',
+    },
+    {
+      end_time: new Date(t.h12.getTime() - 3_000).toISOString(),
+      start_time: new Date(t.h12.getTime() - 12 * 60 * 1000).toISOString(),
+      result: 'Success',
+      message: 'OK',
+      state: 'Stopped',
+      job_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      job_name: 'Job A',
+      session_id: '11111111-1111-1111-1111-111111111109',
+      session_name: 'Job A',
+      task_session_id: '22222222-2222-2222-2222-222222222219',
+      repository_id: '33333333-3333-3333-3333-333333333333',
+      processed_size: 120_000_000_000,
+      read_size: 121_000_000_000,
+      transferred_size: 9_000_000_000,
+      duration: '00:07:58',
+    },
+  ];
+
+  const veeamNormalized = {
+    identity: { caption: 'vm-app-01' },
+    attributes: {
+      backup_covered: true,
+      backup_state: 'success',
+      backup_last_result: 'Success',
+      backup_last_message: 'OK',
+      backup_last_end_at: veeamLastEndAt.toISOString(),
+      backup_last_success_at: veeamLastSuccessAt.toISOString(),
+    },
+  } satisfies Record<string, unknown>;
+
+  await ensureSignalRecord({
+    id: 'dev_seed_signal_record_veeam_01',
+    collectedAt: t.h2,
+    run: veeamRun,
+    source: veeamSource,
+    linkId: veeamLink.id,
+    assetUuid: veeamTargetVm.uuid,
+    externalKind: 'vm',
+    externalId: veeamExternalId,
+    normalized: veeamNormalized,
+    rawPayload: { history_last7: veeamHistoryLast7 },
+  });
+  signalRecordsCreated += 1;
+
+  await prisma.assetOperationalState.upsert({
+    where: { assetUuid: veeamTargetVm.uuid },
+    update: {
+      backupCovered: true,
+      backupState: 'success',
+      backupLastSuccessAt: veeamLastSuccessAt,
+      backupLastResult: 'Success: OK',
+      backupUpdatedAt: t.h2,
+    },
+    create: {
+      assetUuid: veeamTargetVm.uuid,
+      backupCovered: true,
+      backupState: 'success',
+      backupLastSuccessAt: veeamLastSuccessAt,
+      backupLastResult: 'Success: OK',
+      backupUpdatedAt: t.h2,
+    },
   });
 
   await ensureDuplicateCandidate({
@@ -1738,10 +2416,25 @@ async function main() {
 
   log('done', {
     adminUserId: adminUser.id,
-    sources: [vcenterSource.id, hypervSource.id, solarwindsSource.id],
-    runs: [vcenterRun.id, hypervRun.id, dedupRun.id, solarwindsRun.id],
+    sources: [
+      vcenterSource.id,
+      hypervSource.id,
+      solarwindsSource.id,
+      aliyunSource.id,
+      veeamSource.id,
+      activedirectorySource.id,
+    ],
+    runs: [
+      vcenterRun.id,
+      hypervRun.id,
+      dedupRun.id,
+      solarwindsRun.id,
+      aliyunRun.id,
+      veeamRun.id,
+      activedirectoryRun.id,
+    ],
     assets: assetsSeed.length,
-    sourceLinks: sourceLinks.size + mergedAssets.length + 2,
+    sourceLinks: sourceLinks.size + mergedAssets.length + 2 + aliyunInventorySeeds.length,
     sourceRecordsCreated,
     signalRecordsCreated,
     relationRecordsCreated,

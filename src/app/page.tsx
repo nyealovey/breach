@@ -4,7 +4,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { buildAssetListWhere } from '@/lib/assets/asset-list-query';
+import { requireServerSession } from '@/lib/auth/require-server-session';
 import { prisma } from '@/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 
 type LedgerTopItem = { value: string; count: number };
 
@@ -21,8 +23,9 @@ async function topLedgerField(
   field: 'region' | 'company' | 'department' | 'systemCategory' | 'systemLevel' | 'bizOwner',
 ) {
   const columns = TOP_LEDGER_FIELD_COLUMNS[field];
-  const effectiveExpr = `COALESCE(lf."${columns.override}", lf."${columns.source}")`;
-  const sql = `
+  // Column names come from a hard-coded allowlist (TOP_LEDGER_FIELD_COLUMNS).
+  const effectiveExpr = Prisma.raw(`COALESCE(lf."${columns.override}", lf."${columns.source}")`);
+  const sql = Prisma.sql`
     SELECT t.value, COUNT(*)::bigint AS count
     FROM (
       SELECT ${effectiveExpr} AS value
@@ -35,7 +38,7 @@ async function topLedgerField(
     ORDER BY COUNT(*) DESC, t.value ASC
     LIMIT 10
   `;
-  const rows = await prisma.$queryRawUnsafe<Array<{ value: string; count: bigint }>>(sql);
+  const rows = await prisma.$queryRaw<Array<{ value: string; count: bigint }>>(sql);
 
   return rows
     .map((r) => ({ value: String(r.value ?? '').trim(), count: Number(r.count) }))
@@ -45,6 +48,8 @@ async function topLedgerField(
 }
 
 export default async function Home() {
+  await requireServerSession();
+
   const [
     totalAssets,
     byType,

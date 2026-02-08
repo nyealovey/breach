@@ -7,6 +7,7 @@ import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { requireServerSession } from '@/lib/auth/require-server-session';
 import { prisma } from '@/lib/db/prisma';
 import { buildPagination, parsePagination } from '@/lib/http/pagination';
 import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
@@ -24,6 +25,8 @@ type RunsPageProps = {
 };
 
 export default async function RunsPage({ searchParams }: RunsPageProps) {
+  await requireServerSession();
+
   const resolvedSearchParams = await searchParams;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(resolvedSearchParams)) {

@@ -1,8 +1,6 @@
-import { redirect } from 'next/navigation';
-
 import { CreateAssetLedgerExportButton } from '@/components/exports/create-asset-ledger-export-button';
 import { prisma } from '@/lib/db/prisma';
-import { getServerSession } from '@/lib/auth/server-session';
+import { requireServerAdminSession } from '@/lib/auth/require-server-session';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,9 +9,7 @@ import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default async function ExportsPage() {
-  const session = await getServerSession();
-  if (!session) redirect('/login');
-  if (session.user.role !== 'admin') redirect('/assets');
+  await requireServerAdminSession();
 
   const exports = await prisma.assetLedgerExport.findMany({
     orderBy: { createdAt: 'desc' },

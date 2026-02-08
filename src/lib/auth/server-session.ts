@@ -1,9 +1,10 @@
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 
 import { prisma } from '@/lib/db/prisma';
 import { parseSessionCookieValue } from '@/lib/auth/session';
 
-export async function getServerSession() {
+export const getServerSession = cache(async () => {
   const cookieValue = (await cookies()).get('session')?.value ?? null;
   if (!cookieValue) return null;
 
@@ -19,4 +20,4 @@ export async function getServerSession() {
   if (session.expiresAt.getTime() <= Date.now()) return null;
 
   return session;
-}
+});

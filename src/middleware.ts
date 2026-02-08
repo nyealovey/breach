@@ -4,7 +4,7 @@ import { logEvent } from '@/lib/logging/logger';
 
 import type { NextRequest } from 'next/server';
 
-const AUTH_COOKIE = 'session';
+const SESSION_COOKIE_NAME = 'session';
 
 function getOrCreateRequestId(request: NextRequest) {
   const input = request.headers.get('x-request-id');
@@ -17,8 +17,23 @@ function isAllowedPath(pathname: string) {
   return false;
 }
 
-function hasSessionCookie(request: NextRequest) {
-  return request.cookies.get(AUTH_COOKIE)?.value?.trim().length ? true : false;
+function hasValidSessionCookie(request: NextRequest) {
+  const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value ?? '';
+  if (!cookieValue) return false;
+
+  // Cookie format: v1:<sessionId>:<expiresMs>:<sig>
+  // We can't verify the signature in Edge runtime, but we can at least
+  // enforce the embedded expiry to avoid redirect loops for expired cookies.
+  if (cookieValue.startsWith('v1:')) {
+    const [, sessionId, expiresMsRaw] = cookieValue.split(':');
+    if (!sessionId || !expiresMsRaw) return false;
+    const expiresAtMs = Number(expiresMsRaw);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) return false;
+    return expiresAtMs > Date.now();
+  }
+
+  // Legacy/dev mode (unsigned).
+  return cookieValue.trim().length > 0;
 }
 
 function isApiPath(pathname: string) {
@@ -40,9 +55,10 @@ export function middleware(request: NextRequest) {
     logEvent({
       level: 'info',
       service: 'web',
-      event_type: 'http.request',
+      event_type: 'http.middleware',
       request_id: requestId,
-      http: { method: request.method, path: pathname, status_code: 200 },
+      middleware_action: 'pass',
+      http: { method: request.method, path: pathname },
       duration_ms: Date.now() - start,
       outcome: 'success',
     });
@@ -50,7 +66,7 @@ export function middleware(request: NextRequest) {
     return res;
   }
 
-  if (hasSessionCookie(request)) {
+  if (hasValidSessionCookie(request)) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-request-id', requestId);
 
@@ -60,9 +76,10 @@ export function middleware(request: NextRequest) {
     logEvent({
       level: 'info',
       service: 'web',
-      event_type: 'http.request',
+      event_type: 'http.middleware',
       request_id: requestId,
-      http: { method: request.method, path: pathname, status_code: 200 },
+      middleware_action: 'pass',
+      http: { method: request.method, path: pathname },
       duration_ms: Date.now() - start,
       outcome: 'success',
     });
@@ -113,5 +130,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
 };

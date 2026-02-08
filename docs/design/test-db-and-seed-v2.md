@@ -49,19 +49,21 @@ bun run db:reset
 
 ## 4. Seed v2 覆盖矩阵
 
-| 功能域     | 对应模型/对象                                                | 覆盖点                                                                             |
-| ---------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| 来源配置   | `Source` / `Credential` / `ScheduleGroup` / `Agent`          | inventory + signal 两类来源，含 Hyper-V Agent 绑定                                 |
-| 运行记录   | `Run`                                                        | `Succeeded`、`Failed`、`detect` 等模式与状态                                       |
-| 资产主数据 | `Asset`                                                      | `vm/host/cluster`、`in_service/offline/merged`、覆盖字段与采集派生字段             |
-| 台账字段   | `AssetLedgerFields`                                          | source 与 override 同时覆盖（含 host 专属字段）                                    |
-| 关系图谱   | `Relation` / `RelationRecord`                                | `runs_on`、`member_of`，含 `active/inactive`                                       |
-| 采集溯源   | `AssetSourceLink` / `SourceRecord` / `AssetRunSnapshot`      | raw + normalized + canonical 全链路                                                |
-| 监控信号   | `AssetSignalLink` / `SignalRecord` / `AssetOperationalState` | matched / ambiguous / unmatched 三类场景                                           |
-| 去重治理   | `DuplicateCandidate` / `DuplicateCandidateJob`               | `open` / `ignored` / `merged` 三态                                                 |
-| 合并审计   | `MergeAudit`                                                 | 合并策略与摘要数据                                                                 |
-| 资产历史   | `AssetHistoryEvent`                                          | `collect.changed`、`ledger_fields.changed`、`asset.status_changed`、`asset.merged` |
-| 导出任务   | `AssetLedgerExport`                                          | `Succeeded` 与 `Failed` 两类任务样本                                               |
+| 功能域     | 对应模型/对象                                                 | 覆盖点                                                                                                                       |
+| ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 来源配置   | `Source` / `Credential` / `ScheduleGroup` / `Agent`           | inventory + signal 两类来源；覆盖 vCenter/Hyper-V/Aliyun/AD（inventory）与 SolarWinds/Veeam（signal）；含 Hyper-V Agent 绑定 |
+| 运行记录   | `Run`                                                         | `Succeeded`、`Failed`、`detect` 等模式与状态                                                                                 |
+| 用户白名单 | `User`                                                        | LDAP 白名单用户样例（`authType=ldap`），覆盖 enabled=true/false                                                              |
+| 资产主数据 | `Asset`                                                       | `vm/host/cluster`、`in_service/offline/merged`、覆盖字段与采集派生字段                                                       |
+| 台账字段   | `AssetLedgerFields`                                           | source 与 override 同时覆盖（含 host 专属字段）                                                                              |
+| 关系图谱   | `Relation` / `RelationRecord`                                 | `runs_on`、`member_of`，含 `active/inactive`                                                                                 |
+| 采集溯源   | `AssetSourceLink` / `SourceRecord` / `AssetRunSnapshot`       | raw + normalized + canonical 全链路                                                                                          |
+| 目录采集   | `DirectoryDomain` / `DirectoryUser` / `DirectoryUserSnapshot` | AD 目录采集样例（1 个 domain + 多个 user + snapshot），覆盖目录查询 API                                                      |
+| 监控信号   | `AssetSignalLink` / `SignalRecord` / `AssetOperationalState`  | SolarWinds：matched / ambiguous / unmatched；Veeam：备份成功样例（`backup*` 聚合字段 + `history_last7`）                     |
+| 去重治理   | `DuplicateCandidate` / `DuplicateCandidateJob`                | `open` / `ignored` / `merged` 三态                                                                                           |
+| 合并审计   | `MergeAudit`                                                  | 合并策略与摘要数据                                                                                                           |
+| 资产历史   | `AssetHistoryEvent`                                           | `collect.changed`、`ledger_fields.changed`、`asset.status_changed`、`asset.merged`                                           |
+| 导出任务   | `AssetLedgerExport`                                           | `Succeeded` 与 `Failed` 两类任务样本                                                                                         |
 
 ## 5. 安全护栏
 
