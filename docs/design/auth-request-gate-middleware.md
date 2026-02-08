@@ -1,4 +1,4 @@
-# 认证请求门禁（Middleware）设计
+# 认证请求门禁（Proxy）设计
 
 ## 背景与目标
 
@@ -8,14 +8,14 @@
 - **未登录访问 API（`/api/**`）**：直接返回 `401` JSON（不重定向）
 - **过期 session cookie**：不应被当作已登录（避免重定向循环/页面闪烁）
 
-仓库历史上曾同时存在两套入口（`proxy.ts` 与 `src/middleware.ts`）。为避免逻辑漂移与不可预测行为，现统一为 **`src/middleware.ts` 单入口**。
+仓库历史上曾同时存在两套入口（`proxy.ts` 与 `src/middleware.ts`）。为避免逻辑漂移与不可预测行为，现统一为 **`src/proxy.ts` 单入口**。
 
-## 为什么选择 `src/middleware.ts` 作为唯一入口
+## 为什么选择 `src/proxy.ts` 作为唯一入口
 
-- Next.js 对 `middleware.ts`（或 `src/middleware.ts`）有明确的加载约定，行为更可预测。
+- Next.js 16+ 对 `proxy.ts`（或 `src/proxy.ts`）有明确的加载约定；`middleware.ts` 约定已弃用。
 - 收敛入口后，鉴权/重定向/请求 ID 注入/日志规则都有单一事实来源，降低维护成本。
 
-## Middleware 职责与策略
+## Proxy（原 Middleware）职责与策略
 
 ### 1) matcher（拦截范围）
 
@@ -31,7 +31,7 @@
 
 **新增公共路径规则**：如果未来添加新的公共静态文件/SEO 文件，需要同时：
 
-1. 把路径加入 `config.matcher` 的排除列表
+1. 把路径加入 `proxyConfig.matcher` 的排除列表
 2. 在本文档中补充说明（确保可审计）
 
 ### 2) 放行路径（无需登录也必须可访问）
@@ -51,10 +51,10 @@ Cookie 名称：`session`
 - 若 cookie 为 `v1:<sessionId>:<expiresMs>:<sig>`：
   - **只使用 `expiresMs` 判断是否过期**
   - `expiresMs <= now` 视为未登录（避免过期 cookie 造成的重定向循环）
-  - **不在 middleware 中验签**（Edge 环境下不使用 Node `crypto`；本判断仅用于“是否重定向”的用户体验兜底）
+  - **不在 proxy 中验签**（Edge 环境下不使用 Node `crypto`；本判断仅用于“是否重定向”的用户体验兜底）
 - 其他格式：按 legacy/dev 模式，仅判非空
 
-> 安全边界：middleware 的 cookie 解析是“体验兜底”，**最终鉴权以服务端会话校验为准**（API/Server 侧仍会校验 session 是否真实存在且未过期）。
+> 安全边界：proxy 的 cookie 解析是“体验兜底”，**最终鉴权以服务端会话校验为准**（API/Server 侧仍会校验 session 是否真实存在且未过期）。
 
 ### 4) 页面与 API 的未登录行为
 
@@ -75,7 +75,7 @@ Cookie 名称：`session`
 
 ### 6) 日志（避免“伪 200”）
 
-middleware 不等于最终响应，因此：
+proxy 不等于最终响应，因此：
 
 - **放行（NextResponse.next）**：
   - `event_type: 'http.middleware'`
@@ -88,4 +88,4 @@ middleware 不等于最终响应，因此：
 
 ## 代码位置
 
-- 唯一入口：`src/middleware.ts`
+- 唯一入口：`src/proxy.ts`

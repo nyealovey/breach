@@ -50,6 +50,9 @@ async function topLedgerField(
 export default async function Home() {
   await requireServerSession();
 
+  type OsRow = { osName: string | null; count: bigint };
+  type SourceRow = { sourceId: string; sourceName: string; count: bigint };
+
   const [
     totalAssets,
     byType,
@@ -64,6 +67,8 @@ export default async function Home() {
     topSystemCategories,
     topSystemLevels,
     topBizOwners,
+    osRows,
+    sourceRows,
   ] = await Promise.all([
     prisma.asset.count({ where: { status: { not: 'merged' } } }),
     prisma.asset.groupBy({ by: ['assetType'], where: { status: { not: 'merged' } }, _count: { _all: true } }),
@@ -91,43 +96,39 @@ export default async function Home() {
     topLedgerField('systemCategory'),
     topLedgerField('systemLevel'),
     topLedgerField('bizOwner'),
+    prisma.$queryRaw<OsRow[]>`
+      SELECT os_name AS "osName", COUNT(*) AS "count"
+      FROM (
+        SELECT DISTINCT ON (ars."assetUuid")
+          ars.canonical #>> '{fields,os,name,value}' AS os_name
+        FROM "AssetRunSnapshot" ars
+        JOIN "Asset" a ON a.uuid = ars."assetUuid"
+        WHERE a.status <> 'merged'
+        ORDER BY ars."assetUuid", ars."createdAt" DESC
+      ) t
+      WHERE os_name IS NOT NULL AND btrim(os_name) <> ''
+      GROUP BY os_name
+      ORDER BY COUNT(*) DESC, os_name ASC
+      LIMIT 20
+    `,
+    prisma.$queryRaw<SourceRow[]>`
+      SELECT s.id AS "sourceId", s.name AS "sourceName", COUNT(*) AS "count"
+      FROM (
+        SELECT DISTINCT ON (ars."assetUuid")
+          ars."assetUuid",
+          ars."runId"
+        FROM "AssetRunSnapshot" ars
+        JOIN "Asset" a ON a.uuid = ars."assetUuid"
+        WHERE a.status <> 'merged'
+        ORDER BY ars."assetUuid", ars."createdAt" DESC
+      ) latest
+      JOIN "Run" r ON r.id = latest."runId"
+      JOIN "Source" s ON s.id = r."sourceId"
+      GROUP BY s.id, s.name
+      ORDER BY COUNT(*) DESC, s.name ASC
+      LIMIT 20
+    `,
   ]);
-
-  type OsRow = { osName: string | null; count: bigint };
-  const osRows = await prisma.$queryRaw<OsRow[]>`
-    SELECT os_name AS "osName", COUNT(*) AS "count"
-    FROM (
-      SELECT DISTINCT ON (ars."assetUuid")
-        ars.canonical #>> '{fields,os,name,value}' AS os_name
-      FROM "AssetRunSnapshot" ars
-      JOIN "Asset" a ON a.uuid = ars."assetUuid"
-      WHERE a.status <> 'merged'
-      ORDER BY ars."assetUuid", ars."createdAt" DESC
-    ) t
-    WHERE os_name IS NOT NULL AND btrim(os_name) <> ''
-    GROUP BY os_name
-    ORDER BY COUNT(*) DESC, os_name ASC
-    LIMIT 20
-  `;
-
-  type SourceRow = { sourceId: string; sourceName: string; count: bigint };
-  const sourceRows = await prisma.$queryRaw<SourceRow[]>`
-    SELECT s.id AS "sourceId", s.name AS "sourceName", COUNT(*) AS "count"
-    FROM (
-      SELECT DISTINCT ON (ars."assetUuid")
-        ars."assetUuid",
-        ars."runId"
-      FROM "AssetRunSnapshot" ars
-      JOIN "Asset" a ON a.uuid = ars."assetUuid"
-      WHERE a.status <> 'merged'
-      ORDER BY ars."assetUuid", ars."createdAt" DESC
-    ) latest
-    JOIN "Run" r ON r.id = latest."runId"
-    JOIN "Source" s ON s.id = r."sourceId"
-    GROUP BY s.id, s.name
-    ORDER BY COUNT(*) DESC, s.name ASC
-    LIMIT 20
-  `;
 
   const assetTypeCount = new Map(byType.map((r) => [r.assetType, r._count._all]));
   const assetStatusCount = new Map(byStatus.map((r) => [r.status, r._count._all]));

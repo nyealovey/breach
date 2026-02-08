@@ -40,7 +40,7 @@ function isApiPath(pathname: string) {
   return pathname.startsWith('/api/');
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const start = Date.now();
   const { pathname } = request.nextUrl;
   const requestId = getOrCreateRequestId(request);
@@ -129,6 +129,6 @@ export function middleware(request: NextRequest) {
   return res;
 }
 
-export const config = {
+export const proxyConfig = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
 };

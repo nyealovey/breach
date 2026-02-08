@@ -14,10 +14,11 @@
   ],
   "scripts": {
     "dev": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next dev",
-    "build": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build",
+    "build": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --webpack",
+    "build:turbo": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --turbo",
     "start": "next start",
     "type-check": "SKIP_ENV_VALIDATION=true __NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next typegen && SKIP_ENV_VALIDATION=true tsc --noEmit",
-    "build:analyze": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build && next experimental-analyze",
+    "build:analyze": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next experimental-analyze --output",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:bootstrap-admin": "bun src/bin/bootstrap-admin.ts",
