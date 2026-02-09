@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -11,28 +11,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type AgentItem = {
-  agentId: string;
-  name: string;
-  agentType: string;
-  endpoint: string;
-  enabled: boolean;
-  tlsVerify: boolean;
-  timeoutMs: number;
-  usageCount: number;
-  updatedAt: string;
-};
+import { checkAgentAction, deleteAgentAction } from './actions';
 
-type AgentCheckResult = {
-  reachable: boolean;
-  status: number | null;
-  durationMs: number;
-  error: string | null;
-};
+import type { AgentCheckResult, AgentListItem } from './actions';
 
-export function AgentsClient() {
-  const [items, setItems] = useState<AgentItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export function AgentsClient({ initialItems }: { initialItems: AgentListItem[] }) {
+  const [items, setItems] = useState<AgentListItem[]>(initialItems);
   const [checking, setChecking] = useState<Record<string, boolean>>({});
   const [checkResults, setCheckResults] = useState<Record<string, AgentCheckResult | undefined>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -40,42 +24,16 @@ export function AgentsClient() {
   const hasItems = items.length > 0;
   const anyChecking = useMemo(() => Object.values(checking).some(Boolean), [checking]);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch('/api/v1/agents?pageSize=100');
-      if (!res.ok) {
-        if (active) {
-          setItems([]);
-          setLoading(false);
-        }
-        return;
-      }
-      const body = (await res.json()) as { data: AgentItem[] };
-      if (active) {
-        setItems(body.data ?? []);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const checkOne = async (agentId: string) => {
     if (checking[agentId]) return;
     setChecking((prev) => ({ ...prev, [agentId]: true }));
     try {
-      const res = await fetch(`/api/v1/agents/${agentId}/check`, { method: 'POST' });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '检测失败');
+      const result = await checkAgentAction(agentId);
+      if (!result.ok) {
+        toast.error(result.error ?? '检测失败');
         return;
       }
-      const body = (await res.json()) as { data: AgentCheckResult };
-      setCheckResults((prev) => ({ ...prev, [agentId]: body.data }));
+      setCheckResults((prev) => ({ ...prev, [agentId]: result.data }));
     } finally {
       setChecking((prev) => ({ ...prev, [agentId]: false }));
     }
@@ -91,8 +49,8 @@ export function AgentsClient() {
     if (!confirm('确认删除该代理？（仅当 usageCount=0 才允许删除）')) return;
     setDeletingId(agentId);
     try {
-      const res = await fetch(`/api/v1/agents/${agentId}`, { method: 'DELETE' });
-      if (res.status === 204) {
+      const result = await deleteAgentAction(agentId);
+      if (result.ok) {
         toast.success('代理已删除');
         setItems((prev) => prev.filter((a) => a.agentId !== agentId));
         setCheckResults((prev) => {
@@ -102,8 +60,7 @@ export function AgentsClient() {
         });
         return;
       }
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      toast.error(body?.error?.message ?? '删除失败');
+      toast.error(result.error ?? '删除失败');
     } finally {
       setDeletingId(null);
     }
@@ -131,14 +88,12 @@ export function AgentsClient() {
           <div className="space-y-1">
             <div className="text-sm font-medium">列表</div>
             <div className="text-xs text-muted-foreground">
-              {loading ? '加载中…' : items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
+              {items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="text-sm text-muted-foreground">加载中…</div>
-          ) : items.length === 0 ? (
+          {items.length === 0 ? (
             <div className="text-sm text-muted-foreground">暂无代理，点击「新建代理」开始配置。</div>
           ) : (
             <Table>

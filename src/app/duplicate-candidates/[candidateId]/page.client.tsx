@@ -30,6 +30,8 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
+import { getDuplicateCandidateAction, ignoreDuplicateCandidateAction } from '../actions';
+
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
 
@@ -130,10 +132,9 @@ export default function DuplicateCandidateDetailPage() {
       setLoading(true);
 
       try {
-        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`);
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          toast.error(body?.error?.message ?? '加载失败');
+        const result = await getDuplicateCandidateAction(candidateId);
+        if (!result.ok) {
+          toast.error(result.error ?? '加载失败');
           if (active) {
             setData(null);
             setLoading(false);
@@ -141,9 +142,8 @@ export default function DuplicateCandidateDetailPage() {
           return;
         }
 
-        const body = (await res.json()) as { data: CandidateDetail };
         if (active) {
-          setData(body.data ?? null);
+          setData((result.data as CandidateDetail) ?? null);
           setLoading(false);
         }
       } catch {
@@ -745,18 +745,9 @@ export default function DuplicateCandidateDetailPage() {
                   setIgnoreSaving(true);
 
                   const reason = ignoreReason.trim() ? ignoreReason.trim() : undefined;
-                  const res = await fetch(
-                    `/api/v1/duplicate-candidates/${encodeURIComponent(data.candidateId)}/ignore`,
-                    {
-                      method: 'POST',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ reason }),
-                    },
-                  );
-
-                  if (!res.ok) {
-                    const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-                    toast.error(body?.error?.message ?? 'Ignore 失败');
+                  const result = await ignoreDuplicateCandidateAction(data.candidateId, { reason });
+                  if (!result.ok) {
+                    toast.error(result.error ?? 'Ignore 失败');
                     setIgnoreSaving(false);
                     return;
                   }

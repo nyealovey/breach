@@ -14,6 +14,14 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
+import {
+  deleteSourceAction,
+  getSource,
+  listCredentialOptionsAction,
+  listHypervAgentOptionsAction,
+  updateSourceAction,
+} from '../../actions';
+
 import type { FormEvent } from 'react';
 
 type SourceDetail = {
@@ -126,10 +134,8 @@ export default function EditSourcePage() {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const sourceRes = await fetch(`/api/v1/sources/${params.id}`);
-      if (sourceRes.ok) {
-        const body = (await sourceRes.json()) as { data: SourceDetail };
-        const source = body.data;
+      const source = (await getSource(params.id)) as unknown as SourceDetail | null;
+      if (source) {
         if (active) {
           setName(source.name);
           setSourceType(source.sourceType);
@@ -276,13 +282,13 @@ export default function EditSourcePage() {
   useEffect(() => {
     let active = true;
     const loadCredentials = async () => {
-      const res = await fetch(`/api/v1/credentials?type=${encodeURIComponent(sourceType)}&pageSize=100`);
-      if (!res.ok) {
-        if (active) setCredentials([]);
+      const result = await listCredentialOptionsAction(sourceType);
+      if (!active) return;
+      if (!result.ok) {
+        setCredentials([]);
         return;
       }
-      const body = (await res.json()) as { data: CredentialItem[] };
-      if (active) setCredentials(body.data ?? []);
+      setCredentials((result.data ?? []) as CredentialItem[]);
     };
     void loadCredentials();
     return () => {
@@ -298,14 +304,13 @@ export default function EditSourcePage() {
 
     let active = true;
     const loadAgents = async () => {
-      const res = await fetch('/api/v1/agents?agentType=hyperv&pageSize=100');
-      if (!res.ok) {
-        if (active) setHypervAgents([]);
+      const result = await listHypervAgentOptionsAction();
+      if (!active) return;
+      if (!result.ok) {
+        setHypervAgents([]);
         return;
       }
-      const body = (await res.json()) as { data: AgentItem[] };
-      if (!active) return;
-      const next = body.data ?? [];
+      const next = (result.data ?? []) as AgentItem[];
       setHypervAgents(next);
       if (!hypervAgentId && next.filter((a) => a.enabled).length === 1) {
         const onlyEnabled = next.find((a) => a.enabled);
@@ -393,98 +398,92 @@ export default function EditSourcePage() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/v1/sources/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          sourceType,
-          role: sourceType === 'solarwinds' || sourceType === 'veeam' ? 'signal' : 'inventory',
-          enabled,
-          agentId:
-            sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && hypervAgentId ? hypervAgentId : null,
-          config: {
-            endpoint: endpoint.trim(),
-            ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
-            ...(sourceType === 'pve'
+      const result = await updateSourceAction(params.id, {
+        name,
+        sourceType,
+        role: sourceType === 'solarwinds' || sourceType === 'veeam' ? 'signal' : 'inventory',
+        enabled,
+        agentId: sourceType === 'hyperv' && hypervConnectionMethod === 'agent' && hypervAgentId ? hypervAgentId : null,
+        config: {
+          endpoint: endpoint.trim(),
+          ...(sourceType === 'vcenter' ? { preferred_vcenter_version: preferredVcenterVersion } : {}),
+          ...(sourceType === 'pve'
+            ? {
+                tls_verify: pveTlsVerify,
+                timeout_ms: pveTimeoutMs,
+                scope: pveScope,
+                max_parallel_nodes: pveMaxParallelNodes,
+                auth_type: pveAuthType,
+              }
+            : {}),
+          ...(sourceType === 'veeam'
+            ? {
+                tls_verify: veeamTlsVerify,
+                timeout_ms: veeamTimeoutMs,
+                api_version: veeamApiVersion.trim(),
+                sessions_limit: veeamSessionsLimit,
+                task_sessions_limit: veeamTaskSessionsLimit,
+              }
+            : {}),
+          ...(sourceType === 'solarwinds'
+            ? {
+                tls_verify: solarwindsTlsVerify,
+                timeout_ms: solarwindsTimeoutMs,
+                page_size: solarwindsPageSize,
+                include_unmanaged: solarwindsIncludeUnmanaged,
+              }
+            : {}),
+          ...(sourceType === 'hyperv'
+            ? hypervConnectionMethod === 'agent'
               ? {
-                  tls_verify: pveTlsVerify,
-                  timeout_ms: pveTimeoutMs,
-                  scope: pveScope,
-                  max_parallel_nodes: pveMaxParallelNodes,
-                  auth_type: pveAuthType,
+                  connection_method: 'agent',
+                  ...(hypervAgentId
+                    ? {}
+                    : {
+                        agent_url: hypervLegacyAgentUrl.trim(),
+                        agent_tls_verify: hypervLegacyAgentTlsVerify,
+                        agent_timeout_ms: hypervLegacyAgentTimeoutMs,
+                      }),
+                  scope: hypervScope,
+                  max_parallel_nodes: hypervMaxParallelNodes,
                 }
-              : {}),
-            ...(sourceType === 'veeam'
-              ? {
-                  tls_verify: veeamTlsVerify,
-                  timeout_ms: veeamTimeoutMs,
-                  api_version: veeamApiVersion.trim(),
-                  sessions_limit: veeamSessionsLimit,
-                  task_sessions_limit: veeamTaskSessionsLimit,
+              : {
+                  connection_method: 'winrm',
+                  auth_method: hypervAuthMethod,
+                  scheme: hypervScheme,
+                  port: hypervPort,
+                  tls_verify: hypervTlsVerify,
+                  timeout_ms: hypervTimeoutMs,
+                  scope: hypervScope,
+                  max_parallel_nodes: hypervMaxParallelNodes,
                 }
-              : {}),
-            ...(sourceType === 'solarwinds'
-              ? {
-                  tls_verify: solarwindsTlsVerify,
-                  timeout_ms: solarwindsTimeoutMs,
-                  page_size: solarwindsPageSize,
-                  include_unmanaged: solarwindsIncludeUnmanaged,
-                }
-              : {}),
-            ...(sourceType === 'hyperv'
-              ? hypervConnectionMethod === 'agent'
-                ? {
-                    connection_method: 'agent',
-                    ...(hypervAgentId
-                      ? {}
-                      : {
-                          agent_url: hypervLegacyAgentUrl.trim(),
-                          agent_tls_verify: hypervLegacyAgentTlsVerify,
-                          agent_timeout_ms: hypervLegacyAgentTimeoutMs,
-                        }),
-                    scope: hypervScope,
-                    max_parallel_nodes: hypervMaxParallelNodes,
-                  }
-                : {
-                    connection_method: 'winrm',
-                    auth_method: hypervAuthMethod,
-                    scheme: hypervScheme,
-                    port: hypervPort,
-                    tls_verify: hypervTlsVerify,
-                    timeout_ms: hypervTimeoutMs,
-                    scope: hypervScope,
-                    max_parallel_nodes: hypervMaxParallelNodes,
-                  }
-              : {}),
-            ...(sourceType === 'activedirectory'
-              ? {
-                  purpose: adPurpose,
-                  server_url: endpoint.trim(),
-                  base_dn: adBaseDn.trim(),
-                  upn_suffixes: parseAdSuffixes(),
-                  tls_verify: adTlsVerify,
-                  timeout_ms: adTimeoutMs,
-                  ...(adUserFilter.trim() ? { user_filter: adUserFilter.trim() } : {}),
-                }
-              : {}),
-            ...(sourceType === 'aliyun'
-              ? {
-                  regions: parseAliyunRegions(),
-                  timeout_ms: aliyunTimeoutMs,
-                  max_parallel_regions: aliyunMaxParallelRegions,
-                  include_ecs: aliyunIncludeEcs,
-                  include_rds: aliyunIncludeRds,
-                  include_stopped: aliyunIncludeStopped,
-                }
-              : {}),
-          },
-          credentialId: credentialId ? credentialId : null,
-        }),
+            : {}),
+          ...(sourceType === 'activedirectory'
+            ? {
+                purpose: adPurpose,
+                server_url: endpoint.trim(),
+                base_dn: adBaseDn.trim(),
+                upn_suffixes: parseAdSuffixes(),
+                tls_verify: adTlsVerify,
+                timeout_ms: adTimeoutMs,
+                ...(adUserFilter.trim() ? { user_filter: adUserFilter.trim() } : {}),
+              }
+            : {}),
+          ...(sourceType === 'aliyun'
+            ? {
+                regions: parseAliyunRegions(),
+                timeout_ms: aliyunTimeoutMs,
+                max_parallel_regions: aliyunMaxParallelRegions,
+                include_ecs: aliyunIncludeEcs,
+                include_rds: aliyunIncludeRds,
+                include_stopped: aliyunIncludeStopped,
+              }
+            : {}),
+        },
+        credentialId: credentialId ? credentialId : null,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '更新失败');
+      if (!result.ok) {
+        toast.error(result.error ?? '更新失败');
         return;
       }
       toast.success('来源已更新');
@@ -496,10 +495,9 @@ export default function EditSourcePage() {
 
   const onDelete = async () => {
     if (!confirm('确认删除该来源？')) return;
-    const res = await fetch(`/api/v1/sources/${params.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      toast.error(body?.error?.message ?? '删除失败');
+    const result = await deleteSourceAction(params.id);
+    if (!result.ok) {
+      toast.error(result.error ?? '删除失败');
       return;
     }
     toast.success('来源已删除');

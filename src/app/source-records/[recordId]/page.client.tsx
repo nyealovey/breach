@@ -8,45 +8,13 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
+import { getSourceRecordNormalizedAction, getSourceRecordRawAction } from '@/lib/actions/source-records';
 
-type NormalizedResponse = {
-  normalizedPayload: unknown;
-  meta: {
-    recordId: string;
-    assetUuid: string;
-    collectedAt: string;
-    runId: string;
-    sourceId: string;
-    externalKind: string;
-    externalId: string;
-  };
-};
+import type { SourceRecordNormalizedResult, SourceRecordRawResult } from '@/lib/actions/source-records';
 
-type RawResponse = {
-  rawPayload: unknown;
-  meta: {
-    hash: string;
-    sizeBytes: number;
-    compression: string;
-    collectedAt: string;
-    runId: string;
-    sourceId: string;
-  };
-};
+type NormalizedResponse = SourceRecordNormalizedResult;
 
-function getNormalizedLoadErrorMessage(status: number): string {
-  if (status === 401) return '未登录或会话已过期，请刷新页面后重新登录。';
-  if (status === 403) return '无权限查看 normalized。';
-  if (status === 404) return '记录不存在或已被删除。';
-  return `加载 normalized 失败（HTTP ${status}）。`;
-}
-
-function getRawLoadErrorMessage(status: number): string {
-  if (status === 401) return '未登录或会话已过期，请刷新页面后重新登录。';
-  if (status === 403) return '无权限查看 raw。';
-  if (status === 404) return '记录不存在或已被删除。';
-  return `加载 raw 失败（HTTP ${status}）。`;
-}
+type RawResponse = SourceRecordRawResult;
 
 function parseTab(raw: string | null): 'normalized' | 'raw' {
   if (raw === 'raw') return 'raw';
@@ -87,40 +55,30 @@ export default function SourceRecordPage() {
       try {
         if (tab === 'normalized') {
           setRaw(null);
-          const res = await fetch(`/api/v1/source-records/${encodeURIComponent(recordId)}/normalized`);
-          if (!res.ok) {
-            if (active) {
-              setError(getNormalizedLoadErrorMessage(res.status));
-              setNormalized(null);
-              setLoading(false);
-            }
+          const result = await getSourceRecordNormalizedAction(recordId);
+          if (!active) return;
+          if (!result.ok) {
+            setError(result.error ?? '加载失败');
+            setNormalized(null);
+            setLoading(false);
             return;
           }
-
-          const body = (await res.json().catch(() => null)) as { data?: NormalizedResponse } | null;
-          if (active) {
-            setNormalized(body?.data ?? null);
-            setLoading(false);
-          }
+          setNormalized(result.data ?? null);
+          setLoading(false);
           return;
         }
 
         setNormalized(null);
-        const res = await fetch(`/api/v1/source-records/${encodeURIComponent(recordId)}/raw`);
-        if (!res.ok) {
-          if (active) {
-            setError(getRawLoadErrorMessage(res.status));
-            setRaw(null);
-            setLoading(false);
-          }
+        const result = await getSourceRecordRawAction(recordId);
+        if (!active) return;
+        if (!result.ok) {
+          setError(result.error ?? '加载失败');
+          setRaw(null);
+          setLoading(false);
           return;
         }
-
-        const body = (await res.json().catch(() => null)) as { data?: RawResponse } | null;
-        if (active) {
-          setRaw(body?.data ?? null);
-          setLoading(false);
-        }
+        setRaw(result.data ?? null);
+        setLoading(false);
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : String(err));

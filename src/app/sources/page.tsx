@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import { SourcesClient } from './sources-client';
+import { listSources } from './actions';
 
 export default async function SourcesPage() {
-  await requireServerAdminSession();
-  return <SourcesClient />;
+  const items = await listSources();
+  return <SourcesClient initialItems={items} />;
 }

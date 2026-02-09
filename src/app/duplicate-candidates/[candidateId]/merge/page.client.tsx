@@ -30,6 +30,8 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
+import { getDuplicateCandidateAction } from '../../actions';
+
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
 
@@ -99,16 +101,14 @@ export default function DuplicateCandidateMergePage() {
       setData(null);
 
       try {
-        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`);
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          toast.error(body?.error?.message ?? '加载失败');
+        const result = await getDuplicateCandidateAction(candidateId);
+        if (!result.ok) {
+          toast.error(result.error ?? '加载失败');
           if (active) setLoading(false);
           return;
         }
 
-        const body = (await res.json()) as { data: CandidateDetail };
-        const candidate = body.data ?? null;
+        const candidate = (result.data as CandidateDetail) ?? null;
         if (!active) return;
 
         setData(candidate);

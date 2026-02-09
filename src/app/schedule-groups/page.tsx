@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import ScheduleGroupsClientPage from './page.client';
+import { listScheduleGroups } from './actions';
 
 export default async function ScheduleGroupsPage() {
-  await requireServerAdminSession();
-  return <ScheduleGroupsClientPage />;
+  const groups = await listScheduleGroups({ pageSize: 100 });
+  return <ScheduleGroupsClientPage initialGroups={groups} />;
 }

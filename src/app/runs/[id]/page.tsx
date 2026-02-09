@@ -1,8 +1,4 @@
-'use client';
-
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/ui/table';
 import { RunIssuesPanel } from '@/components/runs/run-issues-panel';
+import { requireServerSession } from '@/lib/auth/require-server-session';
+import { prisma } from '@/lib/db/prisma';
 import { getRunErrorUiMeta } from '@/lib/runs/run-error-actions';
 import { getPrimaryRunIssue, sanitizeRedactedContext } from '@/lib/runs/run-issues';
 
@@ -31,44 +29,49 @@ type RunDetail = {
   errorSummary: string | null;
 };
 
-export default function RunDetailPage() {
-  const params = useParams<{ id: string }>();
-  const [run, setRun] = useState<RunDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+type RunDetailPageProps = {
+  params: Promise<{ id: string }>;
+};
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch(`/api/v1/runs/${params.id}`);
-      if (!res.ok) {
-        setRun(null);
-        setLoading(false);
-        return;
-      }
-      const body = (await res.json()) as { data: RunDetail };
-      if (active) {
-        setRun(body.data);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [params.id]);
+export default async function RunDetailPage({ params }: RunDetailPageProps) {
+  await requireServerSession();
 
-  if (loading) {
-    return <div className="text-sm text-muted-foreground">加载中…</div>;
-  }
+  const { id } = await params;
+
+  const run = await prisma.run.findUnique({
+    where: { id },
+    include: { source: { select: { name: true } } },
+  });
 
   if (!run) {
     return <div className="text-sm text-muted-foreground">未找到 Run。</div>;
   }
 
+  const durationMs = run.startedAt ? (run.finishedAt ?? run.updatedAt).getTime() - run.startedAt.getTime() : null;
+
+  const warnings = Array.isArray(run.warnings) ? (run.warnings as unknown[]) : [];
+  const errors = Array.isArray(run.errors) ? (run.errors as unknown[]) : [];
+
+  const detail: RunDetail = {
+    runId: run.id,
+    sourceId: run.sourceId,
+    sourceName: run.source?.name ?? null,
+    mode: run.mode,
+    triggerType: run.triggerType,
+    status: run.status,
+    startedAt: run.startedAt?.toISOString() ?? null,
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    durationMs: durationMs ?? 0,
+    detectResult: run.detectResult ?? null,
+    stats: run.stats ?? null,
+    warnings,
+    errors,
+    errorSummary: run.errorSummary ?? null,
+  };
+
   const primaryIssue =
-    run.status === 'Failed'
-      ? getPrimaryRunIssue({ status: run.status, errors: run.errors, errorSummary: run.errorSummary })
+    detail.status === 'Failed'
+      ? getPrimaryRunIssue({ status: detail.status, errors: detail.errors, errorSummary: detail.errorSummary })
       : null;
   const primaryMeta = primaryIssue ? getRunErrorUiMeta(primaryIssue.code) : null;
   const primaryContext = primaryIssue ? sanitizeRedactedContext(primaryIssue.redacted_context) : null;
@@ -77,8 +80,8 @@ export default function RunDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title="Run 详情"
-        meta={<IdText value={run.runId} className="text-foreground" />}
-        description={`${run.sourceName ?? run.sourceId} · ${run.mode} · ${run.triggerType} · ${run.status}`}
+        meta={<IdText value={detail.runId} className="text-foreground" />}
+        description={`${detail.sourceName ?? detail.sourceId} · ${detail.mode} · ${detail.triggerType} · ${detail.status}`}
         actions={
           <Button asChild size="sm" variant="outline">
             <Link href="/runs">返回列表</Link>
@@ -98,45 +101,45 @@ export default function RunDetailPage() {
                   <TableRow>
                     <TableHead>Run ID</TableHead>
                     <TableCell>
-                      <IdText value={run.runId} className="text-foreground" />
+                      <IdText value={detail.runId} className="text-foreground" />
                     </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>来源</TableHead>
                     <TableCell>
-                      {run.sourceName ?? <IdText value={run.sourceId} className="text-foreground" />}
+                      {detail.sourceName ?? <IdText value={detail.sourceId} className="text-foreground" />}
                     </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>模式</TableHead>
-                    <TableCell className="font-mono text-xs">{run.mode}</TableCell>
+                    <TableCell className="font-mono text-xs">{detail.mode}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>触发方式</TableHead>
-                    <TableCell className="font-mono text-xs">{run.triggerType}</TableCell>
+                    <TableCell className="font-mono text-xs">{detail.triggerType}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>状态</TableHead>
-                    <TableCell>{run.status}</TableCell>
+                    <TableCell>{detail.status}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>开始时间</TableHead>
-                    <TableCell className="font-mono text-xs">{run.startedAt ?? '-'}</TableCell>
+                    <TableCell className="font-mono text-xs">{detail.startedAt ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>结束时间</TableHead>
-                    <TableCell className="font-mono text-xs">{run.finishedAt ?? '-'}</TableCell>
+                    <TableCell className="font-mono text-xs">{detail.finishedAt ?? '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableHead>耗时</TableHead>
-                    <TableCell className="font-mono text-xs">{run.durationMs} ms</TableCell>
+                    <TableCell className="font-mono text-xs">{detail.durationMs} ms</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
 
-          {run.status === 'Failed' ? (
+          {detail.status === 'Failed' ? (
             <Card>
               <CardHeader>
                 <CardTitle>失败原因</CardTitle>
@@ -205,13 +208,13 @@ export default function RunDetailPage() {
               <div>
                 <div className="text-sm font-medium">detectResult</div>
                 <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-                  {JSON.stringify(run.detectResult, null, 2)}
+                  {JSON.stringify(detail.detectResult, null, 2)}
                 </pre>
               </div>
               <div>
                 <div className="text-sm font-medium">stats</div>
                 <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-                  {JSON.stringify(run.stats, null, 2)}
+                  {JSON.stringify(detail.stats, null, 2)}
                 </pre>
               </div>
             </CardContent>
@@ -219,8 +222,8 @@ export default function RunDetailPage() {
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <RunIssuesPanel title="errors" issues={run.errors} defaultOpen />
-          <RunIssuesPanel title="warnings" issues={run.warnings} />
+          <RunIssuesPanel title="errors" issues={detail.errors} defaultOpen />
+          <RunIssuesPanel title="warnings" issues={detail.warnings} />
         </div>
       </div>
     </div>

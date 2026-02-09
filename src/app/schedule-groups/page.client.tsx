@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -20,57 +20,20 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type ScheduleGroup = {
-  groupId: string;
-  name: string;
-  enabled: boolean;
-  timezone: string;
-  runAtHhmm: string;
-  sourceCount: number;
-  lastTriggeredOn: string | null;
-};
+import { triggerScheduleGroupRunAction } from './actions';
 
-type ManualRunResult = {
-  queued: number;
-  skipped_active: number;
-  skipped_missing_credential: number;
-  skipped_missing_config?: number;
-  message: string;
-};
+import type { ManualRunResult, ScheduleGroupListItem } from './actions';
 
 type GroupRunMode = 'healthcheck' | 'detect' | 'collect';
 
-export default function ScheduleGroupsPage() {
-  const [groups, setGroups] = useState<ScheduleGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function ScheduleGroupsPage({ initialGroups }: { initialGroups: ScheduleGroupListItem[] }) {
+  const groups = initialGroups;
   const [runningId, setRunningId] = useState<string | null>(null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [pendingGroup, setPendingGroup] = useState<{ id: string; name: string } | null>(null);
   const [runMode, setRunMode] = useState<GroupRunMode>('collect');
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch('/api/v1/schedule-groups');
-      if (!res.ok) {
-        setGroups([]);
-        setLoading(false);
-        return;
-      }
-      const body = (await res.json()) as { data: ScheduleGroup[] };
-      if (active) {
-        setGroups(body.data ?? []);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const openRunDialog = (group: ScheduleGroup) => {
+  const openRunDialog = (group: ScheduleGroupListItem) => {
     if (runningId) return;
     setPendingGroup({ id: group.groupId, name: group.name });
     setRunMode('collect');
@@ -83,18 +46,12 @@ export default function ScheduleGroupsPage() {
 
     setRunningId(pendingGroup.id);
     try {
-      const res = await fetch(`/api/v1/schedule-groups/${pendingGroup.id}/runs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: runMode }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '触发失败');
+      const result = await triggerScheduleGroupRunAction(pendingGroup.id, { mode: runMode });
+      if (!result.ok) {
+        toast.error(result.error ?? '触发失败');
         return;
       }
-      const body = (await res.json()) as { data: ManualRunResult };
-      const r = body.data;
+      const r: ManualRunResult = result.data;
       const skippedMissingConfig = r.skipped_missing_config ?? 0;
       const summary = `queued=${r.queued} · skipped_active=${r.skipped_active} · skipped_missing_credential=${r.skipped_missing_credential} · skipped_missing_config=${skippedMissingConfig}`;
       if (r.queued === 0) toast.message(r.message || '无可入队来源', { description: summary });
@@ -172,14 +129,12 @@ export default function ScheduleGroupsPage() {
             <div className="space-y-1">
               <div className="text-sm font-medium">列表</div>
               <div className="text-xs text-muted-foreground">
-                {loading ? '加载中…' : groups.length === 0 ? '暂无数据' : `共 ${groups.length} 条`}
+                {groups.length === 0 ? '暂无数据' : `共 ${groups.length} 条`}
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="text-sm text-muted-foreground">加载中…</div>
-            ) : groups.length === 0 ? (
+            {groups.length === 0 ? (
               <div className="text-sm text-muted-foreground">暂无调度组，点击「新建调度组」开始配置。</div>
             ) : (
               <Table>

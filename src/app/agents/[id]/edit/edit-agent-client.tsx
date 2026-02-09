@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -14,67 +14,27 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
+import { deleteAgentAction, updateAgentAction } from '../../actions';
+
 import type { FormEvent } from 'react';
+
+import type { AgentDetail } from '../../actions';
 
 type AgentType = 'hyperv' | 'veeam';
 
-type AgentDetail = {
-  agentId: string;
-  name: string;
-  agentType: AgentType;
-  endpoint: string;
-  enabled: boolean;
-  tlsVerify: boolean;
-  timeoutMs: number;
-  usageCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export function EditAgentClient() {
-  const params = useParams<{ id: string }>();
+export function EditAgentClient({ initialAgent }: { initialAgent: AgentDetail }) {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [name, setName] = useState('');
-  const [agentType, setAgentType] = useState<AgentType>('hyperv');
-  const [endpoint, setEndpoint] = useState('');
-  const [tlsVerify, setTlsVerify] = useState(true);
-  const [timeoutMs, setTimeoutMs] = useState(60_000);
-  const [enabled, setEnabled] = useState(true);
-  const [usageCount, setUsageCount] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch(`/api/v1/agents/${params.id}`);
-      if (!res.ok) {
-        toast.error('加载失败');
-        if (active) setLoading(false);
-        return;
-      }
-      const body = (await res.json()) as { data: AgentDetail };
-      const a = body.data;
-      if (active) {
-        setName(a.name);
-        setAgentType(a.agentType);
-        setEndpoint(a.endpoint);
-        setTlsVerify(a.tlsVerify);
-        setTimeoutMs(a.timeoutMs);
-        setEnabled(a.enabled);
-        setUsageCount(a.usageCount);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [params.id]);
+  const [name, setName] = useState(initialAgent.name);
+  const [agentType, setAgentType] = useState<AgentType>(initialAgent.agentType as AgentType);
+  const [endpoint, setEndpoint] = useState(initialAgent.endpoint);
+  const [tlsVerify, setTlsVerify] = useState(initialAgent.tlsVerify);
+  const [timeoutMs, setTimeoutMs] = useState(initialAgent.timeoutMs);
+  const [enabled, setEnabled] = useState(initialAgent.enabled);
+  const [usageCount, setUsageCount] = useState(initialAgent.usageCount);
 
   const validate = () => {
     if (!name.trim()) return '请输入名称';
@@ -96,23 +56,19 @@ export function EditAgentClient() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/v1/agents/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          agentType,
-          endpoint: endpoint.trim(),
-          tlsVerify,
-          timeoutMs,
-          enabled,
-        }),
+      const result = await updateAgentAction(initialAgent.agentId, {
+        name,
+        agentType,
+        endpoint: endpoint.trim(),
+        tlsVerify,
+        timeoutMs,
+        enabled,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '保存失败');
+      if (!result.ok) {
+        toast.error(result.error ?? '保存失败');
         return;
       }
+      setUsageCount(result.data.usageCount);
       toast.success('代理已保存');
       router.push('/agents');
     } finally {
@@ -130,28 +86,23 @@ export function EditAgentClient() {
 
     setDeleting(true);
     try {
-      const res = await fetch(`/api/v1/agents/${params.id}`, { method: 'DELETE' });
-      if (res.status === 204) {
+      const result = await deleteAgentAction(initialAgent.agentId);
+      if (result.ok) {
         toast.success('代理已删除');
         router.push('/agents');
         return;
       }
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      toast.error(body?.error?.message ?? '删除失败');
+      toast.error(result.error ?? '删除失败');
     } finally {
       setDeleting(false);
     }
   };
 
-  if (loading) {
-    return <div className="text-sm text-muted-foreground">加载中…</div>;
-  }
-
   return (
     <div className="mx-auto w-full max-w-xl space-y-6">
       <PageHeader
         title="编辑代理"
-        meta={<IdText value={params.id} className="text-foreground" />}
+        meta={<IdText value={initialAgent.agentId} className="text-foreground" />}
         description="修改 Agent 的 endpoint/类型/超时/TLS 校验。"
         actions={
           <Button asChild size="sm" variant="outline">

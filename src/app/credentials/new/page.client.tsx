@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 
+import { createCredentialAction } from '../actions';
+
 import type { FormEvent } from 'react';
 
 type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'activedirectory' | 'aliyun' | 'third_party';
@@ -105,14 +107,9 @@ export default function NewCredentialPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/v1/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type, payload }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '创建失败');
+      const result = await createCredentialAction({ name, type, payload });
+      if (!result.ok) {
+        toast.error(result.error ?? '创建失败');
         return;
       }
       toast.success('凭据已创建');

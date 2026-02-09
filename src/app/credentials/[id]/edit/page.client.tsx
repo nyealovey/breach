@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -14,29 +14,21 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
+import { updateCredentialAction } from '../../actions';
+
 import type { FormEvent } from 'react';
 
+import type { CredentialDetail } from '../../actions';
+
 type CredentialType = 'vcenter' | 'solarwinds' | 'pve' | 'hyperv' | 'activedirectory' | 'aliyun' | 'third_party';
-
-type CredentialDetail = {
-  credentialId: string;
-  name: string;
-  type: CredentialType;
-  usageCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export default function EditCredentialPage() {
-  const params = useParams<{ id: string }>();
+export default function EditCredentialPage({ initialCredential }: { initialCredential: CredentialDetail }) {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const [name, setName] = useState('');
-  const [type, setType] = useState<CredentialType>('vcenter');
-  const [usageCount, setUsageCount] = useState(0);
+  const [name, setName] = useState(initialCredential.name);
+  const [type] = useState<CredentialType>(initialCredential.type as CredentialType);
+  const [usageCount, setUsageCount] = useState(initialCredential.usageCount);
 
   const [updateSecret, setUpdateSecret] = useState(false);
   const [pveAuthType, setPveAuthType] = useState<'api_token' | 'user_password'>('api_token');
@@ -53,31 +45,6 @@ export default function EditCredentialPage() {
   const [accessKeyId, setAccessKeyId] = useState('');
   const [accessKeySecret, setAccessKeySecret] = useState('');
   const [token, setToken] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch(`/api/v1/credentials/${params.id}`);
-      if (!res.ok) {
-        toast.error('加载失败');
-        if (active) setLoading(false);
-        return;
-      }
-      const body = (await res.json()) as { data: CredentialDetail };
-      const c = body.data;
-      if (active) {
-        setName(c.name);
-        setType(c.type);
-        setUsageCount(c.usageCount);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [params.id]);
 
   const payload = useMemo(() => {
     if (type === 'aliyun') return { accessKeyId, accessKeySecret };
@@ -150,16 +117,12 @@ export default function EditCredentialPage() {
     setSubmitting(true);
     try {
       const body = updateSecret ? { name, payload } : { name };
-      const res = await fetch(`/api/v1/credentials/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const r = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(r?.error?.message ?? '更新失败');
+      const result = await updateCredentialAction(initialCredential.credentialId, body);
+      if (!result.ok) {
+        toast.error(result.error ?? '更新失败');
         return;
       }
+      setUsageCount(result.data.usageCount);
       toast.success('凭据已更新');
       router.push('/credentials');
     } finally {
@@ -167,15 +130,11 @@ export default function EditCredentialPage() {
     }
   };
 
-  if (loading) {
-    return <div className="text-sm text-muted-foreground">加载中…</div>;
-  }
-
   return (
     <div className="mx-auto w-full max-w-xl space-y-6">
       <PageHeader
         title="编辑凭据"
-        meta={<IdText value={params.id} className="text-foreground" />}
+        meta={<IdText value={initialCredential.credentialId} className="text-foreground" />}
         actions={
           <Button asChild size="sm" variant="outline">
             <Link href="/credentials">返回列表</Link>
@@ -188,7 +147,7 @@ export default function EditCredentialPage() {
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
               <Label htmlFor="credentialId">Credential ID</Label>
-              <Input id="credentialId" value={params.id} disabled className="font-mono" />
+              <Input id="credentialId" value={initialCredential.credentialId} disabled className="font-mono" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="name">名称</Label>

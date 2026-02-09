@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
+import { createAgentAction } from '../actions';
+
 import type { FormEvent } from 'react';
 
 type AgentType = 'hyperv' | 'veeam';
@@ -47,21 +49,16 @@ export function NewAgentClient() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/v1/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          agentType,
-          endpoint: endpoint.trim(),
-          tlsVerify,
-          timeoutMs,
-          enabled,
-        }),
+      const result = await createAgentAction({
+        name,
+        agentType,
+        endpoint: endpoint.trim(),
+        tlsVerify,
+        timeoutMs,
+        enabled,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '创建失败');
+      if (!result.ok) {
+        toast.error(result.error ?? '创建失败');
         return;
       }
       toast.success('代理已创建');

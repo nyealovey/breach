@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { changePasswordAction, getMeAction } from '@/lib/actions/auth';
 
 import type { FormEvent } from 'react';
 
@@ -32,17 +33,14 @@ export default function ProfilePage() {
 
     const load = async () => {
       setLoading(true);
-      const res = await fetch('/api/v1/auth/me');
-      if (!res.ok) {
-        if (active) router.replace('/login');
+      const result = await getMeAction();
+      if (!active) return;
+      if (!result.ok) {
+        router.replace('/login');
         return;
       }
-
-      const body = (await res.json().catch(() => null)) as { data?: CurrentUser } | null;
-      if (active) {
-        setUser(body?.data ?? null);
-        setLoading(false);
-      }
+      setUser(result.data);
+      setLoading(false);
     };
 
     void load();
@@ -62,15 +60,9 @@ export default function ProfilePage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/v1/auth/password', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '修改失败');
+      const result = await changePasswordAction({ currentPassword, newPassword });
+      if (!result.ok) {
+        toast.error(result.error ?? '修改失败');
         return;
       }
 

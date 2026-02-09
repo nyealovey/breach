@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { loginAction } from '@/lib/actions/auth';
 
 import type { FormEvent } from 'react';
 
@@ -24,15 +25,9 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '登录失败');
+      const result = await loginAction({ username, password });
+      if (!result.ok) {
+        toast.error(result.error ?? '登录失败');
         return;
       }
 

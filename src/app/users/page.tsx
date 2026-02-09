@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import PageClient from './page.client';
+import { listUsers } from './actions';
 
 export default async function Page() {
-  await requireServerAdminSession();
-  return <PageClient />;
+  const items = await listUsers({ pageSize: 200 });
+  return <PageClient initialItems={items} />;
 }

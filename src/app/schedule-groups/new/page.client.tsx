@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -13,43 +13,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
+import { createScheduleGroupAction } from '../actions';
+
 import type { FormEvent } from 'react';
 
-type SourceItem = {
-  sourceId: string;
-  name: string;
-  sourceType: string;
-  enabled: boolean;
-  scheduleGroupId: string | null;
-  scheduleGroupName: string | null;
-};
+import type { ScheduleGroupSourceItem } from '../actions';
 
-export default function NewScheduleGroupPage() {
+export default function NewScheduleGroupPage({ initialSources }: { initialSources: ScheduleGroupSourceItem[] }) {
   const router = useRouter();
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [runAtHhmm, setRunAtHhmm] = useState('02:00');
   const [enabled, setEnabled] = useState(true);
-  const [sources, setSources] = useState<SourceItem[]>([]);
+  const [sources] = useState<ScheduleGroupSourceItem[]>(initialSources);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const loadSources = async () => {
-      const res = await fetch('/api/v1/sources?enabled=true&pageSize=100');
-      if (!res.ok) {
-        if (active) setSources([]);
-        return;
-      }
-      const body = (await res.json()) as { data: SourceItem[] };
-      if (active) setSources(body.data ?? []);
-    };
-    void loadSources();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const selectedSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
 
@@ -63,15 +41,15 @@ export default function NewScheduleGroupPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/schedule-groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, timezone, runAtHhmm, enabled, sourceIds: selectedSourceIds }),
+      const result = await createScheduleGroupAction({
+        name,
+        timezone,
+        runAtHhmm,
+        enabled,
+        sourceIds: selectedSourceIds,
       });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '创建失败');
+      if (!result.ok) {
+        toast.error(result.error ?? '创建失败');
         return;
       }
 

@@ -21,6 +21,8 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
+import { listDuplicateCandidatesAction } from './actions';
+
 import type {
   DuplicateCandidateAssetTypeParam,
   DuplicateCandidateConfidenceParam,
@@ -90,12 +92,16 @@ export default function DuplicateCandidatesPage() {
     const load = async () => {
       setLoading(true);
 
-      const params = buildDuplicateCandidatesUrlSearchParams(urlState);
-      const res = await fetch(`/api/v1/duplicate-candidates?${params.toString()}`);
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '加载失败');
+      const result = await listDuplicateCandidatesAction({
+        status: urlState.status,
+        assetType: urlState.assetType,
+        confidence: urlState.confidence,
+        page: urlState.page,
+        pageSize: urlState.pageSize,
+      });
 
+      if (!result.ok) {
+        toast.error(result.error ?? '加载失败');
         if (active) {
           setItems([]);
           setPagination(null);
@@ -104,10 +110,9 @@ export default function DuplicateCandidatesPage() {
         return;
       }
 
-      const body = (await res.json()) as { data: DuplicateCandidateListItem[]; pagination: Pagination };
       if (active) {
-        setItems(body.data ?? []);
-        setPagination(body.pagination ?? null);
+        setItems(result.data.data ?? []);
+        setPagination(result.data.pagination ?? null);
         setLoading(false);
       }
     };

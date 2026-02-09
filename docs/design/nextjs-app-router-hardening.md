@@ -77,6 +77,18 @@
 - `/duplicate-candidates`
 - `/source-records/[recordId]`
 
+### 7) 后台列表页首屏数据：从 Client 拉取改为 Server 预取
+
+对部分后台列表页，将“Client 首次加载再 fetch `/api/v1/*`”改为“Server 端预取初始列表，再交给 Client 仅负责交互/局部更新”，以减少首屏等待与浏览器端额外请求。
+
+涉及路由（示例）：
+
+- `/agents`
+- `/credentials`
+- `/sources`
+- `/schedule-groups`
+- `/users`
+
 ## 后续建议（未在本次改动中完成）
 
 当前仍有多条路由是“整页 Client Component + useEffect 拉取 /api/v1/\*”的数据模式。若要进一步发挥 App Router（RSC/SSR/Streaming）的优势，建议按页面分批改造为：

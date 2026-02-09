@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import { AgentsClient } from './agents-client';
+import { listAgents } from './actions';
 
 export default async function AgentsPage() {
-  await requireServerAdminSession();
-  return <AgentsClient />;
+  const items = await listAgents({ pageSize: 100 });
+  return <AgentsClient initialItems={items} />;
 }

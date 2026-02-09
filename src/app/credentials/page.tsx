@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import { CredentialsClient } from './credentials-client';
+import { listCredentials } from './actions';
 
 export default async function CredentialsPage() {
-  await requireServerAdminSession();
-  return <CredentialsClient />;
+  const items = await listCredentials({ pageSize: 100 });
+  return <CredentialsClient initialItems={items} />;
 }

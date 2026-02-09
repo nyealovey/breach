@@ -23,8 +23,6 @@ Next.js 16+ 弃用了 `middleware.ts` 文件约定，并引入 `proxy.ts` 作为
 - 旧：`export const config = { matcher: [...] }`
 - 新：`export const proxyConfig = { matcher: [...] }`
 
-为兼容历史约定，本仓库同时保留了 `config` 作为 `proxyConfig` 的别名（便于未来回滚/跨版本对齐）。
-
 ## 行为不变（仍在 Edge 环境执行）
 
 本次迁移仅变更文件约定与导出名，不改变既有行为，包括：

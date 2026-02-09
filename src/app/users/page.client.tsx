@@ -1,7 +1,7 @@
 'use client';
 
 import { toast } from 'sonner';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -21,16 +21,9 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type UserItem = {
-  userId: string;
-  username: string;
-  role: 'admin' | 'user';
-  authType: 'local' | 'ldap';
-  externalAuthId: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+import { createUserAction, deleteUserAction, updateUserEnabledAction, updateUserRoleAction } from './actions';
+
+import type { UserItem } from './actions';
 
 type EditorMode = 'create' | 'edit';
 
@@ -42,9 +35,8 @@ function normalizeUpnForCreate(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export default function UsersPage() {
-  const [items, setItems] = useState<UserItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function UsersPage({ initialItems }: { initialItems: UserItem[] }) {
+  const [items, setItems] = useState<UserItem[]>(initialItems);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<EditorMode>('create');
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
@@ -64,24 +56,6 @@ export default function UsersPage() {
     const sorted = [...filtered].sort((a, b) => a.username.localeCompare(b.username, 'zh-CN'));
     return { sortedItems: sorted, hiddenCount: items.length - filtered.length };
   }, [items, showSystemAccounts]);
-
-  const loadUsers = async () => {
-    setLoading(true);
-    const res = await fetch('/api/v1/users?pageSize=200');
-    if (!res.ok) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-
-    const body = (await res.json()) as { data: UserItem[] };
-    setItems(body.data ?? []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    void loadUsers();
-  }, []);
 
   const openCreateDialog = () => {
     if (submitting || deleting) return;
@@ -122,70 +96,62 @@ export default function UsersPage() {
           return;
         }
 
-        const res = await fetch('/api/v1/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            authType: 'ldap',
-            externalAuthId: upn,
-            username: upn,
-            role: formRole,
-            enabled: formEnabled,
-          }),
+        const result = await createUserAction({
+          authType: 'ldap',
+          externalAuthId: upn,
+          username: upn,
+          role: formRole,
+          enabled: formEnabled,
         });
 
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          toast.error(body?.error?.message ?? '创建失败');
+        if (!result.ok) {
+          toast.error(result.error ?? '创建失败');
           return;
         }
 
         toast.success('用户已创建');
         setEditorOpen(false);
-        await loadUsers();
+        setItems((prev) => [...prev, result.data]);
         return;
       }
 
       if (!editingUser) return;
       const userId = editingUser.userId;
 
-      const patches: Array<Promise<Response>> = [];
-      if (editingUser.role !== formRole) {
-        patches.push(
-          fetch(`/api/v1/users/${userId}/role`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: formRole }),
-          }),
-        );
-      }
-      if (editingUser.enabled !== formEnabled) {
-        patches.push(
-          fetch(`/api/v1/users/${userId}/enabled`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: formEnabled }),
-          }),
-        );
-      }
+      const roleChanged = editingUser.role !== formRole;
+      const enabledChanged = editingUser.enabled !== formEnabled;
 
-      if (patches.length === 0) {
+      if (!roleChanged && !enabledChanged) {
         toast.message('未检测到修改');
         setEditorOpen(false);
         return;
       }
 
-      for (const p of patches) {
-        const res = await p;
-        if (res.ok) continue;
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '保存失败');
-        return;
+      let updated: UserItem | null = null;
+
+      if (roleChanged) {
+        const result = await updateUserRoleAction(userId, { role: formRole });
+        if (!result.ok) {
+          toast.error(result.error ?? '保存失败');
+          return;
+        }
+        updated = result.data;
+      }
+
+      if (enabledChanged) {
+        const result = await updateUserEnabledAction(userId, { enabled: formEnabled });
+        if (!result.ok) {
+          toast.error(result.error ?? '保存失败');
+          return;
+        }
+        updated = result.data;
       }
 
       toast.success('已保存');
       setEditorOpen(false);
-      await loadUsers();
+      if (updated) {
+        setItems((prev) => prev.map((u) => (u.userId === userId ? updated : u)));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -196,17 +162,16 @@ export default function UsersPage() {
 
     setDeleting(true);
     try {
-      const res = await fetch(`/api/v1/users/${deletingUser.userId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '删除失败');
+      const result = await deleteUserAction(deletingUser.userId);
+      if (!result.ok) {
+        toast.error(result.error ?? '删除失败');
         return;
       }
 
       toast.success('用户已删除');
       setDeleteOpen(false);
       setDeletingUser(null);
-      await loadUsers();
+      setItems((prev) => prev.filter((u) => u.userId !== deletingUser.userId));
     } finally {
       setDeleting(false);
     }
@@ -376,19 +341,15 @@ export default function UsersPage() {
           <CardHeader className="space-y-1">
             <div className="text-sm font-medium">用户列表</div>
             <div className="text-xs text-muted-foreground">
-              {loading
-                ? '加载中…'
-                : sortedItems.length === 0
-                  ? showSystemAccounts || hiddenCount === 0
-                    ? '暂无数据'
-                    : `暂无 LDAP 用户（已隐藏 ${hiddenCount} 个本地账号）`
-                  : `共 ${sortedItems.length} 条${showSystemAccounts || hiddenCount === 0 ? '' : `（已隐藏 ${hiddenCount} 个本地账号）`}`}
+              {sortedItems.length === 0
+                ? showSystemAccounts || hiddenCount === 0
+                  ? '暂无数据'
+                  : `暂无 LDAP 用户（已隐藏 ${hiddenCount} 个本地账号）`
+                : `共 ${sortedItems.length} 条${showSystemAccounts || hiddenCount === 0 ? '' : `（已隐藏 ${hiddenCount} 个本地账号）`}`}
             </div>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="text-sm text-muted-foreground">加载中…</div>
-            ) : sortedItems.length === 0 ? (
+            {sortedItems.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 {showSystemAccounts || hiddenCount === 0
                   ? '暂无用户。'

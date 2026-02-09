@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IdText } from '@/components/ui/id-text';
+import { getSourceRecordRawAction } from '@/lib/actions/source-records';
 
 type RawResponse = {
   rawPayload: unknown;
@@ -46,19 +47,16 @@ export function RawDialog({ recordId, open, onOpenChange }: Props) {
       setData(null);
 
       try {
-        const res = await fetch(`/api/v1/source-records/${recordId}/raw`);
-        if (!res.ok) {
-          const msg = getRawLoadErrorMessage(res.status);
+        const result = await getSourceRecordRawAction(recordId);
+        if (!result.ok) {
           if (active) {
-            setError(msg);
+            setError(result.error ?? '加载 raw 失败。');
             setLoading(false);
           }
           return;
         }
-
-        const body = (await res.json()) as { data: RawResponse };
         if (active) {
-          setData(body.data ?? null);
+          setData(result.data ?? null);
           setLoading(false);
         }
       } catch {

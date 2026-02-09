@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { createAssetLedgerExportAction } from '@/lib/actions/exports';
 
 import type { ButtonProps } from '@/components/ui/button';
 
@@ -26,15 +27,9 @@ export function CreateAssetLedgerExportButton({
     setSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/exports/asset-ledger', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ format: 'csv', version: 'asset-ledger-export-v1' }),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '创建导出任务失败');
+      const result = await createAssetLedgerExportAction({ format: 'csv', version: 'asset-ledger-export-v1' });
+      if (!result.ok) {
+        toast.error(result.error ?? '创建导出任务失败');
         return;
       }
 

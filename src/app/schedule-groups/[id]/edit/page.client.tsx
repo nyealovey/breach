@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -13,81 +13,31 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
+import { deleteScheduleGroupAction, updateScheduleGroupAction } from '../../actions';
+
 import type { FormEvent } from 'react';
 
-type ScheduleGroup = {
-  groupId: string;
-  name: string;
-  timezone: string;
-  runAtHhmm: string;
-  enabled: boolean;
-};
+import type { ScheduleGroupDetail, ScheduleGroupSourceItem } from '../../actions';
 
-type SourceItem = {
-  sourceId: string;
-  name: string;
-  enabled: boolean;
-  scheduleGroupId: string | null;
-  scheduleGroupName: string | null;
-};
-
-export default function EditScheduleGroupPage() {
-  const params = useParams<{ id: string }>();
+export default function EditScheduleGroupPage({
+  initialGroup,
+  initialSources,
+}: {
+  initialGroup: ScheduleGroupDetail;
+  initialSources: ScheduleGroupSourceItem[];
+}) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState('');
-  const [timezone, setTimezone] = useState('Asia/Shanghai');
-  const [runAtHhmm, setRunAtHhmm] = useState('02:00');
-  const [enabled, setEnabled] = useState(true);
-  const [sources, setSources] = useState<SourceItem[]>([]);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [name, setName] = useState(initialGroup.name);
+  const [timezone, setTimezone] = useState(initialGroup.timezone);
+  const [runAtHhmm, setRunAtHhmm] = useState(initialGroup.runAtHhmm);
+  const [enabled, setEnabled] = useState(initialGroup.enabled);
+  const [sources] = useState<ScheduleGroupSourceItem[]>(initialSources);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>(
+    initialSources.filter((s) => s.scheduleGroupId === initialGroup.groupId).map((s) => s.sourceId),
+  );
 
   const selectedSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const [groupRes, sourcesRes] = await Promise.all([
-        fetch(`/api/v1/schedule-groups/${params.id}`),
-        fetch('/api/v1/sources?enabled=true&pageSize=100'),
-      ]);
-
-      if (!groupRes.ok) {
-        toast.error('加载失败');
-        setLoading(false);
-        return;
-      }
-
-      const groupBody = (await groupRes.json()) as { data: ScheduleGroup };
-      const group = groupBody.data;
-
-      if (active) {
-        setName(group.name);
-        setTimezone(group.timezone);
-        setRunAtHhmm(group.runAtHhmm);
-        setEnabled(group.enabled);
-      }
-
-      if (sourcesRes.ok) {
-        const sourcesBody = (await sourcesRes.json()) as { data: SourceItem[] };
-        const list = sourcesBody.data ?? [];
-        if (active) {
-          setSources(list);
-          setSelectedSourceIds(list.filter((s) => s.scheduleGroupId === params.id).map((s) => s.sourceId));
-        }
-      } else if (active) {
-        setSources([]);
-      }
-
-      if (active) setLoading(false);
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [params.id]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -95,14 +45,15 @@ export default function EditScheduleGroupPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch(`/api/v1/schedule-groups/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, timezone, runAtHhmm, enabled, sourceIds: selectedSourceIds }),
+      const result = await updateScheduleGroupAction(initialGroup.groupId, {
+        name,
+        timezone,
+        runAtHhmm,
+        enabled,
+        sourceIds: selectedSourceIds,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '更新失败');
+      if (!result.ok) {
+        toast.error(result.error ?? '更新失败');
         return;
       }
       toast.success('调度组已更新');
@@ -114,25 +65,20 @@ export default function EditScheduleGroupPage() {
 
   const onDelete = async () => {
     if (!confirm('确认删除该调度组？')) return;
-    const res = await fetch(`/api/v1/schedule-groups/${params.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      toast.error(body?.error?.message ?? '删除失败');
+    const result = await deleteScheduleGroupAction(initialGroup.groupId);
+    if (!result.ok) {
+      toast.error(result.error ?? '删除失败');
       return;
     }
     toast.success('调度组已删除');
     router.push('/schedule-groups');
   };
 
-  if (loading) {
-    return <div className="text-sm text-muted-foreground">加载中…</div>;
-  }
-
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <PageHeader
         title="编辑调度组"
-        meta={<IdText value={params.id} className="text-foreground" />}
+        meta={<IdText value={initialGroup.groupId} className="text-foreground" />}
         actions={
           <>
             <Button asChild size="sm" variant="outline">
@@ -150,7 +96,7 @@ export default function EditScheduleGroupPage() {
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
               <Label htmlFor="groupId">Group ID</Label>
-              <Input id="groupId" value={params.id} disabled className="font-mono" />
+              <Input id="groupId" value={initialGroup.groupId} disabled className="font-mono" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="name">名称</Label>
@@ -180,7 +126,7 @@ export default function EditScheduleGroupPage() {
                   {sources.map((s) => {
                     const checked = selectedSet.has(s.sourceId);
                     const hint =
-                      s.scheduleGroupId && s.scheduleGroupId !== params.id
+                      s.scheduleGroupId && s.scheduleGroupId !== initialGroup.groupId
                         ? `（当前：${s.scheduleGroupName ?? s.scheduleGroupId}）`
                         : '';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -10,53 +10,22 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type CredentialItem = {
-  credentialId: string;
-  name: string;
-  type: string;
-  account: string | null;
-  usageCount: number;
-  updatedAt: string;
-};
+import { deleteCredentialAction } from './actions';
 
-export function CredentialsClient() {
-  const [items, setItems] = useState<CredentialItem[]>([]);
-  const [loading, setLoading] = useState(true);
+import type { CredentialListItem } from './actions';
+
+export function CredentialsClient({ initialItems }: { initialItems: CredentialListItem[] }) {
+  const [items, setItems] = useState<CredentialListItem[]>(initialItems);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch('/api/v1/credentials?pageSize=100');
-      if (!res.ok) {
-        if (active) {
-          setItems([]);
-          setLoading(false);
-        }
-        return;
-      }
-      const body = (await res.json()) as { data: CredentialItem[] };
-      if (active) {
-        setItems(body.data ?? []);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const onDelete = async (credentialId: string) => {
     if (deletingId) return;
     if (!confirm('确认删除该凭据？（仅当 usageCount=0 才允许删除）')) return;
     setDeletingId(credentialId);
     try {
-      const res = await fetch(`/api/v1/credentials/${credentialId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        toast.error(body?.error?.message ?? '删除失败');
+      const result = await deleteCredentialAction(credentialId);
+      if (!result.ok) {
+        toast.error(result.error ?? '删除失败');
         return;
       }
       toast.success('凭据已删除');
@@ -83,14 +52,12 @@ export function CredentialsClient() {
           <div className="space-y-1">
             <div className="text-sm font-medium">列表</div>
             <div className="text-xs text-muted-foreground">
-              {loading ? '加载中…' : items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
+              {items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="text-sm text-muted-foreground">加载中…</div>
-          ) : items.length === 0 ? (
+          {items.length === 0 ? (
             <div className="text-sm text-muted-foreground">暂无凭据，点击「新建凭据」开始配置。</div>
           ) : (
             <Table>

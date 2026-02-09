@@ -1,8 +1,7 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
-
 import NewScheduleGroupClientPage from './page.client';
+import { listEnabledSourcesForScheduleGroup } from '../actions';
 
 export default async function NewScheduleGroupPage() {
-  await requireServerAdminSession();
-  return <NewScheduleGroupClientPage />;
+  const sources = await listEnabledSourcesForScheduleGroup();
+  return <NewScheduleGroupClientPage initialSources={sources} />;
 }

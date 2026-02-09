@@ -1,8 +1,15 @@
-import { requireServerAdminSession } from '@/lib/auth/require-server-session';
+import { notFound } from 'next/navigation';
 
 import PageClient from './page.client';
+import { getScheduleGroup, listEnabledSourcesForScheduleGroup } from '../../actions';
 
-export default async function Page() {
-  await requireServerAdminSession();
-  return <PageClient />;
+type ScheduleGroupEditPageProps = {
+  params: Promise<{ id: string }>;
+};
+
+export default async function Page({ params }: ScheduleGroupEditPageProps) {
+  const { id } = await params;
+  const [group, sources] = await Promise.all([getScheduleGroup(id), listEnabledSourcesForScheduleGroup()]);
+  if (!group) notFound();
+  return <PageClient initialGroup={group} initialSources={sources} />;
 }

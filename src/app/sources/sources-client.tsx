@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
@@ -9,41 +8,10 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type SourceItem = {
-  sourceId: string;
-  name: string;
-  sourceType: string;
-  enabled: boolean;
-  credential: { credentialId: string; name: string; type: string } | null;
-  config?: { endpoint?: string } | null;
-  lastRun: { runId: string; status: string; finishedAt: string | null; mode: string } | null;
-};
+import type { SourceListItem } from './actions';
 
-export function SourcesClient() {
-  const [items, setItems] = useState<SourceItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      const res = await fetch('/api/v1/sources');
-      if (!res.ok) {
-        setItems([]);
-        setLoading(false);
-        return;
-      }
-      const body = (await res.json()) as { data: SourceItem[] };
-      if (active) {
-        setItems(body.data ?? []);
-        setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
+export function SourcesClient({ initialItems }: { initialItems: SourceListItem[] }) {
+  const items = initialItems;
 
   return (
     <div className="space-y-6">
@@ -62,14 +30,12 @@ export function SourcesClient() {
           <div className="space-y-1">
             <div className="text-sm font-medium">列表</div>
             <div className="text-xs text-muted-foreground">
-              {loading ? '加载中…' : items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
+              {items.length === 0 ? '暂无数据' : `共 ${items.length} 条`}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="text-sm text-muted-foreground">加载中…</div>
-          ) : items.length === 0 ? (
+          {items.length === 0 ? (
             <div className="text-sm text-muted-foreground">暂无来源，点击「新建来源」开始配置。</div>
           ) : (
             <Table>
