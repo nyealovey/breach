@@ -158,24 +158,30 @@ export async function POST(request: Request) {
   }
 
   const scheduleGroupId = body.scheduleGroupId ?? null;
-  if (scheduleGroupId !== null) {
-    const group = await prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } });
-    if (!group) {
-      return fail(
-        {
-          code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
-          category: 'config',
-          message: 'Schedule group not found',
-          retryable: false,
-        },
-        404,
-        { requestId: auth.requestId },
-      );
-    }
+  const credentialId = body.credentialId ?? null;
+  const agentId = body.agentId ?? null;
+
+  const [group, credential, agent] = await Promise.all([
+    scheduleGroupId !== null
+      ? prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } })
+      : null,
+    credentialId !== null ? prisma.credential.findUnique({ where: { id: credentialId } }) : null,
+    agentId !== null ? prisma.agent.findUnique({ where: { id: agentId } }) : null,
+  ]);
+
+  if (scheduleGroupId !== null && !group) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
+        category: 'config',
+        message: 'Schedule group not found',
+        retryable: false,
+      },
+      404,
+      { requestId: auth.requestId },
+    );
   }
 
-  const credentialId = body.credentialId ?? null;
-  const credential = credentialId !== null ? await prisma.credential.findUnique({ where: { id: credentialId } }) : null;
   if (credentialId !== null && !credential) {
     return fail(
       {
@@ -201,8 +207,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const agentId = body.agentId ?? null;
-  const agent = agentId !== null ? await prisma.agent.findUnique({ where: { id: agentId } }) : null;
   if (agentId !== null && !agent) {
     return fail(
       { code: ErrorCode.CONFIG_AGENT_NOT_FOUND, category: 'config', message: 'Agent not found', retryable: false },

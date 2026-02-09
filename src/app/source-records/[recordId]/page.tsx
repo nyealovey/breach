@@ -28,9 +28,12 @@ function toUrlSearchParams(input: Record<string, string | string[] | undefined>)
 }
 
 export default async function Page({ params, searchParams }: SourceRecordPageProps) {
-  const session = await requireServerSession();
-  const { recordId } = await params;
-  const query = toUrlSearchParams(await searchParams);
+  const [session, { recordId }, resolvedSearchParams] = await Promise.all([
+    requireServerSession(),
+    params,
+    searchParams,
+  ]);
+  const query = toUrlSearchParams(resolvedSearchParams);
   const isAdmin = session.user.role === 'admin';
   const tab = parseSourceRecordTab(query.get('tab'), isAdmin);
 

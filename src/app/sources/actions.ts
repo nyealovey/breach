@@ -296,19 +296,21 @@ export async function createSourceAction(input: unknown): Promise<ActionResult<S
     if (duplicate) return actionError('Name already exists');
 
     const scheduleGroupId = body.scheduleGroupId ?? null;
-    if (scheduleGroupId !== null) {
-      const group = await prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } });
-      if (!group) return actionError('Schedule group not found');
-    }
-
     const credentialId = body.credentialId ?? null;
-    const credential =
-      credentialId !== null ? await prisma.credential.findUnique({ where: { id: credentialId } }) : null;
+    const agentId = body.agentId ?? null;
+
+    const [group, credential, agent] = await Promise.all([
+      scheduleGroupId !== null
+        ? prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } })
+        : null,
+      credentialId !== null ? prisma.credential.findUnique({ where: { id: credentialId } }) : null,
+      agentId !== null ? prisma.agent.findUnique({ where: { id: agentId } }) : null,
+    ]);
+
+    if (scheduleGroupId !== null && !group) return actionError('Schedule group not found');
     if (credentialId !== null && !credential) return actionError('Credential not found');
     if (credential && credential.type !== body.sourceType) return actionError('Credential type mismatch');
 
-    const agentId = body.agentId ?? null;
-    const agent = agentId !== null ? await prisma.agent.findUnique({ where: { id: agentId } }) : null;
     if (agentId !== null && !agent) return actionError('Agent not found');
 
     if (body.sourceType === SourceType.vcenter && !body.config.preferred_vcenter_version) {
@@ -387,24 +389,26 @@ export async function updateSourceAction(sourceId: string, input: unknown): Prom
     if (duplicate) return actionError('Name already exists');
 
     const scheduleGroupId = body.scheduleGroupId === undefined ? existing.scheduleGroupId : body.scheduleGroupId;
-    if (scheduleGroupId !== null && scheduleGroupId !== undefined) {
-      const group = await prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } });
-      if (!group) return actionError('Schedule group not found');
-    }
-
     const credentialId = body.credentialId === undefined ? existing.credentialId : body.credentialId;
-    const credential =
+    const agentId = body.agentId === undefined ? existing.agentId : body.agentId;
+
+    const [group, credential, agent] = await Promise.all([
+      scheduleGroupId !== null && scheduleGroupId !== undefined
+        ? prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } })
+        : null,
       credentialId !== null && credentialId !== undefined
-        ? await prisma.credential.findUnique({ where: { id: credentialId } })
-        : null;
+        ? prisma.credential.findUnique({ where: { id: credentialId } })
+        : null,
+      agentId !== null && agentId !== undefined ? prisma.agent.findUnique({ where: { id: agentId } }) : null,
+    ]);
+
+    if (scheduleGroupId !== null && scheduleGroupId !== undefined && !group)
+      return actionError('Schedule group not found');
     if (credentialId !== null && credentialId !== undefined && !credential) {
       return actionError('Credential not found');
     }
     if (credential && credential.type !== body.sourceType) return actionError('Credential type mismatch');
 
-    const agentId = body.agentId === undefined ? existing.agentId : body.agentId;
-    const agent =
-      agentId !== null && agentId !== undefined ? await prisma.agent.findUnique({ where: { id: agentId } }) : null;
     if (agentId !== null && agentId !== undefined && !agent) return actionError('Agent not found');
 
     if (body.sourceType === SourceType.vcenter && !body.config.preferred_vcenter_version) {

@@ -39,6 +39,17 @@ import type { AssetFieldRow } from '@/lib/assets/asset-field-display';
 import type { AssetFieldFormatHint } from '@/lib/assets/asset-field-registry';
 import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
 
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
 export type AssetDetail = {
   assetUuid: string;
   assetType: string;
@@ -173,15 +184,7 @@ function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '-';
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  return DATE_TIME_FORMATTER.format(d);
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';

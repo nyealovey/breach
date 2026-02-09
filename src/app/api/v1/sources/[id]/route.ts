@@ -133,27 +133,32 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   }
 
   const scheduleGroupId = body.scheduleGroupId === undefined ? existing.scheduleGroupId : body.scheduleGroupId;
-  if (scheduleGroupId !== null && scheduleGroupId !== undefined) {
-    const group = await prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } });
-    if (!group) {
-      return fail(
-        {
-          code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
-          category: 'config',
-          message: 'Schedule group not found',
-          retryable: false,
-        },
-        404,
-        { requestId: auth.requestId },
-      );
-    }
+  const credentialId = body.credentialId === undefined ? existing.credentialId : body.credentialId;
+  const agentId = body.agentId === undefined ? existing.agentId : body.agentId;
+
+  const [group, credential, agent] = await Promise.all([
+    scheduleGroupId !== null && scheduleGroupId !== undefined
+      ? prisma.scheduleGroup.findUnique({ where: { id: scheduleGroupId }, select: { id: true } })
+      : null,
+    credentialId !== null && credentialId !== undefined
+      ? prisma.credential.findUnique({ where: { id: credentialId } })
+      : null,
+    agentId !== null && agentId !== undefined ? prisma.agent.findUnique({ where: { id: agentId } }) : null,
+  ]);
+
+  if (scheduleGroupId !== null && scheduleGroupId !== undefined && !group) {
+    return fail(
+      {
+        code: ErrorCode.CONFIG_SCHEDULE_GROUP_NOT_FOUND,
+        category: 'config',
+        message: 'Schedule group not found',
+        retryable: false,
+      },
+      404,
+      { requestId: auth.requestId },
+    );
   }
 
-  const credentialId = body.credentialId === undefined ? existing.credentialId : body.credentialId;
-  const credential =
-    credentialId !== null && credentialId !== undefined
-      ? await prisma.credential.findUnique({ where: { id: credentialId } })
-      : null;
   if (credentialId !== null && credentialId !== undefined && !credential) {
     return fail(
       {
@@ -179,9 +184,6 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
   }
 
-  const agentId = body.agentId === undefined ? existing.agentId : body.agentId;
-  const agent =
-    agentId !== null && agentId !== undefined ? await prisma.agent.findUnique({ where: { id: agentId } }) : null;
   if (agentId !== null && agentId !== undefined && !agent) {
     return fail(
       { code: ErrorCode.CONFIG_AGENT_NOT_FOUND, category: 'config', message: 'Agent not found', retryable: false },

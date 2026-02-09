@@ -203,6 +203,38 @@ const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['
 const VM_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'vmName' | 'hostName'>> = ['vmName', 'hostName'];
 const HOST_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'brand' | 'model'>> = ['brand', 'model'];
 const FILTER_FETCH_DEBOUNCE_MS = 300;
+const ASSET_FIELD_COMMON_COLUMNS = ASSET_LIST_COLUMNS.filter(
+  (col) =>
+    !col.id.startsWith('ledger.') &&
+    !VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]) &&
+    !HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+);
+const ASSET_FIELD_VM_ONLY_COLUMNS = ASSET_LIST_COLUMNS.filter(
+  (col) => !col.id.startsWith('ledger.') && VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]),
+);
+const ASSET_FIELD_HOST_ONLY_COLUMNS = ASSET_LIST_COLUMNS.filter(
+  (col) => !col.id.startsWith('ledger.') && HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
+);
+const LEDGER_FIELD_COMMON_COLUMNS = ASSET_LIST_COLUMNS.filter((col) => {
+  if (!col.id.startsWith('ledger.')) return false;
+  const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+  return !LEDGER_HOST_ONLY_KEY_SET.has(key);
+});
+const LEDGER_FIELD_HOST_ONLY_COLUMNS = ASSET_LIST_COLUMNS.filter((col) => {
+  if (!col.id.startsWith('ledger.')) return false;
+  const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
+  return LEDGER_HOST_ONLY_KEY_SET.has(key);
+});
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
 
 const ColumnSettingsDialog = dynamic(
   () => import('./components/column-settings-dialog').then((mod) => mod.ColumnSettingsDialog),
@@ -264,15 +296,7 @@ function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '-';
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  return DATE_TIME_FORMATTER.format(d);
 }
 
 function filtersStateFromUrlState(state: AssetListUrlState): AssetListFiltersState {
@@ -639,30 +663,6 @@ export default function AssetsPage({ initialData }: { initialData: AssetsPageIni
       </div>
     );
   };
-
-  const assetFieldCommonColumns = ASSET_LIST_COLUMNS.filter(
-    (col) =>
-      !col.id.startsWith('ledger.') &&
-      !VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]) &&
-      !HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
-  );
-  const assetFieldVmOnlyColumns = ASSET_LIST_COLUMNS.filter(
-    (col) => !col.id.startsWith('ledger.') && VM_ONLY_COLUMNS.includes(col.id as (typeof VM_ONLY_COLUMNS)[number]),
-  );
-  const assetFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter(
-    (col) => !col.id.startsWith('ledger.') && HOST_ONLY_COLUMNS.includes(col.id as (typeof HOST_ONLY_COLUMNS)[number]),
-  );
-
-  const ledgerFieldCommonColumns = ASSET_LIST_COLUMNS.filter((col) => {
-    if (!col.id.startsWith('ledger.')) return false;
-    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
-    return !LEDGER_HOST_ONLY_KEY_SET.has(key);
-  });
-  const ledgerFieldHostOnlyColumns = ASSET_LIST_COLUMNS.filter((col) => {
-    if (!col.id.startsWith('ledger.')) return false;
-    const key = col.id.slice('ledger.'.length) as LedgerFieldKey;
-    return LEDGER_HOST_ONLY_KEY_SET.has(key);
-  });
 
   const resetEditState = () => {
     setEditTarget(null);
@@ -1173,11 +1173,11 @@ export default function AssetsPage({ initialData }: { initialData: AssetsPageIni
               open={columnSettingsOpen}
               onOpenChange={handleColumnSettingsOpenChange}
               renderColumnSettingItem={renderColumnSettingItem}
-              assetFieldCommonColumns={assetFieldCommonColumns}
-              assetFieldVmOnlyColumns={assetFieldVmOnlyColumns}
-              assetFieldHostOnlyColumns={assetFieldHostOnlyColumns}
-              ledgerFieldCommonColumns={ledgerFieldCommonColumns}
-              ledgerFieldHostOnlyColumns={ledgerFieldHostOnlyColumns}
+              assetFieldCommonColumns={ASSET_FIELD_COMMON_COLUMNS}
+              assetFieldVmOnlyColumns={ASSET_FIELD_VM_ONLY_COLUMNS}
+              assetFieldHostOnlyColumns={ASSET_FIELD_HOST_ONLY_COLUMNS}
+              ledgerFieldCommonColumns={LEDGER_FIELD_COMMON_COLUMNS}
+              ledgerFieldHostOnlyColumns={LEDGER_FIELD_HOST_ONLY_COLUMNS}
               columnSaving={columnSaving}
               columnDraftLength={columnDraft.length}
               onResetDefault={() => {
