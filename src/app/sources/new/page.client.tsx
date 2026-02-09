@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -17,21 +17,7 @@ import { createSourceAction } from '../actions';
 
 import type { FormEvent } from 'react';
 
-type CredentialOption = {
-  credentialId: string;
-  name: string;
-  type: string;
-};
-
-type AgentOption = {
-  agentId: string;
-  name: string;
-  agentType: string;
-  endpoint: string;
-  enabled: boolean;
-  tlsVerify: boolean;
-  timeoutMs: number;
-};
+import type { NewSourcePageInitialData, SourceAgentOption, SourceCredentialOption } from '@/lib/sources/page-data';
 
 type ApiBody<T> = {
   data?: T;
@@ -42,8 +28,9 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-export default function NewSourcePage() {
+export default function NewSourcePage({ initialData }: { initialData: NewSourcePageInitialData }) {
   const router = useRouter();
+  const skipInitialCredentialsFetchRef = useRef(true);
   const aliyunEndpointPlaceholder = 'https://ecs.aliyuncs.com';
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('vcenter');
@@ -65,7 +52,7 @@ export default function NewSourcePage() {
   const [solarwindsIncludeUnmanaged, setSolarwindsIncludeUnmanaged] = useState(true);
   const [hypervConnectionMethod, setHypervConnectionMethod] = useState<'winrm' | 'agent'>('winrm');
   const [hypervAgentId, setHypervAgentId] = useState('');
-  const [hypervAgents, setHypervAgents] = useState<AgentOption[]>([]);
+  const [hypervAgents, setHypervAgents] = useState<SourceAgentOption[]>([]);
   const [hypervScheme, setHypervScheme] = useState<'https' | 'http'>('http');
   const [hypervPort, setHypervPort] = useState(5985);
   const [hypervTlsVerify, setHypervTlsVerify] = useState(true);
@@ -87,12 +74,17 @@ export default function NewSourcePage() {
   const [aliyunIncludeRds, setAliyunIncludeRds] = useState(true);
   const [enabled, setEnabled] = useState(true);
   const [credentialId, setCredentialId] = useState('');
-  const [credentials, setCredentials] = useState<CredentialOption[]>([]);
+  const [credentials, setCredentials] = useState<SourceCredentialOption[]>(initialData.credentials);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     const loadCredentials = async () => {
+      if (skipInitialCredentialsFetchRef.current) {
+        skipInitialCredentialsFetchRef.current = false;
+        if (sourceType === 'vcenter') return;
+      }
+
       try {
         const qs = new URLSearchParams();
         qs.set('type', sourceType);

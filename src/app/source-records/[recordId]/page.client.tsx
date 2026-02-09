@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
+import { parseSourceRecordTab } from '@/lib/source-records/page-data';
 
 import type { SourceRecordNormalizedResult, SourceRecordRawResult } from '@/lib/actions/source-records';
+import type { SourceRecordPageInitialData } from '@/lib/source-records/page-data';
 
 type NormalizedResponse = SourceRecordNormalizedResult;
 
@@ -19,23 +21,25 @@ type ApiBody<T> = {
   error?: { message?: string };
 };
 
-function parseTab(raw: string | null): 'normalized' | 'raw' {
-  if (raw === 'raw') return 'raw';
-  return 'normalized';
-}
-
-export default function SourceRecordPage() {
+export default function SourceRecordPage({ initialData }: { initialData: SourceRecordPageInitialData }) {
   const params = useParams<{ recordId: string }>();
   const searchParams = useSearchParams();
+  const skipInitialLoadRef = useRef(
+    initialData.recordId === params.recordId &&
+      (initialData.normalized !== null || initialData.raw !== null || initialData.loadError !== null),
+  );
 
   const recordId = params.recordId;
-  const tab = parseTab(searchParams.get('tab'));
+  const tab = parseSourceRecordTab(searchParams.get('tab'), initialData.isAdmin);
   const assetUuidFromQuery = searchParams.get('assetUuid');
+  const isAdmin = initialData.isAdmin;
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [normalized, setNormalized] = useState<NormalizedResponse | null>(null);
-  const [raw, setRaw] = useState<RawResponse | null>(null);
+  const [loading, setLoading] = useState(
+    initialData.normalized === null && initialData.raw === null && initialData.loadError === null,
+  );
+  const [error, setError] = useState<string | null>(initialData.loadError);
+  const [normalized, setNormalized] = useState<NormalizedResponse | null>(initialData.normalized);
+  const [raw, setRaw] = useState<RawResponse | null>(initialData.raw);
 
   const backHref = useMemo(() => {
     if (assetUuidFromQuery) return `/assets/${encodeURIComponent(assetUuidFromQuery)}`;
@@ -50,6 +54,11 @@ export default function SourceRecordPage() {
   };
 
   useEffect(() => {
+    if (skipInitialLoadRef.current) {
+      skipInitialLoadRef.current = false;
+      if (recordId === initialData.recordId && tab === initialData.tab) return;
+    }
+
     let active = true;
     const controller = new AbortController();
     const load = async () => {
@@ -107,7 +116,7 @@ export default function SourceRecordPage() {
       active = false;
       controller.abort();
     };
-  }, [recordId, tab]);
+  }, [initialData.recordId, initialData.tab, recordId, tab]);
   const rawPayloadJson = useMemo(() => {
     if (!raw) return null;
     return JSON.stringify(raw.rawPayload, null, 2);
@@ -150,9 +159,11 @@ export default function SourceRecordPage() {
         <Button asChild size="sm" variant={tab === 'normalized' ? 'secondary' : 'outline'}>
           <Link href={tabHref('normalized')}>Normalized</Link>
         </Button>
-        <Button asChild size="sm" variant={tab === 'raw' ? 'secondary' : 'outline'}>
-          <Link href={tabHref('raw')}>Raw</Link>
-        </Button>
+        {isAdmin ? (
+          <Button asChild size="sm" variant={tab === 'raw' ? 'secondary' : 'outline'}>
+            <Link href={tabHref('raw')}>Raw</Link>
+          </Button>
+        ) : null}
       </div>
 
       <Card>

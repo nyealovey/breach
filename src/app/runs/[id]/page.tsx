@@ -34,9 +34,7 @@ type RunDetailPageProps = {
 };
 
 export default async function RunDetailPage({ params }: RunDetailPageProps) {
-  await requireServerSession();
-
-  const { id } = await params;
+  const [{ id }] = await Promise.all([params, requireServerSession()]);
 
   const run = await prisma.run.findUnique({
     where: { id },

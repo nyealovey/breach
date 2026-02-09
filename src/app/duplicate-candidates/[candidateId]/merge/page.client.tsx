@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -21,7 +21,6 @@ import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { compareCandidateFieldValues, extractCandidateReasons } from '@/lib/duplicate-candidates/candidate-ui-utils';
 import {
@@ -30,36 +29,7 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
-import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
-
-type CandidateAsset = {
-  assetUuid: string;
-  assetType: 'vm' | 'host';
-  status: string;
-  displayName: string | null;
-  lastSeenAt: string | null;
-};
-
-type CandidateDetail = {
-  candidateId: string;
-  status: 'open' | 'ignored' | 'merged';
-  score: number;
-  confidence: 'High' | 'Medium';
-  reasons: CandidateReason[] | unknown;
-  lastObservedAt: string;
-  assetA: CandidateAsset;
-  assetB: CandidateAsset;
-};
-
-type AssetApiDetail = {
-  assetUuid: string;
-  latestSnapshot: null | { canonical: unknown; createdAt: string; runId: string };
-};
-type ApiBody<T> = {
-  data?: T;
-  error?: { message?: string };
-};
+import type { DuplicateCandidatePageInitialData } from '@/lib/duplicate-candidates/page-data';
 
 function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return undefined;
@@ -74,172 +44,41 @@ function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   return cur;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
+function pickDefaultPrimarySide(data: DuplicateCandidatePageInitialData['candidate']): 'A' | 'B' {
+  if (!data) return 'A';
+
+  // VM merge keeps the in_service side as default primary when the opposite side is offline.
+  if (data.assetA.assetType === 'vm') {
+    const aOk = data.assetA.status === 'in_service' && data.assetB.status === 'offline';
+    const bOk = data.assetB.status === 'in_service' && data.assetA.status === 'offline';
+    if (aOk) return 'A';
+    if (bOk) return 'B';
+  }
+
+  return 'A';
 }
 
-export default function DuplicateCandidateMergePage() {
+export default function DuplicateCandidateMergePage({
+  initialData,
+}: {
+  initialData: DuplicateCandidatePageInitialData;
+}) {
   const router = useRouter();
-  const params = useParams<{ candidateId: string }>();
-  const candidateId = params.candidateId;
+  const candidateId = initialData.candidateId;
 
-  const [data, setData] = useState<CandidateDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const data = initialData.candidate;
+  const loadError = initialData.loadError;
+  const canonicalLoading = false;
+  const canonicalFieldsA = initialData.canonicalFields.assetA;
+  const canonicalFieldsB = initialData.canonicalFields.assetB;
+  const vmHostA = initialData.vmHosts.assetA;
+  const vmHostB = initialData.vmHosts.assetB;
+  const vmHostLoading = false;
 
-  const [canonicalLoading, setCanonicalLoading] = useState(false);
-  const [canonicalFieldsA, setCanonicalFieldsA] = useState<unknown | null>(null);
-  const [canonicalFieldsB, setCanonicalFieldsB] = useState<unknown | null>(null);
-
-  const [vmHostA, setVmHostA] = useState<RelationChainNode | null>(null);
-  const [vmHostB, setVmHostB] = useState<RelationChainNode | null>(null);
-  const [vmHostLoading, setVmHostLoading] = useState(false);
-
-  const [primarySide, setPrimarySide] = useState<'A' | 'B'>('A');
+  const [primarySide, setPrimarySide] = useState<'A' | 'B'>(() => pickDefaultPrimarySide(initialData.candidate));
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [merging, setMerging] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-
-    const load = async () => {
-      setLoading(true);
-      setData(null);
-
-      try {
-        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`, {
-          signal: controller.signal,
-        });
-        if (!active || controller.signal.aborted) return;
-
-        const body = (await res.json().catch(() => null)) as ApiBody<CandidateDetail> | null;
-        if (!res.ok) {
-          toast.error(body?.error?.message ?? '加载失败');
-          if (active) setLoading(false);
-          return;
-        }
-
-        const candidate = body?.data ?? null;
-        if (!active) return;
-
-        setData(candidate);
-        setLoading(false);
-
-        // Pick a default primary:
-        // - VM: prefer in_service as primary when the other is offline.
-        // - Otherwise: keep assetA as primary by default.
-        if (candidate?.assetA?.assetType === 'vm') {
-          const aOk = candidate.assetA.status === 'in_service' && candidate.assetB.status === 'offline';
-          const bOk = candidate.assetB.status === 'in_service' && candidate.assetA.status === 'offline';
-          if (aOk) setPrimarySide('A');
-          else if (bOk) setPrimarySide('B');
-          else setPrimarySide('A');
-        } else {
-          setPrimarySide('A');
-        }
-      } catch (error) {
-        if (!active || isAbortError(error)) return;
-        toast.error('网络错误，加载失败');
-        if (active) setLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [candidateId]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const loadVmHosts = async () => {
-      if (!data) return;
-      if (data.assetA.assetType !== 'vm' || data.assetB.assetType !== 'vm') return;
-
-      setVmHostLoading(true);
-      setVmHostA(null);
-      setVmHostB(null);
-
-      try {
-        const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`, { signal: controller.signal }),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`, { signal: controller.signal }),
-        ]);
-
-        const parse = async (res: Response): Promise<RelationRef[]> => {
-          if (!res.ok) return [];
-          const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
-          return Array.isArray(body?.data) ? (body.data as RelationRef[]) : [];
-        };
-
-        const [aRels, bRels] = await Promise.all([parse(aRes), parse(bRes)]);
-        const hostA = findRunsOnHost(aRels);
-        const hostB = findRunsOnHost(bRels);
-
-        if (active) {
-          setVmHostA(hostA);
-          setVmHostB(hostB);
-          setVmHostLoading(false);
-        }
-      } catch (error) {
-        if (isAbortError(error)) return;
-        if (active) setVmHostLoading(false);
-      }
-    };
-
-    void loadVmHosts();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [data]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const loadCanonical = async () => {
-      if (!data) return;
-
-      setCanonicalLoading(true);
-      setCanonicalFieldsA(null);
-      setCanonicalFieldsB(null);
-
-      try {
-        const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`, { signal: controller.signal }),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`, { signal: controller.signal }),
-        ]);
-
-        const loadOne = async (res: Response): Promise<unknown | null> => {
-          if (!res.ok) return null;
-          const body = (await res.json().catch(() => null)) as { data?: AssetApiDetail } | null;
-          const canonical = body?.data?.latestSnapshot?.canonical;
-          if (!canonical || typeof canonical !== 'object') return null;
-          const fields = (canonical as any).fields;
-          return fields ?? null;
-        };
-
-        const [fieldsA, fieldsB] = await Promise.all([loadOne(aRes), loadOne(bRes)]);
-        if (active) {
-          setCanonicalFieldsA(fieldsA);
-          setCanonicalFieldsB(fieldsB);
-          setCanonicalLoading(false);
-        }
-      } catch (error) {
-        if (isAbortError(error)) return;
-        if (active) setCanonicalLoading(false);
-      }
-    };
-
-    void loadCanonical();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [data]);
 
   const reasons = useMemo(() => {
     if (!data) return [];
@@ -301,7 +140,7 @@ export default function DuplicateCandidateMergePage() {
       : { ok: false, message: 'VM 合并门槛未满足：仅允许将 offline VM 合并到 in_service VM（仅关机不等于下线）。' };
   }, [primary, secondary]);
 
-  const mergeDisabled = loading || !data || data.status !== 'open' || !primary || !secondary || !vmGate.ok || merging;
+  const mergeDisabled = !data || data.status !== 'open' || !primary || !secondary || !vmGate.ok || merging;
 
   return (
     <>
@@ -320,8 +159,8 @@ export default function DuplicateCandidateMergePage() {
           }
         />
 
-        {loading ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
+        {loadError ? (
+          <div className="text-sm text-muted-foreground">{loadError}</div>
         ) : !data ? (
           <div className="text-sm text-muted-foreground">候选不存在或无权限访问。</div>
         ) : (

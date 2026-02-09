@@ -61,8 +61,7 @@ function readVisibleColumns(input: unknown): AssetListColumnId[] | null {
 }
 
 export default async function AssetsPage({ searchParams }: AssetsPageProps) {
-  const session = await requireServerSession();
-  const resolvedSearchParams = await searchParams;
+  const [session, resolvedSearchParams] = await Promise.all([requireServerSession(), searchParams]);
 
   const uiSearchParams = toUrlSearchParams(resolvedSearchParams);
   const queryState = toAssetsApiQueryState(uiSearchParams);

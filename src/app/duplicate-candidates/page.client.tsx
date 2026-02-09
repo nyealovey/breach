@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -27,33 +27,15 @@ import type {
   DuplicateCandidateStatusParam,
   DuplicateCandidatesUrlState,
 } from '@/lib/duplicate-candidates/duplicate-candidates-url';
+import type {
+  DuplicateCandidateListItem,
+  DuplicateCandidatesPageInitialData,
+  DuplicateCandidatesPagination,
+} from '@/lib/duplicate-candidates/page-data';
 
-type DuplicateCandidateListItem = {
-  candidateId: string;
-  status: DuplicateCandidateStatusParam;
-  score: number;
-  confidence: DuplicateCandidateConfidenceParam;
-  lastObservedAt: string;
-  assetA: {
-    assetUuid: string;
-    assetType: DuplicateCandidateAssetTypeParam;
-    status: string;
-    displayName: string | null;
-    lastSeenAt: string | null;
-  };
-  assetB: {
-    assetUuid: string;
-    assetType: DuplicateCandidateAssetTypeParam;
-    status: string;
-    displayName: string | null;
-    lastSeenAt: string | null;
-  };
-};
-
-type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
 type ListApiBody = {
   data?: DuplicateCandidateListItem[];
-  pagination?: Pagination;
+  pagination?: DuplicateCandidatesPagination;
   error?: { message?: string };
 };
 
@@ -61,14 +43,19 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-export default function DuplicateCandidatesPage() {
+export default function DuplicateCandidatesPage({ initialData }: { initialData: DuplicateCandidatesPageInitialData }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const skipInitialFetchRef = useRef(initialData.list !== null || initialData.loadError !== null);
+  const initialQueryStringRef = useRef(initialData.queryString);
 
-  const [items, setItems] = useState<DuplicateCandidateListItem[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<DuplicateCandidateListItem[]>(initialData.list?.items ?? []);
+  const [pagination, setPagination] = useState<DuplicateCandidatesPagination | null>(
+    initialData.list?.pagination ?? null,
+  );
+  const [loading, setLoading] = useState(initialData.list === null && initialData.loadError === null);
+  const [loadError, setLoadError] = useState(initialData.loadError);
 
   const urlState = useMemo(() => {
     return parseDuplicateCandidatesUrlState(new URLSearchParams(searchParams.toString()));
@@ -98,36 +85,47 @@ export default function DuplicateCandidatesPage() {
     let active = true;
     const controller = new AbortController();
     const load = async () => {
-      setLoading(true);
-
       const qs = new URLSearchParams();
       qs.set('status', urlState.status);
       if (urlState.assetType) qs.set('assetType', urlState.assetType);
       if (urlState.confidence) qs.set('confidence', urlState.confidence);
       qs.set('page', String(urlState.page));
       qs.set('pageSize', String(urlState.pageSize));
+      const queryString = qs.toString();
+
+      if (skipInitialFetchRef.current) {
+        skipInitialFetchRef.current = false;
+        if (queryString === initialQueryStringRef.current) return;
+      }
+
+      setLoading(true);
+      setLoadError(null);
 
       try {
-        const res = await fetch(`/api/v1/duplicate-candidates?${qs.toString()}`, { signal: controller.signal });
+        const res = await fetch(`/api/v1/duplicate-candidates?${queryString}`, { signal: controller.signal });
         if (!active || controller.signal.aborted) return;
 
         const body = (await res.json().catch(() => null)) as ListApiBody | null;
         if (!res.ok) {
-          toast.error(body?.error?.message ?? '加载失败');
+          const message = body?.error?.message ?? '加载失败';
+          toast.error(message);
           setItems([]);
           setPagination(null);
+          setLoadError(message);
           setLoading(false);
           return;
         }
 
         setItems(Array.isArray(body?.data) ? body.data : []);
         setPagination(body?.pagination ?? null);
+        setLoadError(null);
         setLoading(false);
       } catch (error) {
         if (!active || isAbortError(error)) return;
         toast.error('加载失败');
         setItems([]);
         setPagination(null);
+        setLoadError('加载失败');
         setLoading(false);
       }
     };
@@ -141,6 +139,15 @@ export default function DuplicateCandidatesPage() {
 
   const canPrev = (pagination?.page ?? 1) > 1;
   const canNext = (pagination?.page ?? 1) < (pagination?.totalPages ?? 1);
+  const listSummaryText = loading
+    ? '加载中…'
+    : loadError
+      ? loadError
+      : pagination
+        ? `第 ${pagination.page} / ${pagination.totalPages} 页 · 共 ${pagination.total} 条`
+        : items.length === 0
+          ? '暂无数据'
+          : null;
 
   return (
     <>
@@ -207,20 +214,14 @@ export default function DuplicateCandidatesPage() {
           <CardHeader className="flex flex-col gap-3 space-y-0 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
               <div className="text-sm font-medium">列表</div>
-              <div className="text-xs text-muted-foreground">
-                {loading
-                  ? '加载中…'
-                  : pagination
-                    ? `第 ${pagination.page} / ${pagination.totalPages} 页 · 共 ${pagination.total} 条`
-                    : items.length === 0
-                      ? '暂无数据'
-                      : null}
-              </div>
+              <div className="text-xs text-muted-foreground">{listSummaryText}</div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {loading ? (
               <div className="text-sm text-muted-foreground">加载中…</div>
+            ) : loadError ? (
+              <div className="text-sm text-muted-foreground">{loadError}</div>
             ) : items.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 暂无候选。请先完成一次 detect Run（或等待 worker 生成 duplicate candidates）。

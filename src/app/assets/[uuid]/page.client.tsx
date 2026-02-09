@@ -299,7 +299,6 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
   const [sourceRecords] = useState<SourceRecordItem[]>(initialData.sourceRecords);
   const [showAllSources, setShowAllSources] = useState(false);
   const [relations] = useState<RelationItem[]>(initialData.relations);
-  const [loading] = useState(false);
 
   const [role] = useState<'admin' | 'user' | null>(initialData.role);
   const isAdmin = role === 'admin';
@@ -655,7 +654,6 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
     return showAllSources ? sourceSummaries : sourceSummaries.filter((s) => s.status !== 'same');
   }, [showAllSources, sourceSummaries]);
 
-  if (loading) return <div className="text-sm text-muted-foreground">加载中…</div>;
   if (!asset) return <div className="text-sm text-muted-foreground">未找到资产。</div>;
 
   const directCluster = asset.assetType === 'host' ? findMemberOfCluster(relations) : null;

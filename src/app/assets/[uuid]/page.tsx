@@ -16,8 +16,7 @@ function pickRole(input: string): 'admin' | 'user' | null {
 }
 
 export default async function AssetDetailPage({ params }: AssetDetailPageProps) {
-  const session = await requireServerSession();
-  const { uuid } = await params;
+  const [session, { uuid }] = await Promise.all([requireServerSession(), params]);
 
   const serverData = await readAssetDetailPageServerData({ uuid, historyLimit: 20 });
 

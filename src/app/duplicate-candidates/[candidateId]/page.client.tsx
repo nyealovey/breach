@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -21,7 +21,6 @@ import { IdText } from '@/components/ui/id-text';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { findRunsOnHost } from '@/lib/assets/asset-relation-chain';
 import { formatAssetFieldValue } from '@/lib/assets/asset-field-value';
 import { compareCandidateFieldValues, extractCandidateReasons } from '@/lib/duplicate-candidates/candidate-ui-utils';
 import {
@@ -30,50 +29,13 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
+import type {
+  DuplicateCandidateDetail,
+  DuplicateCandidatePageInitialData,
+  DuplicateCandidateSourceLink,
+} from '@/lib/duplicate-candidates/page-data';
 
-type SourceLink = {
-  sourceId: string;
-  sourceName: string;
-  externalKind: string;
-  externalId: string;
-  presenceStatus: 'present' | 'missing';
-  lastSeenAt: string;
-  lastSeenRunId: string | null;
-};
-
-type CandidateAsset = {
-  assetUuid: string;
-  assetType: 'vm' | 'host';
-  status: string;
-  displayName: string | null;
-  lastSeenAt: string | null;
-  sourceLinks: SourceLink[];
-};
-
-type CandidateDetail = {
-  candidateId: string;
-  status: 'open' | 'ignored' | 'merged';
-  score: number;
-  confidence: 'High' | 'Medium';
-  reasons: CandidateReason[] | unknown;
-  createdAt: string;
-  updatedAt: string;
-  lastObservedAt: string;
-  ignore: null | {
-    ignoredByUserId: string | null;
-    ignoredAt: string | null;
-    ignoreReason: string | null;
-  };
-  assetA: CandidateAsset;
-  assetB: CandidateAsset;
-};
-
-type AssetApiDetail = {
-  assetUuid: string;
-  latestSnapshot: null | { canonical: unknown; createdAt: string; runId: string };
-};
 type ApiBody<T> = {
   data?: T;
   error?: { message?: string };
@@ -92,174 +54,39 @@ function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   return cur;
 }
 
-function presenceStatusLabel(status: SourceLink['presenceStatus']) {
+function presenceStatusLabel(status: DuplicateCandidateSourceLink['presenceStatus']) {
   if (status === 'present') return '存在';
   return '缺失';
 }
 
 function presenceStatusBadgeVariant(
-  status: SourceLink['presenceStatus'],
+  status: DuplicateCandidateSourceLink['presenceStatus'],
 ): React.ComponentProps<typeof Badge>['variant'] {
   if (status === 'present') return 'secondary';
   return 'destructive';
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
-export default function DuplicateCandidateDetailPage() {
+export default function DuplicateCandidateDetailPage({
+  initialData,
+}: {
+  initialData: DuplicateCandidatePageInitialData;
+}) {
   const router = useRouter();
-  const params = useParams<{ candidateId: string }>();
-  const candidateId = params.candidateId;
+  const candidateId = initialData.candidateId;
 
-  const [data, setData] = useState<CandidateDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [reloadToken, setReloadToken] = useState(0);
-
-  const [canonicalLoading, setCanonicalLoading] = useState(false);
-  const [canonicalFieldsA, setCanonicalFieldsA] = useState<unknown | null>(null);
-  const [canonicalFieldsB, setCanonicalFieldsB] = useState<unknown | null>(null);
-  const [canonicalError, setCanonicalError] = useState<string | null>(null);
-
-  const [vmHostA, setVmHostA] = useState<RelationChainNode | null>(null);
-  const [vmHostB, setVmHostB] = useState<RelationChainNode | null>(null);
-  const [vmHostLoading, setVmHostLoading] = useState(false);
+  const [data, setData] = useState<DuplicateCandidateDetail | null>(initialData.candidate);
+  const loadError = initialData.loadError;
+  const canonicalLoading = false;
+  const canonicalFieldsA = initialData.canonicalFields.assetA;
+  const canonicalFieldsB = initialData.canonicalFields.assetB;
+  const canonicalError = initialData.canonicalFields.error;
+  const vmHostA = initialData.vmHosts.assetA;
+  const vmHostB = initialData.vmHosts.assetB;
+  const vmHostLoading = false;
 
   const [ignoreOpen, setIgnoreOpen] = useState(false);
   const [ignoreReason, setIgnoreReason] = useState('');
   const [ignoreSaving, setIgnoreSaving] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-
-    const load = async () => {
-      if (!candidateId) return;
-      setLoading(true);
-
-      try {
-        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`, {
-          signal: controller.signal,
-        });
-        if (!active || controller.signal.aborted) return;
-
-        const body = (await res.json().catch(() => null)) as ApiBody<CandidateDetail> | null;
-        if (!res.ok) {
-          toast.error(body?.error?.message ?? '加载失败');
-          setData(null);
-          setLoading(false);
-          return;
-        }
-
-        setData(body?.data ?? null);
-        setLoading(false);
-      } catch (error) {
-        if (!active || isAbortError(error)) return;
-        toast.error('网络错误，加载失败');
-        setData(null);
-        setLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [candidateId, reloadToken]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const loadCanonical = async () => {
-      if (!data) return;
-      setCanonicalLoading(true);
-      setCanonicalError(null);
-      setCanonicalFieldsA(null);
-      setCanonicalFieldsB(null);
-
-      try {
-        const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`, { signal: controller.signal }),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`, { signal: controller.signal }),
-        ]);
-
-        const loadOne = async (res: Response): Promise<unknown | null> => {
-          if (!res.ok) return null;
-          const body = (await res.json().catch(() => null)) as { data?: AssetApiDetail } | null;
-          const canonical = body?.data?.latestSnapshot?.canonical;
-          if (!canonical || typeof canonical !== 'object') return null;
-          const fields = (canonical as any).fields;
-          return fields ?? null;
-        };
-
-        const [fieldsA, fieldsB] = await Promise.all([loadOne(aRes), loadOne(bRes)]);
-        if (active) {
-          setCanonicalFieldsA(fieldsA);
-          setCanonicalFieldsB(fieldsB);
-          setCanonicalLoading(false);
-        }
-      } catch (error) {
-        if (isAbortError(error)) return;
-        if (active) {
-          setCanonicalError('加载 canonical 快照失败（不影响使用）。');
-          setCanonicalLoading(false);
-        }
-      }
-    };
-
-    void loadCanonical();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [data]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const loadVmHosts = async () => {
-      if (!data) return;
-      if (data.assetA.assetType !== 'vm' || data.assetB.assetType !== 'vm') return;
-
-      setVmHostLoading(true);
-      setVmHostA(null);
-      setVmHostB(null);
-
-      try {
-        const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`, { signal: controller.signal }),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`, { signal: controller.signal }),
-        ]);
-
-        const parse = async (res: Response): Promise<RelationRef[]> => {
-          if (!res.ok) return [];
-          const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
-          return Array.isArray(body?.data) ? (body.data as RelationRef[]) : [];
-        };
-
-        const [aRels, bRels] = await Promise.all([parse(aRes), parse(bRes)]);
-        const hostA = findRunsOnHost(aRels);
-        const hostB = findRunsOnHost(bRels);
-
-        if (active) {
-          setVmHostA(hostA);
-          setVmHostB(hostB);
-          setVmHostLoading(false);
-        }
-      } catch (error) {
-        if (isAbortError(error)) return;
-        if (active) setVmHostLoading(false);
-      }
-    };
-
-    void loadVmHosts();
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [data]);
 
   const reasons = useMemo(() => {
     if (!data) return [];
@@ -401,8 +228,8 @@ export default function DuplicateCandidateDetailPage() {
           }
         />
 
-        {loading ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
+        {loadError ? (
+          <div className="text-sm text-muted-foreground">{loadError}</div>
         ) : !data ? (
           <div className="text-sm text-muted-foreground">候选不存在或无权限访问。</div>
         ) : (
@@ -780,8 +607,21 @@ export default function DuplicateCandidateDetailPage() {
                     }
 
                     toast.success('已忽略');
+                    setData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            status: 'ignored',
+                            updatedAt: new Date().toISOString(),
+                            ignore: {
+                              ignoredByUserId: prev.ignore?.ignoredByUserId ?? null,
+                              ignoredAt: body?.data?.ignoredAt ?? new Date().toISOString(),
+                              ignoreReason: body?.data?.ignoreReason ?? reason ?? null,
+                            },
+                          }
+                        : prev,
+                    );
                     setIgnoreOpen(false);
-                    setReloadToken((t) => t + 1);
                   } catch {
                     toast.error('Ignore 失败');
                   } finally {

@@ -58,18 +58,20 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
     );
   }
 
-  const snapshot = await prisma.assetRunSnapshot.findFirst({
-    where: { assetUuid: uuid },
-    orderBy: { createdAt: 'desc' },
-    select: { runId: true, canonical: true, createdAt: true },
-  });
+  const [snapshot, latestVeeamSignal] = await Promise.all([
+    prisma.assetRunSnapshot.findFirst({
+      where: { assetUuid: uuid },
+      orderBy: { createdAt: 'desc' },
+      select: { runId: true, canonical: true, createdAt: true },
+    }),
+    prisma.signalRecord.findFirst({
+      where: { assetUuid: uuid, source: { sourceType: 'veeam' } },
+      orderBy: { collectedAt: 'desc' },
+      select: { raw: true, rawCompression: true },
+    }),
+  ]);
 
   let backupLast7: unknown[] = [];
-  const latestVeeamSignal = await prisma.signalRecord.findFirst({
-    where: { assetUuid: uuid, source: { sourceType: 'veeam' } },
-    orderBy: { collectedAt: 'desc' },
-    select: { raw: true, rawCompression: true },
-  });
   if (latestVeeamSignal?.raw) {
     try {
       const raw = await decompressRaw(latestVeeamSignal.raw);

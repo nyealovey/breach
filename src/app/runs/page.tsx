@@ -25,9 +25,7 @@ type RunsPageProps = {
 };
 
 export default async function RunsPage({ searchParams }: RunsPageProps) {
-  await requireServerSession();
-
-  const resolvedSearchParams = await searchParams;
+  const [resolvedSearchParams] = await Promise.all([searchParams, requireServerSession()]);
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(resolvedSearchParams)) {
     if (typeof value === 'string') params.set(key, value);
