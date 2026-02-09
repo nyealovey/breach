@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "dev": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next dev",
-    "build": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --webpack",
+    "build": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --turbo",
+    "build:webpack": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --webpack",
     "build:turbo": "__NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next build --turbo",
     "start": "next start",
     "type-check": "SKIP_ENV_VALIDATION=true __NEXT_NODE_NATIVE_TS_LOADER_ENABLED=true next typegen && SKIP_ENV_VALIDATION=true tsc --noEmit",

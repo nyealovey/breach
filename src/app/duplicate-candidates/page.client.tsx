@@ -21,8 +21,6 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-import { listDuplicateCandidatesAction } from './actions';
-
 import type {
   DuplicateCandidateAssetTypeParam,
   DuplicateCandidateConfidenceParam,
@@ -53,6 +51,15 @@ type DuplicateCandidateListItem = {
 };
 
 type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
+type ListApiBody = {
+  data?: DuplicateCandidateListItem[];
+  pagination?: Pagination;
+  error?: { message?: string };
+};
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
 
 export default function DuplicateCandidatesPage() {
   const router = useRouter();
@@ -89,30 +96,38 @@ export default function DuplicateCandidatesPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const load = async () => {
       setLoading(true);
 
-      const result = await listDuplicateCandidatesAction({
-        status: urlState.status,
-        assetType: urlState.assetType,
-        confidence: urlState.confidence,
-        page: urlState.page,
-        pageSize: urlState.pageSize,
-      });
+      const qs = new URLSearchParams();
+      qs.set('status', urlState.status);
+      if (urlState.assetType) qs.set('assetType', urlState.assetType);
+      if (urlState.confidence) qs.set('confidence', urlState.confidence);
+      qs.set('page', String(urlState.page));
+      qs.set('pageSize', String(urlState.pageSize));
 
-      if (!result.ok) {
-        toast.error(result.error ?? '加载失败');
-        if (active) {
+      try {
+        const res = await fetch(`/api/v1/duplicate-candidates?${qs.toString()}`, { signal: controller.signal });
+        if (!active || controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ListApiBody | null;
+        if (!res.ok) {
+          toast.error(body?.error?.message ?? '加载失败');
           setItems([]);
           setPagination(null);
           setLoading(false);
+          return;
         }
-        return;
-      }
 
-      if (active) {
-        setItems(result.data.data ?? []);
-        setPagination(result.data.pagination ?? null);
+        setItems(Array.isArray(body?.data) ? body.data : []);
+        setPagination(body?.pagination ?? null);
+        setLoading(false);
+      } catch (error) {
+        if (!active || isAbortError(error)) return;
+        toast.error('加载失败');
+        setItems([]);
+        setPagination(null);
         setLoading(false);
       }
     };
@@ -120,6 +135,7 @@ export default function DuplicateCandidatesPage() {
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [urlState]);
 

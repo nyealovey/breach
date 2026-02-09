@@ -45,7 +45,7 @@ import { listLedgerFieldMetasV1 } from '@/lib/ledger/ledger-fields-v1';
 import type { AssetListUrlState, VmPowerStateParam } from '@/lib/assets/asset-list-url';
 import type { LedgerFieldKey, LedgerFieldsV1 } from '@/lib/ledger/ledger-fields-v1';
 
-type AssetListItem = {
+export type AssetListItem = {
   assetUuid: string;
   assetType: string;
   status: string;
@@ -81,16 +81,16 @@ type AssetListItem = {
   totalDiskBytes: number | null;
 };
 
-type Pagination = {
+export type Pagination = {
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
 };
 
-type SourceOption = { sourceId: string; name: string };
+export type SourceOption = { sourceId: string; name: string };
 
-type LedgerFieldFilterOptions = {
+export type LedgerFieldFilterOptions = {
   regions: string[];
   companies: string[];
   departments: string[];
@@ -126,7 +126,7 @@ type AssetListFiltersState = {
   pageSize: number;
 };
 
-type AssetListColumnId =
+export type AssetListColumnId =
   | 'status'
   | 'machineName'
   | 'vmName'
@@ -144,6 +144,15 @@ type AssetListColumnId =
   | `ledger.${LedgerFieldKey}`;
 
 const ASSETS_TABLE_COLUMNS_PREFERENCE_KEY = 'assets.table.columns.v2' as const;
+
+export type AssetsPageInitialData = {
+  role: 'admin' | 'user' | null;
+  sourceOptions: SourceOption[];
+  ledgerFieldFilterOptions: LedgerFieldFilterOptions;
+  visibleColumns: AssetListColumnId[] | null;
+  queryString: string;
+  list: { items: AssetListItem[]; pagination: Pagination | null } | null;
+};
 
 const BASE_ASSET_LIST_COLUMNS: Array<{
   id: AssetListColumnId;
@@ -195,18 +204,7 @@ const ASSET_LIST_COLUMN_ORDER_INDEX = new Map<AssetListColumnId, number>(
 const CORE_COLUMNS: Array<Extract<AssetListColumnId, 'machineName' | 'ip'>> = ['machineName', 'ip'];
 const VM_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'vmName' | 'hostName'>> = ['vmName', 'hostName'];
 const HOST_ONLY_COLUMNS: Array<Extract<AssetListColumnId, 'brand' | 'model'>> = ['brand', 'model'];
-
-const EMPTY_LEDGER_FIELD_FILTER_OPTIONS: LedgerFieldFilterOptions = {
-  regions: [],
-  companies: [],
-  departments: [],
-  systemCategories: [],
-  systemLevels: [],
-  bizOwners: [],
-  osNames: [],
-  brands: [],
-  models: [],
-};
+const FILTER_FETCH_DEBOUNCE_MS = 300;
 
 function ensureCoreVisibleColumns(columns: AssetListColumnId[]): AssetListColumnId[] {
   const set = new Set(columns);
@@ -343,27 +341,33 @@ function hasActiveAssetListQuery(state: AssetListUrlState): boolean {
   return buildAssetListUiSearchParams(state).toString().length > 0;
 }
 
-export default function AssetsPage() {
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+export default function AssetsPage({ initialData }: { initialData: AssetsPageInitialData }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const skipNextUrlSyncRef = useRef(false);
   const skipNextSessionSyncRef = useRef(false);
   const swCollectingRef = useRef(false);
+  const skipInitialListFetchRef = useRef(initialData.list !== null);
+  const initialQueryStringRef = useRef(initialData.queryString);
 
-  const [items, setItems] = useState<AssetListItem[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<AssetListItem[]>(initialData.list?.items ?? []);
+  const [pagination, setPagination] = useState<Pagination | null>(initialData.list?.pagination ?? null);
+  const [loading, setLoading] = useState(initialData.list === null);
 
-  const [role, setRole] = useState<'admin' | 'user' | null>(null);
+  const [role] = useState<'admin' | 'user' | null>(initialData.role);
   const isAdmin = role === 'admin';
 
-  const [sourceOptions, setSourceOptions] = useState<SourceOption[]>([]);
-  const [ledgerFieldFilterOptions, setLedgerFieldFilterOptions] = useState<LedgerFieldFilterOptions>(
-    EMPTY_LEDGER_FIELD_FILTER_OPTIONS,
-  );
+  const [sourceOptions] = useState<SourceOption[]>(initialData.sourceOptions);
+  const [ledgerFieldFilterOptions] = useState<LedgerFieldFilterOptions>(initialData.ledgerFieldFilterOptions);
 
-  const [visibleColumns, setVisibleColumns] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
+  const [visibleColumns, setVisibleColumns] = useState<AssetListColumnId[]>(
+    sanitizeVisibleColumns(initialData.visibleColumns) ?? DEFAULT_VISIBLE_COLUMNS,
+  );
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [columnDraft, setColumnDraft] = useState<AssetListColumnId[]>(DEFAULT_VISIBLE_COLUMNS);
   const [columnSaving, setColumnSaving] = useState(false);
@@ -403,6 +407,33 @@ export default function AssetsPage() {
   const [swSelectedNodeId, setSwSelectedNodeId] = useState<string>('');
   const hasOverrideDraft =
     editMachineNameValue.trim().length > 0 || editIpValue.trim().length > 0 || editOsValue.trim().length > 0;
+  const textFilters = useMemo(
+    () => ({
+      qInput: filters.qInput,
+      brandInput: filters.brandInput,
+      modelInput: filters.modelInput,
+      regionInput: filters.regionInput,
+      companyInput: filters.companyInput,
+      departmentInput: filters.departmentInput,
+      systemCategoryInput: filters.systemCategoryInput,
+      systemLevelInput: filters.systemLevelInput,
+      bizOwnerInput: filters.bizOwnerInput,
+      osInput: filters.osInput,
+    }),
+    [
+      filters.bizOwnerInput,
+      filters.brandInput,
+      filters.companyInput,
+      filters.departmentInput,
+      filters.modelInput,
+      filters.osInput,
+      filters.qInput,
+      filters.regionInput,
+      filters.systemCategoryInput,
+      filters.systemLevelInput,
+    ],
+  );
+  const [debouncedTextFilters, setDebouncedTextFilters] = useState(textFilters);
 
   const query = useMemo<AssetListUrlState>(() => {
     const assetType = filters.assetTypeInput === 'all' ? undefined : filters.assetTypeInput;
@@ -450,6 +481,25 @@ export default function AssetsPage() {
       pageSize: filters.pageSize,
     };
   }, [filters]);
+  const fetchQuery = useMemo<AssetListUrlState>(() => {
+    return {
+      ...query,
+      q: debouncedTextFilters.qInput.trim() ? debouncedTextFilters.qInput.trim() : undefined,
+      brand: debouncedTextFilters.brandInput.trim() ? debouncedTextFilters.brandInput.trim() : undefined,
+      model: debouncedTextFilters.modelInput.trim() ? debouncedTextFilters.modelInput.trim() : undefined,
+      region: debouncedTextFilters.regionInput.trim() ? debouncedTextFilters.regionInput.trim() : undefined,
+      company: debouncedTextFilters.companyInput.trim() ? debouncedTextFilters.companyInput.trim() : undefined,
+      department: debouncedTextFilters.departmentInput.trim() ? debouncedTextFilters.departmentInput.trim() : undefined,
+      systemCategory: debouncedTextFilters.systemCategoryInput.trim()
+        ? debouncedTextFilters.systemCategoryInput.trim()
+        : undefined,
+      systemLevel: debouncedTextFilters.systemLevelInput.trim()
+        ? debouncedTextFilters.systemLevelInput.trim()
+        : undefined,
+      bizOwner: debouncedTextFilters.bizOwnerInput.trim() ? debouncedTextFilters.bizOwnerInput.trim() : undefined,
+      os: debouncedTextFilters.osInput.trim() ? debouncedTextFilters.osInput.trim() : undefined,
+    };
+  }, [debouncedTextFilters, query]);
 
   const hasActiveFilters = useMemo(() => hasActiveAssetListQuery(query), [query]);
 
@@ -528,99 +578,55 @@ export default function AssetsPage() {
   }, [hasActiveFilters, query]);
 
   useEffect(() => {
-    let active = true;
-    const loadMe = async () => {
-      const res = await fetch('/api/v1/auth/me');
-      if (!res.ok) {
-        if (active) setRole(null);
-        return;
-      }
-      const body = (await res.json().catch(() => null)) as { data?: { role?: unknown } } | null;
-      const rawRole = body?.data?.role;
-      const nextRole = rawRole === 'admin' || rawRole === 'user' ? rawRole : null;
-      if (active) setRole(nextRole);
-    };
-    void loadMe();
+    const timer = window.setTimeout(() => {
+      setDebouncedTextFilters(textFilters);
+    }, FILTER_FETCH_DEBOUNCE_MS);
+
     return () => {
-      active = false;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [textFilters]);
 
   useEffect(() => {
     let active = true;
-    const loadSources = async () => {
-      const res = await fetch('/api/v1/sources/summary');
-      if (!res.ok) return;
-      const body = (await res.json()) as { data?: Array<{ sourceId: string; name: string }> };
-      if (active) setSourceOptions(body.data ?? []);
-    };
-    void loadSources();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const loadLedgerFieldFilterOptions = async () => {
-      const res = await fetch('/api/v1/assets/ledger-fields/options');
-      if (!res.ok) {
-        if (active) setLedgerFieldFilterOptions(EMPTY_LEDGER_FIELD_FILTER_OPTIONS);
-        return;
-      }
-
-      const body = (await res.json().catch(() => null)) as { data?: LedgerFieldFilterOptions } | null;
-      if (active) setLedgerFieldFilterOptions(body?.data ?? EMPTY_LEDGER_FIELD_FILTER_OPTIONS);
-    };
-
-    void loadLedgerFieldFilterOptions();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const loadColumnPreference = async () => {
-      const res = await fetch(`/api/v1/me/preferences?key=${encodeURIComponent(ASSETS_TABLE_COLUMNS_PREFERENCE_KEY)}`);
-      if (!active) return;
-
-      // 404 means "not set yet" -> keep defaults.
-      if (res.status === 404) return;
-      if (!res.ok) return;
-
-      const body = (await res.json().catch(() => null)) as { data?: { value?: { visibleColumns?: unknown } } } | null;
-      const next = sanitizeVisibleColumns(body?.data?.value?.visibleColumns);
-      if (next) setVisibleColumns(next);
-    };
-
-    void loadColumnPreference();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const load = async () => {
-      setLoading(true);
+      const params = buildAssetListUrlSearchParams(fetchQuery);
+      const queryString = params.toString();
 
-      const params = buildAssetListUrlSearchParams(query);
-      const res = await fetch(`/api/v1/assets?${params.toString()}`);
-      if (!res.ok) {
+      if (skipInitialListFetchRef.current) {
+        skipInitialListFetchRef.current = false;
+        if (queryString === initialQueryStringRef.current) {
+          setSelectedAssetUuids([]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/v1/assets?${queryString}`, { signal: controller.signal });
+        if (!res.ok) {
+          if (active) {
+            setItems([]);
+            setPagination(null);
+            setSelectedAssetUuids([]);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const body = (await res.json()) as { data: AssetListItem[]; pagination: Pagination };
         if (active) {
-          setItems([]);
-          setPagination(null);
+          setItems(body.data ?? []);
+          setPagination(body.pagination ?? null);
           setSelectedAssetUuids([]);
           setLoading(false);
         }
-        return;
-      }
-
-      const body = (await res.json()) as { data: AssetListItem[]; pagination: Pagination };
-      if (active) {
-        setItems(body.data ?? []);
-        setPagination(body.pagination ?? null);
+      } catch (error) {
+        if (!active || controller.signal.aborted || isAbortError(error)) return;
+        setItems([]);
+        setPagination(null);
         setSelectedAssetUuids([]);
         setLoading(false);
       }
@@ -628,8 +634,9 @@ export default function AssetsPage() {
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [query]);
+  }, [fetchQuery]);
 
   const canPrev = (pagination?.page ?? 1) > 1;
   const canNext = (pagination?.page ?? 1) < (pagination?.totalPages ?? 1);

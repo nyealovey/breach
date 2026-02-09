@@ -150,7 +150,7 @@ export default defineConfig([
     rules: {
       ...pluginNext.configs.recommended.rules,
       ...pluginNext.configs['core-web-vitals'].rules,
-      '@next/next/no-img-element': 0,
+      '@next/next/no-img-element': 'error',
     },
   },
 

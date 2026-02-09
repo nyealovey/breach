@@ -8,13 +8,16 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IdText } from '@/components/ui/id-text';
-import { getSourceRecordNormalizedAction, getSourceRecordRawAction } from '@/lib/actions/source-records';
 
 import type { SourceRecordNormalizedResult, SourceRecordRawResult } from '@/lib/actions/source-records';
 
 type NormalizedResponse = SourceRecordNormalizedResult;
 
 type RawResponse = SourceRecordRawResult;
+type ApiBody<T> = {
+  data?: T;
+  error?: { message?: string };
+};
 
 function parseTab(raw: string | null): 'normalized' | 'raw' {
   if (raw === 'raw') return 'raw';
@@ -48,6 +51,7 @@ export default function SourceRecordPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -55,51 +59,69 @@ export default function SourceRecordPage() {
       try {
         if (tab === 'normalized') {
           setRaw(null);
-          const result = await getSourceRecordNormalizedAction(recordId);
-          if (!active) return;
-          if (!result.ok) {
-            setError(result.error ?? '加载失败');
+          const res = await fetch(`/api/v1/source-records/${encodeURIComponent(recordId)}/normalized`, {
+            signal: controller.signal,
+          });
+          if (!active || controller.signal.aborted) return;
+
+          const body = (await res.json().catch(() => null)) as ApiBody<NormalizedResponse> | null;
+          if (!res.ok) {
+            setError(body?.error?.message ?? '加载失败');
             setNormalized(null);
             setLoading(false);
             return;
           }
-          setNormalized(result.data ?? null);
+
+          setNormalized(body?.data ?? null);
           setLoading(false);
           return;
         }
 
         setNormalized(null);
-        const result = await getSourceRecordRawAction(recordId);
-        if (!active) return;
-        if (!result.ok) {
-          setError(result.error ?? '加载失败');
+        const res = await fetch(`/api/v1/source-records/${encodeURIComponent(recordId)}/raw`, {
+          signal: controller.signal,
+        });
+        if (!active || controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<RawResponse> | null;
+        if (!res.ok) {
+          setError(body?.error?.message ?? '加载失败');
           setRaw(null);
           setLoading(false);
           return;
         }
-        setRaw(result.data ?? null);
+
+        setRaw(body?.data ?? null);
         setLoading(false);
       } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : String(err));
-          setNormalized(null);
-          setRaw(null);
-          setLoading(false);
-        }
+        if (!active || (err instanceof DOMException && err.name === 'AbortError')) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setNormalized(null);
+        setRaw(null);
+        setLoading(false);
       }
     };
 
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [recordId, tab]);
+  const rawPayloadJson = useMemo(() => {
+    if (!raw) return null;
+    return JSON.stringify(raw.rawPayload, null, 2);
+  }, [raw]);
+  const normalizedPayloadJson = useMemo(() => {
+    if (!normalized) return null;
+    return JSON.stringify(normalized.normalizedPayload, null, 2);
+  }, [normalized]);
 
   const copy = async () => {
-    const payload = tab === 'raw' ? raw?.rawPayload : normalized?.normalizedPayload;
-    if (payload === undefined) return;
+    const payloadText = tab === 'raw' ? rawPayloadJson : normalizedPayloadJson;
+    if (!payloadText) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      await navigator.clipboard.writeText(payloadText);
     } catch {
       // ignore
     }
@@ -163,9 +185,7 @@ export default function SourceRecordPage() {
                   </div>
                 </div>
 
-                <pre className="max-h-[70vh] overflow-auto rounded bg-muted p-3 text-xs">
-                  {JSON.stringify(raw.rawPayload, null, 2)}
-                </pre>
+                <pre className="max-h-[70vh] overflow-auto rounded bg-muted p-3 text-xs">{rawPayloadJson}</pre>
               </div>
             )
           ) : !normalized ? (
@@ -191,9 +211,7 @@ export default function SourceRecordPage() {
                 </div>
               </div>
 
-              <pre className="max-h-[70vh] overflow-auto rounded bg-muted p-3 text-xs">
-                {JSON.stringify(normalized.normalizedPayload, null, 2)}
-              </pre>
+              <pre className="max-h-[70vh] overflow-auto rounded bg-muted p-3 text-xs">{normalizedPayloadJson}</pre>
             </div>
           )}
         </CardContent>

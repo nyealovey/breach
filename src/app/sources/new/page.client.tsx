@@ -13,11 +13,34 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
-import { createSourceAction, listCredentialOptionsAction, listHypervAgentOptionsAction } from '../actions';
+import { createSourceAction } from '../actions';
 
 import type { FormEvent } from 'react';
 
-import type { AgentOption, CredentialOption } from '../actions';
+type CredentialOption = {
+  credentialId: string;
+  name: string;
+  type: string;
+};
+
+type AgentOption = {
+  agentId: string;
+  name: string;
+  agentType: string;
+  endpoint: string;
+  enabled: boolean;
+  tlsVerify: boolean;
+  timeoutMs: number;
+};
+
+type ApiBody<T> = {
+  data?: T;
+  error?: { message?: string };
+};
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
 
 export default function NewSourcePage() {
   const router = useRouter();
@@ -68,19 +91,46 @@ export default function NewSourcePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const loadCredentials = async () => {
-      const result = await listCredentialOptionsAction(sourceType);
-      if (!active) return;
-      if (!result.ok) {
+      try {
+        const qs = new URLSearchParams();
+        qs.set('type', sourceType);
+        qs.set('pageSize', '100');
+        qs.set('sortBy', 'name');
+        qs.set('sortOrder', 'asc');
+
+        const res = await fetch(`/api/v1/credentials?${qs.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<
+          Array<{
+            credentialId: string;
+            name: string;
+            type: string;
+          }>
+        > | null;
+        if (!res.ok) {
+          setCredentials([]);
+          return;
+        }
+
+        const next = Array.isArray(body?.data)
+          ? body.data.map((item) => ({
+              credentialId: item.credentialId,
+              name: item.name,
+              type: item.type,
+            }))
+          : [];
+        setCredentials(next);
+      } catch (error) {
+        if (isAbortError(error)) return;
         setCredentials([]);
-        return;
       }
-      setCredentials(result.data ?? []);
     };
     void loadCredentials();
     return () => {
-      active = false;
+      controller.abort();
     };
   }, [sourceType]);
 
@@ -90,23 +140,58 @@ export default function NewSourcePage() {
       return;
     }
 
-    let active = true;
+    const controller = new AbortController();
     const loadAgents = async () => {
-      const result = await listHypervAgentOptionsAction({ enabled: true });
-      if (!active) return;
-      if (!result.ok) {
+      try {
+        const qs = new URLSearchParams();
+        qs.set('agentType', 'hyperv');
+        qs.set('enabled', 'true');
+        qs.set('pageSize', '100');
+
+        const res = await fetch(`/api/v1/agents?${qs.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<
+          Array<{
+            agentId: string;
+            name: string;
+            agentType: string;
+            endpoint: string;
+            enabled: boolean;
+            tlsVerify: boolean;
+            timeoutMs: number;
+          }>
+        > | null;
+        if (!res.ok) {
+          setHypervAgents([]);
+          return;
+        }
+
+        const next = Array.isArray(body?.data)
+          ? body.data.map((item) => ({
+              agentId: item.agentId,
+              name: item.name,
+              agentType: item.agentType,
+              endpoint: item.endpoint,
+              enabled: item.enabled,
+              tlsVerify: item.tlsVerify,
+              timeoutMs: item.timeoutMs,
+            }))
+          : [];
+        setHypervAgents(next);
+        if (next.length === 1) {
+          setHypervAgentId((prev) => prev || (next[0]?.agentId ?? ''));
+        }
+      } catch (error) {
+        if (isAbortError(error)) return;
         setHypervAgents([]);
-        return;
       }
-      const next = result.data ?? [];
-      setHypervAgents(next);
-      if (!hypervAgentId && next.length === 1) setHypervAgentId(next[0]?.agentId ?? '');
     };
     void loadAgents();
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [hypervAgentId, hypervConnectionMethod, sourceType]);
+  }, [hypervConnectionMethod, sourceType]);
 
   const parseAdSuffixes = () =>
     Array.from(

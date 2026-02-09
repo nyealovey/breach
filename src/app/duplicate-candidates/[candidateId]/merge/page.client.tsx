@@ -30,8 +30,6 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-import { getDuplicateCandidateAction } from '../../actions';
-
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
 
@@ -58,6 +56,10 @@ type AssetApiDetail = {
   assetUuid: string;
   latestSnapshot: null | { canonical: unknown; createdAt: string; runId: string };
 };
+type ApiBody<T> = {
+  data?: T;
+  error?: { message?: string };
+};
 
 function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return undefined;
@@ -70,6 +72,10 @@ function getCanonicalFieldValue(fields: unknown, path: string): unknown {
 
   if (cur && typeof cur === 'object' && !Array.isArray(cur) && 'value' in cur) return (cur as any).value;
   return cur;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export default function DuplicateCandidateMergePage() {
@@ -95,20 +101,26 @@ export default function DuplicateCandidateMergePage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     const load = async () => {
       setLoading(true);
       setData(null);
 
       try {
-        const result = await getDuplicateCandidateAction(candidateId);
-        if (!result.ok) {
-          toast.error(result.error ?? '加载失败');
+        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`, {
+          signal: controller.signal,
+        });
+        if (!active || controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<CandidateDetail> | null;
+        if (!res.ok) {
+          toast.error(body?.error?.message ?? '加载失败');
           if (active) setLoading(false);
           return;
         }
 
-        const candidate = (result.data as CandidateDetail) ?? null;
+        const candidate = body?.data ?? null;
         if (!active) return;
 
         setData(candidate);
@@ -126,7 +138,8 @@ export default function DuplicateCandidateMergePage() {
         } else {
           setPrimarySide('A');
         }
-      } catch {
+      } catch (error) {
+        if (!active || isAbortError(error)) return;
         toast.error('网络错误，加载失败');
         if (active) setLoading(false);
       }
@@ -135,11 +148,13 @@ export default function DuplicateCandidateMergePage() {
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [candidateId]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const loadVmHosts = async () => {
       if (!data) return;
       if (data.assetA.assetType !== 'vm' || data.assetB.assetType !== 'vm') return;
@@ -150,8 +165,8 @@ export default function DuplicateCandidateMergePage() {
 
       try {
         const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`, { signal: controller.signal }),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`, { signal: controller.signal }),
         ]);
 
         const parse = async (res: Response): Promise<RelationRef[]> => {
@@ -169,7 +184,8 @@ export default function DuplicateCandidateMergePage() {
           setVmHostB(hostB);
           setVmHostLoading(false);
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) return;
         if (active) setVmHostLoading(false);
       }
     };
@@ -177,11 +193,13 @@ export default function DuplicateCandidateMergePage() {
     void loadVmHosts();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [data]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const loadCanonical = async () => {
       if (!data) return;
 
@@ -191,8 +209,8 @@ export default function DuplicateCandidateMergePage() {
 
       try {
         const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`, { signal: controller.signal }),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`, { signal: controller.signal }),
         ]);
 
         const loadOne = async (res: Response): Promise<unknown | null> => {
@@ -210,7 +228,8 @@ export default function DuplicateCandidateMergePage() {
           setCanonicalFieldsB(fieldsB);
           setCanonicalLoading(false);
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) return;
         if (active) setCanonicalLoading(false);
       }
     };
@@ -218,6 +237,7 @@ export default function DuplicateCandidateMergePage() {
     void loadCanonical();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [data]);
 

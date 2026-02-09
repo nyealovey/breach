@@ -30,8 +30,6 @@ import {
   confidenceLabel,
 } from '@/lib/duplicate-candidates/duplicate-candidates-ui';
 
-import { getDuplicateCandidateAction, ignoreDuplicateCandidateAction } from '../actions';
-
 import type { RelationChainNode, RelationRef } from '@/lib/assets/asset-relation-chain';
 import type { CandidateReason } from '@/lib/duplicate-candidates/candidate-ui-utils';
 
@@ -76,6 +74,10 @@ type AssetApiDetail = {
   assetUuid: string;
   latestSnapshot: null | { canonical: unknown; createdAt: string; runId: string };
 };
+type ApiBody<T> = {
+  data?: T;
+  error?: { message?: string };
+};
 
 function getCanonicalFieldValue(fields: unknown, path: string): unknown {
   if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return undefined;
@@ -102,6 +104,10 @@ function presenceStatusBadgeVariant(
   return 'destructive';
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export default function DuplicateCandidateDetailPage() {
   const router = useRouter();
   const params = useParams<{ candidateId: string }>();
@@ -126,43 +132,46 @@ export default function DuplicateCandidateDetailPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     const load = async () => {
       if (!candidateId) return;
       setLoading(true);
 
       try {
-        const result = await getDuplicateCandidateAction(candidateId);
-        if (!result.ok) {
-          toast.error(result.error ?? '加载失败');
-          if (active) {
-            setData(null);
-            setLoading(false);
-          }
+        const res = await fetch(`/api/v1/duplicate-candidates/${encodeURIComponent(candidateId)}`, {
+          signal: controller.signal,
+        });
+        if (!active || controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<CandidateDetail> | null;
+        if (!res.ok) {
+          toast.error(body?.error?.message ?? '加载失败');
+          setData(null);
+          setLoading(false);
           return;
         }
 
-        if (active) {
-          setData((result.data as CandidateDetail) ?? null);
-          setLoading(false);
-        }
-      } catch {
+        setData(body?.data ?? null);
+        setLoading(false);
+      } catch (error) {
+        if (!active || isAbortError(error)) return;
         toast.error('网络错误，加载失败');
-        if (active) {
-          setData(null);
-          setLoading(false);
-        }
+        setData(null);
+        setLoading(false);
       }
     };
 
     void load();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [candidateId, reloadToken]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const loadCanonical = async () => {
       if (!data) return;
       setCanonicalLoading(true);
@@ -172,8 +181,8 @@ export default function DuplicateCandidateDetailPage() {
 
       try {
         const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}`, { signal: controller.signal }),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}`, { signal: controller.signal }),
         ]);
 
         const loadOne = async (res: Response): Promise<unknown | null> => {
@@ -191,7 +200,8 @@ export default function DuplicateCandidateDetailPage() {
           setCanonicalFieldsB(fieldsB);
           setCanonicalLoading(false);
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) return;
         if (active) {
           setCanonicalError('加载 canonical 快照失败（不影响使用）。');
           setCanonicalLoading(false);
@@ -202,11 +212,13 @@ export default function DuplicateCandidateDetailPage() {
     void loadCanonical();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [data]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const loadVmHosts = async () => {
       if (!data) return;
       if (data.assetA.assetType !== 'vm' || data.assetB.assetType !== 'vm') return;
@@ -217,8 +229,8 @@ export default function DuplicateCandidateDetailPage() {
 
       try {
         const [aRes, bRes] = await Promise.all([
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`),
-          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetA.assetUuid)}/relations`, { signal: controller.signal }),
+          fetch(`/api/v1/assets/${encodeURIComponent(data.assetB.assetUuid)}/relations`, { signal: controller.signal }),
         ]);
 
         const parse = async (res: Response): Promise<RelationRef[]> => {
@@ -236,7 +248,8 @@ export default function DuplicateCandidateDetailPage() {
           setVmHostB(hostB);
           setVmHostLoading(false);
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) return;
         if (active) setVmHostLoading(false);
       }
     };
@@ -244,6 +257,7 @@ export default function DuplicateCandidateDetailPage() {
     void loadVmHosts();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [data]);
 
@@ -744,18 +758,35 @@ export default function DuplicateCandidateDetailPage() {
                   if (data.status !== 'open') return;
                   setIgnoreSaving(true);
 
-                  const reason = ignoreReason.trim() ? ignoreReason.trim() : undefined;
-                  const result = await ignoreDuplicateCandidateAction(data.candidateId, { reason });
-                  if (!result.ok) {
-                    toast.error(result.error ?? 'Ignore 失败');
-                    setIgnoreSaving(false);
-                    return;
-                  }
+                  try {
+                    const reason = ignoreReason.trim() ? ignoreReason.trim() : undefined;
+                    const res = await fetch(
+                      `/api/v1/duplicate-candidates/${encodeURIComponent(data.candidateId)}/ignore`,
+                      {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify(reason ? { reason } : {}),
+                      },
+                    );
+                    const body = (await res.json().catch(() => null)) as ApiBody<{
+                      candidateId: string;
+                      status: string;
+                      ignoredAt: string | null;
+                      ignoreReason: string | null;
+                    }> | null;
+                    if (!res.ok) {
+                      toast.error(body?.error?.message ?? 'Ignore 失败');
+                      return;
+                    }
 
-                  toast.success('已忽略');
-                  setIgnoreSaving(false);
-                  setIgnoreOpen(false);
-                  setReloadToken((t) => t + 1);
+                    toast.success('已忽略');
+                    setIgnoreOpen(false);
+                    setReloadToken((t) => t + 1);
+                  } catch {
+                    toast.error('Ignore 失败');
+                  } finally {
+                    setIgnoreSaving(false);
+                  }
                 }}
               >
                 确认 Ignore

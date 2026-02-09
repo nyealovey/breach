@@ -14,13 +14,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 
-import {
-  deleteSourceAction,
-  getSource,
-  listCredentialOptionsAction,
-  listHypervAgentOptionsAction,
-  updateSourceAction,
-} from '../../actions';
+import { deleteSourceAction, updateSourceAction } from '../../actions';
 
 import type { FormEvent } from 'react';
 
@@ -75,6 +69,15 @@ type AgentItem = {
   tlsVerify: boolean;
   timeoutMs: number;
 };
+
+type ApiBody<T> = {
+  data?: T;
+  error?: { message?: string };
+};
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
 
 export default function EditSourcePage() {
   const params = useParams<{ id: string }>();
@@ -132,167 +135,210 @@ export default function EditSourcePage() {
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const load = async () => {
-      const source = (await getSource(params.id)) as unknown as SourceDetail | null;
-      if (source) {
-        if (active) {
-          setName(source.name);
-          setSourceType(source.sourceType);
-          setEndpoint(source.config?.endpoint ?? '');
-          if (source.sourceType === 'vcenter') {
-            setPreferredVcenterVersion(source.config?.preferred_vcenter_version === '6.5-6.7' ? '6.5-6.7' : '7.0-8.x');
-          }
-          if (source.sourceType === 'pve') {
-            setPveTlsVerify(source.config?.tls_verify ?? true);
-            setPveTimeoutMs(
-              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                ? source.config.timeout_ms
-                : 60_000,
-            );
-            setPveScope(source.config?.scope ?? 'auto');
-            setPveMaxParallelNodes(
-              typeof source.config?.max_parallel_nodes === 'number' && Number.isFinite(source.config.max_parallel_nodes)
-                ? source.config.max_parallel_nodes
-                : 5,
-            );
-            setPveAuthType(source.config?.auth_type ?? 'api_token');
-          }
-          if (source.sourceType === 'veeam') {
-            setVeeamTlsVerify(source.config?.tls_verify ?? true);
-            setVeeamTimeoutMs(
-              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                ? source.config.timeout_ms
-                : 60_000,
-            );
-            setVeeamApiVersion(
-              typeof source.config?.api_version === 'string' && source.config.api_version.trim()
-                ? source.config.api_version.trim()
-                : '1.2-rev1',
-            );
-            setVeeamSessionsLimit(
-              typeof source.config?.sessions_limit === 'number' && Number.isFinite(source.config.sessions_limit)
-                ? source.config.sessions_limit
-                : 200,
-            );
-            setVeeamTaskSessionsLimit(
-              typeof source.config?.task_sessions_limit === 'number' &&
-                Number.isFinite(source.config.task_sessions_limit)
-                ? source.config.task_sessions_limit
-                : 2000,
-            );
-          }
-          if (source.sourceType === 'solarwinds') {
-            setSolarwindsTlsVerify(source.config?.tls_verify ?? true);
-            setSolarwindsTimeoutMs(
-              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                ? source.config.timeout_ms
-                : 60_000,
-            );
-            setSolarwindsPageSize(
-              typeof source.config?.page_size === 'number' && Number.isFinite(source.config.page_size)
-                ? source.config.page_size
-                : 500,
-            );
-            setSolarwindsIncludeUnmanaged(source.config?.include_unmanaged ?? true);
-          }
-          if (source.sourceType === 'hyperv') {
-            const connectionMethod = source.config?.connection_method === 'agent' ? 'agent' : 'winrm';
-            setHypervConnectionMethod(connectionMethod);
-            if (connectionMethod === 'agent') {
-              setHypervAgentId(source.agent?.agentId ?? '');
-              setHypervLegacyAgentUrl(source.config?.agent_url ?? '');
-              setHypervLegacyAgentTlsVerify(source.config?.agent_tls_verify ?? true);
-              setHypervLegacyAgentTimeoutMs(
-                typeof source.config?.agent_timeout_ms === 'number' && Number.isFinite(source.config.agent_timeout_ms)
-                  ? source.config.agent_timeout_ms
-                  : 60_000,
-              );
-            } else {
-              const scheme = source.config?.scheme === 'https' ? 'https' : 'http';
-              setHypervScheme(scheme);
-              setHypervPort(
-                typeof source.config?.port === 'number' && Number.isFinite(source.config.port)
-                  ? source.config.port
-                  : scheme === 'https'
-                    ? 5986
-                    : 5985,
-              );
-              setHypervAuthMethod(source.config?.auth_method ?? 'auto');
-              setHypervTlsVerify(source.config?.tls_verify ?? true);
-              setHypervTimeoutMs(
-                typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                  ? source.config.timeout_ms
-                  : 60_000,
-              );
-            }
-            setHypervScope(source.config?.scope ?? 'auto');
-            setHypervMaxParallelNodes(
-              typeof source.config?.max_parallel_nodes === 'number' && Number.isFinite(source.config.max_parallel_nodes)
-                ? source.config.max_parallel_nodes
-                : 5,
-            );
-          }
-          if (source.sourceType === 'activedirectory') {
-            setAdPurpose(source.config?.purpose ?? 'auth_collect');
-            setAdBaseDn(source.config?.base_dn ?? '');
-            setAdUpnSuffixes(Array.isArray(source.config?.upn_suffixes) ? source.config.upn_suffixes.join(',') : '');
-            setAdTlsVerify(source.config?.tls_verify ?? true);
-            setAdTimeoutMs(
-              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                ? source.config.timeout_ms
-                : 60_000,
-            );
-            setAdUserFilter(source.config?.user_filter ?? '');
-          }
-          if (source.sourceType === 'aliyun') {
-            setAliyunRegionsText(Array.isArray(source.config?.regions) ? source.config.regions.join(',') : '');
-            setAliyunTimeoutMs(
-              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
-                ? source.config.timeout_ms
-                : 60_000,
-            );
-            setAliyunMaxParallelRegions(
-              typeof source.config?.max_parallel_regions === 'number' &&
-                Number.isFinite(source.config.max_parallel_regions)
-                ? source.config.max_parallel_regions
-                : 3,
-            );
-            setAliyunIncludeStopped(source.config?.include_stopped ?? true);
-            setAliyunIncludeEcs(source.config?.include_ecs ?? true);
-            setAliyunIncludeRds(source.config?.include_rds ?? true);
-            if (!String(source.config?.endpoint ?? '').trim()) setEndpoint(aliyunEndpointPlaceholder);
-          }
-          setEnabled(source.enabled);
-          setScheduleGroupId(source.scheduleGroupId ?? null);
-          setScheduleGroupName(source.scheduleGroupName ?? null);
-          setCredentialId(source.credential?.credentialId ?? '');
-        }
-      } else {
-        toast.error('加载失败');
+      const sourceId = params.id;
+      if (!sourceId) {
+        setLoading(false);
+        return;
       }
-      if (active) setLoading(false);
+
+      try {
+        const res = await fetch(`/api/v1/sources/${encodeURIComponent(sourceId)}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<SourceDetail> | null;
+        if (!res.ok || !body?.data) {
+          toast.error(body?.error?.message ?? '加载失败');
+          return;
+        }
+
+        const source = body.data;
+        setName(source.name);
+        setSourceType(source.sourceType);
+        setEndpoint(source.config?.endpoint ?? '');
+        if (source.sourceType === 'vcenter') {
+          setPreferredVcenterVersion(source.config?.preferred_vcenter_version === '6.5-6.7' ? '6.5-6.7' : '7.0-8.x');
+        }
+        if (source.sourceType === 'pve') {
+          setPveTlsVerify(source.config?.tls_verify ?? true);
+          setPveTimeoutMs(
+            typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+              ? source.config.timeout_ms
+              : 60_000,
+          );
+          setPveScope(source.config?.scope ?? 'auto');
+          setPveMaxParallelNodes(
+            typeof source.config?.max_parallel_nodes === 'number' && Number.isFinite(source.config.max_parallel_nodes)
+              ? source.config.max_parallel_nodes
+              : 5,
+          );
+          setPveAuthType(source.config?.auth_type ?? 'api_token');
+        }
+        if (source.sourceType === 'veeam') {
+          setVeeamTlsVerify(source.config?.tls_verify ?? true);
+          setVeeamTimeoutMs(
+            typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+              ? source.config.timeout_ms
+              : 60_000,
+          );
+          setVeeamApiVersion(
+            typeof source.config?.api_version === 'string' && source.config.api_version.trim()
+              ? source.config.api_version.trim()
+              : '1.2-rev1',
+          );
+          setVeeamSessionsLimit(
+            typeof source.config?.sessions_limit === 'number' && Number.isFinite(source.config.sessions_limit)
+              ? source.config.sessions_limit
+              : 200,
+          );
+          setVeeamTaskSessionsLimit(
+            typeof source.config?.task_sessions_limit === 'number' && Number.isFinite(source.config.task_sessions_limit)
+              ? source.config.task_sessions_limit
+              : 2000,
+          );
+        }
+        if (source.sourceType === 'solarwinds') {
+          setSolarwindsTlsVerify(source.config?.tls_verify ?? true);
+          setSolarwindsTimeoutMs(
+            typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+              ? source.config.timeout_ms
+              : 60_000,
+          );
+          setSolarwindsPageSize(
+            typeof source.config?.page_size === 'number' && Number.isFinite(source.config.page_size)
+              ? source.config.page_size
+              : 500,
+          );
+          setSolarwindsIncludeUnmanaged(source.config?.include_unmanaged ?? true);
+        }
+        if (source.sourceType === 'hyperv') {
+          const connectionMethod = source.config?.connection_method === 'agent' ? 'agent' : 'winrm';
+          setHypervConnectionMethod(connectionMethod);
+          if (connectionMethod === 'agent') {
+            setHypervAgentId(source.agent?.agentId ?? '');
+            setHypervLegacyAgentUrl(source.config?.agent_url ?? '');
+            setHypervLegacyAgentTlsVerify(source.config?.agent_tls_verify ?? true);
+            setHypervLegacyAgentTimeoutMs(
+              typeof source.config?.agent_timeout_ms === 'number' && Number.isFinite(source.config.agent_timeout_ms)
+                ? source.config.agent_timeout_ms
+                : 60_000,
+            );
+          } else {
+            const scheme = source.config?.scheme === 'https' ? 'https' : 'http';
+            setHypervScheme(scheme);
+            setHypervPort(
+              typeof source.config?.port === 'number' && Number.isFinite(source.config.port)
+                ? source.config.port
+                : scheme === 'https'
+                  ? 5986
+                  : 5985,
+            );
+            setHypervAuthMethod(source.config?.auth_method ?? 'auto');
+            setHypervTlsVerify(source.config?.tls_verify ?? true);
+            setHypervTimeoutMs(
+              typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+                ? source.config.timeout_ms
+                : 60_000,
+            );
+          }
+          setHypervScope(source.config?.scope ?? 'auto');
+          setHypervMaxParallelNodes(
+            typeof source.config?.max_parallel_nodes === 'number' && Number.isFinite(source.config.max_parallel_nodes)
+              ? source.config.max_parallel_nodes
+              : 5,
+          );
+        }
+        if (source.sourceType === 'activedirectory') {
+          setAdPurpose(source.config?.purpose ?? 'auth_collect');
+          setAdBaseDn(source.config?.base_dn ?? '');
+          setAdUpnSuffixes(Array.isArray(source.config?.upn_suffixes) ? source.config.upn_suffixes.join(',') : '');
+          setAdTlsVerify(source.config?.tls_verify ?? true);
+          setAdTimeoutMs(
+            typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+              ? source.config.timeout_ms
+              : 60_000,
+          );
+          setAdUserFilter(source.config?.user_filter ?? '');
+        }
+        if (source.sourceType === 'aliyun') {
+          setAliyunRegionsText(Array.isArray(source.config?.regions) ? source.config.regions.join(',') : '');
+          setAliyunTimeoutMs(
+            typeof source.config?.timeout_ms === 'number' && Number.isFinite(source.config.timeout_ms)
+              ? source.config.timeout_ms
+              : 60_000,
+          );
+          setAliyunMaxParallelRegions(
+            typeof source.config?.max_parallel_regions === 'number' &&
+              Number.isFinite(source.config.max_parallel_regions)
+              ? source.config.max_parallel_regions
+              : 3,
+          );
+          setAliyunIncludeStopped(source.config?.include_stopped ?? true);
+          setAliyunIncludeEcs(source.config?.include_ecs ?? true);
+          setAliyunIncludeRds(source.config?.include_rds ?? true);
+          if (!String(source.config?.endpoint ?? '').trim()) setEndpoint(aliyunEndpointPlaceholder);
+        }
+        setEnabled(source.enabled);
+        setScheduleGroupId(source.scheduleGroupId ?? null);
+        setScheduleGroupName(source.scheduleGroupName ?? null);
+        setCredentialId(source.credential?.credentialId ?? '');
+      } catch (error) {
+        if (isAbortError(error)) return;
+        toast.error('加载失败');
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
     };
     void load();
     return () => {
-      active = false;
+      controller.abort();
     };
   }, [params.id]);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const loadCredentials = async () => {
-      const result = await listCredentialOptionsAction(sourceType);
-      if (!active) return;
-      if (!result.ok) {
+      try {
+        const qs = new URLSearchParams();
+        qs.set('type', sourceType);
+        qs.set('pageSize', '100');
+        qs.set('sortBy', 'name');
+        qs.set('sortOrder', 'asc');
+
+        const res = await fetch(`/api/v1/credentials?${qs.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<
+          Array<{
+            credentialId: string;
+            name: string;
+            type: string;
+          }>
+        > | null;
+        if (!res.ok) {
+          setCredentials([]);
+          return;
+        }
+
+        const next = Array.isArray(body?.data)
+          ? body.data.map((item) => ({
+              credentialId: item.credentialId,
+              name: item.name,
+              type: item.type,
+            }))
+          : [];
+        setCredentials(next);
+      } catch (error) {
+        if (isAbortError(error)) return;
         setCredentials([]);
-        return;
       }
-      setCredentials((result.data ?? []) as CredentialItem[]);
     };
     void loadCredentials();
     return () => {
-      active = false;
+      controller.abort();
     };
   }, [sourceType]);
 
@@ -302,26 +348,58 @@ export default function EditSourcePage() {
       return;
     }
 
-    let active = true;
+    const controller = new AbortController();
     const loadAgents = async () => {
-      const result = await listHypervAgentOptionsAction();
-      if (!active) return;
-      if (!result.ok) {
+      try {
+        const qs = new URLSearchParams();
+        qs.set('agentType', 'hyperv');
+        qs.set('pageSize', '100');
+
+        const res = await fetch(`/api/v1/agents?${qs.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+
+        const body = (await res.json().catch(() => null)) as ApiBody<
+          Array<{
+            agentId: string;
+            name: string;
+            agentType: string;
+            endpoint: string;
+            enabled: boolean;
+            tlsVerify: boolean;
+            timeoutMs: number;
+          }>
+        > | null;
+        if (!res.ok) {
+          setHypervAgents([]);
+          return;
+        }
+
+        const next = Array.isArray(body?.data)
+          ? body.data.map((item) => ({
+              agentId: item.agentId,
+              name: item.name,
+              agentType: item.agentType,
+              endpoint: item.endpoint,
+              enabled: item.enabled,
+              tlsVerify: item.tlsVerify,
+              timeoutMs: item.timeoutMs,
+            }))
+          : [];
+        setHypervAgents(next);
+        if (next.filter((a) => a.enabled).length === 1) {
+          const onlyEnabled = next.find((a) => a.enabled);
+          if (onlyEnabled) setHypervAgentId((prev) => prev || onlyEnabled.agentId);
+        }
+      } catch (error) {
+        if (isAbortError(error)) return;
         setHypervAgents([]);
-        return;
-      }
-      const next = (result.data ?? []) as AgentItem[];
-      setHypervAgents(next);
-      if (!hypervAgentId && next.filter((a) => a.enabled).length === 1) {
-        const onlyEnabled = next.find((a) => a.enabled);
-        if (onlyEnabled) setHypervAgentId(onlyEnabled.agentId);
       }
     };
     void loadAgents();
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [hypervConnectionMethod, hypervAgentId, sourceType]);
+  }, [hypervConnectionMethod, sourceType]);
 
   const parseAdSuffixes = () =>
     Array.from(
