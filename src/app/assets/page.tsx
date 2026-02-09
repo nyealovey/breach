@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+
 import { buildAssetListUrlSearchParams, parseAssetListUrlState } from '@/lib/assets/asset-list-url';
 import { requireServerSession } from '@/lib/auth/require-server-session';
 import { readAssetsPageServerData } from '@/lib/assets/server-data';
@@ -81,5 +83,9 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
     list: serverData.list,
   };
 
-  return <PageClient initialData={initialData} />;
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载中...</div>}>
+      <PageClient initialData={initialData} />
+    </Suspense>
+  );
 }

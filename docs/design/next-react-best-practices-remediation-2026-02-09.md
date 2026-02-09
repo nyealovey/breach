@@ -42,8 +42,22 @@
 
 将列分组相关 `filter` 派生结果上提为模块级常量，避免每次渲染重复计算；同时在资产页统一为固定时区的日期格式化实现。
 
+### 6) 资产详情数据读取去除串行 waterfall
+
+- 文件：`src/lib/assets/server-data.ts`
+
+在 `readAssetDetail` 中，将 `assetRunSnapshot` 与 `veeam signal` 两个互不依赖的查询从串行 `await` 改为 `Promise.all` 并行执行，降低资产详情页服务端读取尾延迟。
+
+### 7) 资产列表页补齐 Suspense 边界
+
+- 文件：`src/app/assets/page.tsx`
+- 文件：`src/app/assets/page.client.tsx`
+
+`page.client.tsx` 使用了 `useSearchParams`，因此在 `page.tsx` 对客户端页面组件增加 `Suspense` 边界与加载回退，避免静态路由场景的 CSR bailout 风险。
+
 ## 影响说明
 
 - 业务接口契约、错误码、校验规则未变。
 - 资产相关页面的时间文本现在固定以 `Asia/Shanghai` 时区展示，首屏 hydration 一致性提升。
-- 仅涉及性能与稳定性优化，不引入新功能。
+- 资产详情页读取路径减少不必要串行等待，首屏数据更快返回。
+- 资产列表页在 Next.js 推荐的渲染边界上更稳健，仅涉及性能与稳定性优化，不引入新功能。

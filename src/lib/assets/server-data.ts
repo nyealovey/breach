@@ -627,18 +627,20 @@ async function readAssetDetail(assetUuid: string): Promise<AssetDetail | null> {
 
   if (!asset) return null;
 
-  const snapshot = await prisma.assetRunSnapshot.findFirst({
-    where: { assetUuid },
-    orderBy: { createdAt: 'desc' },
-    select: { runId: true, canonical: true, createdAt: true },
-  });
+  const [snapshot, latestVeeamSignal] = await Promise.all([
+    prisma.assetRunSnapshot.findFirst({
+      where: { assetUuid },
+      orderBy: { createdAt: 'desc' },
+      select: { runId: true, canonical: true, createdAt: true },
+    }),
+    prisma.signalRecord.findFirst({
+      where: { assetUuid, source: { sourceType: 'veeam' } },
+      orderBy: { collectedAt: 'desc' },
+      select: { raw: true },
+    }),
+  ]);
 
   let backupLast7: AssetDetail['backupLast7'] = [];
-  const latestVeeamSignal = await prisma.signalRecord.findFirst({
-    where: { assetUuid, source: { sourceType: 'veeam' } },
-    orderBy: { collectedAt: 'desc' },
-    select: { raw: true },
-  });
 
   if (latestVeeamSignal?.raw) {
     try {
