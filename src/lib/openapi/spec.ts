@@ -92,24 +92,6 @@ const AssetOperationalStateSchema = z.object({
   monitorUpdatedAt: z.string().nullable(),
 });
 
-const BackupLast7ItemSchema = z.object({
-  end_time: z.string().nullable(),
-  start_time: z.string().nullable(),
-  result: z.string().nullable(),
-  message: z.string().nullable(),
-  state: z.string().nullable(),
-  job_id: z.string().nullable(),
-  job_name: z.string().nullable(),
-  session_id: z.string().nullable(),
-  session_name: z.string().nullable(),
-  task_session_id: z.string().nullable(),
-  repository_id: z.string().nullable(),
-  processed_size: z.number().nullable(),
-  read_size: z.number().nullable(),
-  transferred_size: z.number().nullable(),
-  duration: z.string().nullable(),
-});
-
 const AssetListItemSchema = z.object({
   assetUuid: z.string(),
   assetType: z.string(),
@@ -1032,7 +1014,8 @@ registry.registerPath({
               lastSeenAt: z.string().nullable(),
               ledgerFields: LedgerFieldsV1Schema,
               operationalState: AssetOperationalStateSchema,
-              backupLast7: z.array(BackupLast7ItemSchema),
+              latestBackupAt: z.string().nullable(),
+              latestBackupProcessedSize: z.number().nullable(),
               latestSnapshot: z
                 .object({
                   runId: z.string(),

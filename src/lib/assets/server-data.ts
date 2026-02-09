@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { parseAssetListQuery, buildAssetListWhere } from '@/lib/assets/asset-list-query';
+import { pickLatestBackupSummary } from '@/lib/assets/backup-latest';
 import { formatIpAddressesForDisplay } from '@/lib/assets/ip-addresses';
 import { formatOsForDisplay } from '@/lib/assets/os-display';
 import { prisma } from '@/lib/db/prisma';
@@ -112,23 +113,8 @@ export type AssetDetail = {
     monitorStatus: string | null;
     monitorUpdatedAt: string | null;
   };
-  backupLast7: Array<{
-    end_time: string | null;
-    start_time: string | null;
-    result: string | null;
-    message: string | null;
-    state: string | null;
-    job_id: string | null;
-    job_name: string | null;
-    session_id: string | null;
-    session_name: string | null;
-    task_session_id: string | null;
-    repository_id: string | null;
-    processed_size: number | null;
-    read_size: number | null;
-    transferred_size: number | null;
-    duration: string | null;
-  }>;
+  latestBackupAt: string | null;
+  latestBackupProcessedSize: number | null;
   ledgerFields: LedgerFieldsV1;
   latestSnapshot: { runId: string; createdAt: string; canonical: unknown } | null;
 };
@@ -163,7 +149,6 @@ export type AssetsPageServerData = {
 
 export type AssetDetailPageServerData = {
   asset: AssetDetail | null;
-  sourceRecords: SourceRecordItem[];
   relations: RelationItem[];
   history: AssetHistoryResponse | null;
 };
@@ -640,17 +625,23 @@ async function readAssetDetail(assetUuid: string): Promise<AssetDetail | null> {
     }),
   ]);
 
-  let backupLast7: AssetDetail['backupLast7'] = [];
+  let latestBackupAt: string | null = null;
+  let latestBackupProcessedSize: number | null = null;
 
   if (latestVeeamSignal?.raw) {
     try {
       const raw = await decompressRaw(latestVeeamSignal.raw);
-      const history =
-        raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).history_last7 : null;
-      backupLast7 = Array.isArray(history) ? (history.slice(0, 7) as AssetDetail['backupLast7']) : [];
+      const summary = pickLatestBackupSummary(raw);
+      latestBackupAt = summary.latestBackupAt;
+      latestBackupProcessedSize = summary.latestBackupProcessedSize;
     } catch {
-      backupLast7 = [];
+      latestBackupAt = null;
+      latestBackupProcessedSize = null;
     }
+  }
+
+  if (!latestBackupAt) {
+    latestBackupAt = asset.operationalState?.backupLastSuccessAt?.toISOString() ?? null;
   }
 
   return {
@@ -675,7 +666,8 @@ async function readAssetDetail(assetUuid: string): Promise<AssetDetail | null> {
       monitorStatus: asset.operationalState?.monitorStatus ?? null,
       monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
     },
-    backupLast7,
+    latestBackupAt,
+    latestBackupProcessedSize,
     latestSnapshot: snapshot
       ? {
           runId: snapshot.runId,
@@ -684,35 +676,6 @@ async function readAssetDetail(assetUuid: string): Promise<AssetDetail | null> {
         }
       : null,
   };
-}
-
-async function readAssetSourceRecords(assetUuid: string): Promise<SourceRecordItem[]> {
-  const records = await prisma.sourceRecord.findMany({
-    where: { assetUuid },
-    orderBy: { collectedAt: 'desc' },
-    take: 200,
-    select: {
-      id: true,
-      collectedAt: true,
-      runId: true,
-      sourceId: true,
-      source: { select: { name: true } },
-      externalKind: true,
-      externalId: true,
-      normalized: true,
-    },
-  });
-
-  return records.map((record) => ({
-    recordId: record.id,
-    collectedAt: record.collectedAt.toISOString(),
-    runId: record.runId,
-    sourceId: record.sourceId,
-    sourceName: record.source?.name ?? null,
-    externalKind: record.externalKind,
-    externalId: record.externalId,
-    normalized: record.normalized,
-  }));
 }
 
 async function readAssetRelations(assetUuid: string): Promise<RelationItem[]> {
@@ -853,7 +816,6 @@ export async function readAssetDetailPageServerData(input: {
   if (!assetResult) {
     return {
       asset: null,
-      sourceRecords: [],
       relations: [],
       history: null,
     };
@@ -861,15 +823,13 @@ export async function readAssetDetailPageServerData(input: {
 
   const historyLimit = Number.isFinite(input.historyLimit) && input.historyLimit ? Math.max(1, input.historyLimit) : 20;
 
-  const [sourceRecordsResult, relationsResult, historyResult] = await Promise.allSettled([
-    readAssetSourceRecords(input.uuid),
+  const [relationsResult, historyResult] = await Promise.allSettled([
     readAssetRelations(input.uuid),
     readAssetHistory(input.uuid, historyLimit),
   ]);
 
   return {
     asset: assetResult,
-    sourceRecords: sourceRecordsResult.status === 'fulfilled' ? sourceRecordsResult.value : [],
     relations: relationsResult.status === 'fulfilled' ? relationsResult.value : [],
     history: historyResult.status === 'fulfilled' ? historyResult.value : null,
   };

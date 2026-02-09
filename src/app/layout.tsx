@@ -1,6 +1,5 @@
 import { Geist } from 'next/font/google';
 import Link from 'next/link';
-import { Suspense } from 'react';
 
 import { AppTopNav } from '@/components/nav/app-top-nav';
 import { Toaster } from '@/components/ui/sonner';
@@ -21,17 +20,6 @@ export const metadata: Metadata = {
   description: `资产台账系统（vCenter MVP）`,
 };
 
-function AppTopNavFallback({ isAdmin }: { isAdmin: boolean }) {
-  return (
-    <div className="flex h-14 items-center gap-3 px-4">
-      <Link className="shrink-0 text-sm font-semibold" href="/">
-        资产台账
-      </Link>
-      <div className="ml-auto text-xs text-muted-foreground">{isAdmin ? 'admin' : 'user'}</div>
-    </div>
-  );
-}
-
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -46,9 +34,7 @@ export default async function RootLayout({
         <div className="flex min-h-screen flex-col">
           <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             {session ? (
-              <Suspense fallback={<AppTopNavFallback isAdmin={isAdmin} />}>
-                <AppTopNav isAdmin={isAdmin} />
-              </Suspense>
+              <AppTopNav isAdmin={isAdmin} />
             ) : (
               <div className="flex h-14 items-center gap-3 px-4">
                 <Link className="shrink-0 text-sm font-semibold" href="/login">

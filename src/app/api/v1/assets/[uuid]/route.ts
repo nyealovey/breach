@@ -7,6 +7,7 @@ import { ErrorCode } from '@/lib/errors/error-codes';
 import { fail, ok } from '@/lib/http/response';
 import { decompressRaw } from '@/lib/ingest/raw';
 import { buildLedgerFieldsV1FromRow, LEDGER_FIELDS_V1_DB_SELECT } from '@/lib/ledger/ledger-fields-v1';
+import { pickLatestBackupSummary } from '@/lib/assets/backup-latest';
 
 const AssetUpdateBodySchema = z.object({
   machineNameOverride: z.string().nullable().optional(),
@@ -71,16 +72,22 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
     }),
   ]);
 
-  let backupLast7: unknown[] = [];
+  let latestBackupAt: string | null = null;
+  let latestBackupProcessedSize: number | null = null;
   if (latestVeeamSignal?.raw) {
     try {
       const raw = await decompressRaw(latestVeeamSignal.raw);
-      const history =
-        raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).history_last7 : null;
-      backupLast7 = Array.isArray(history) ? history.slice(0, 7) : [];
+      const summary = pickLatestBackupSummary(raw);
+      latestBackupAt = summary.latestBackupAt;
+      latestBackupProcessedSize = summary.latestBackupProcessedSize;
     } catch {
-      backupLast7 = [];
+      latestBackupAt = null;
+      latestBackupProcessedSize = null;
     }
+  }
+
+  if (!latestBackupAt) {
+    latestBackupAt = asset.operationalState?.backupLastSuccessAt?.toISOString() ?? null;
   }
 
   return ok(
@@ -106,7 +113,8 @@ export async function GET(request: Request, context: { params: Promise<{ uuid: s
         monitorStatus: asset.operationalState?.monitorStatus ?? null,
         monitorUpdatedAt: asset.operationalState?.monitorUpdatedAt?.toISOString() ?? null,
       },
-      backupLast7,
+      latestBackupAt,
+      latestBackupProcessedSize,
       latestSnapshot: snapshot
         ? { runId: snapshot.runId, createdAt: snapshot.createdAt.toISOString(), canonical: snapshot.canonical }
         : null,

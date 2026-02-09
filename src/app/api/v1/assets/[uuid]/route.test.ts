@@ -16,7 +16,7 @@ vi.mock('@/lib/db/prisma', () => ({
 }));
 
 describe('GET /api/v1/assets/:uuid', () => {
-  it('returns operationalState backup fields and backupLast7 from latest veeam signal', async () => {
+  it('returns operationalState backup fields and latest backup summary from latest veeam signal', async () => {
     (requireUser as any).mockResolvedValue({
       ok: true,
       requestId: 'req_test',
@@ -62,6 +62,7 @@ describe('GET /api/v1/assets/:uuid', () => {
           result: 'Success',
           message: 'OK',
           job_name: 'Job A',
+          processed_size: 4096,
         },
       ],
     });
@@ -74,7 +75,7 @@ describe('GET /api/v1/assets/:uuid', () => {
 
     expect(body.data.operationalState.backupCovered).toBe(true);
     expect(body.data.operationalState.backupState).toBe('success');
-    expect(body.data.backupLast7).toHaveLength(1);
-    expect(body.data.backupLast7[0]).toMatchObject({ result: 'Success', job_name: 'Job A' });
+    expect(body.data.latestBackupAt).toBe('2026-02-05T00:00:00.000Z');
+    expect(body.data.latestBackupProcessedSize).toBe(4096);
   });
 });

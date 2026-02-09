@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
+import { parseAssetDetailTab } from '@/lib/assets/page-data';
 import { readAssetDetailPageServerData } from '@/lib/assets/server-data';
 import { requireServerSession } from '@/lib/auth/require-server-session';
 
@@ -9,14 +10,33 @@ import type { AssetDetailPageInitialData } from './page.client';
 
 type AssetDetailPageProps = {
   params: Promise<{ uuid: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 function pickRole(input: string): 'admin' | 'user' | null {
   return input === 'admin' || input === 'user' ? input : null;
 }
 
-export default async function AssetDetailPage({ params }: AssetDetailPageProps) {
-  const [session, { uuid }] = await Promise.all([requireServerSession(), params]);
+function toUrlSearchParams(input: Record<string, string | string[] | undefined>): URLSearchParams {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'string') {
+      params.set(key, value);
+      continue;
+    }
+
+    if (Array.isArray(value) && typeof value[0] === 'string') {
+      params.set(key, value[0]);
+    }
+  }
+
+  return params;
+}
+
+export default async function AssetDetailPage({ params, searchParams }: AssetDetailPageProps) {
+  const [session, { uuid }, resolvedSearchParams] = await Promise.all([requireServerSession(), params, searchParams]);
+  const query = toUrlSearchParams(resolvedSearchParams);
 
   const serverData = await readAssetDetailPageServerData({ uuid, historyLimit: 20 });
 
@@ -30,9 +50,9 @@ export default async function AssetDetailPage({ params }: AssetDetailPageProps) 
 
   const initialData: AssetDetailPageInitialData = {
     uuid,
+    tab: parseAssetDetailTab(query.get('tab')),
     role: pickRole(session.user.role),
     asset: serverData.asset,
-    sourceRecords: serverData.sourceRecords,
     relations: serverData.relations,
     history: serverData.history,
   };
