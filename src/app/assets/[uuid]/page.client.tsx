@@ -20,6 +20,7 @@ import {
   normalizeOptionalText,
   resolveOverrideAndCurrentValue,
 } from '@/lib/assets/override-visual';
+import { backupStateDisplay } from '@/lib/assets/backup-state';
 import { monitorStateDisplay } from '@/lib/assets/monitor-state';
 import { powerStateLabelZh } from '@/lib/assets/power-state';
 import { findMemberOfCluster, findRunsOnHost } from '@/lib/assets/asset-relation-chain';
@@ -726,6 +727,17 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
   if (asset.operationalState.monitorUpdatedAt)
     monitorTooltipParts.push(`更新：${formatDateTime(asset.operationalState.monitorUpdatedAt)}`);
   const monitorTooltip = monitorTooltipParts.length > 0 ? monitorTooltipParts.join(' · ') : undefined;
+  const backupDisplay = backupStateDisplay({
+    backupCovered: asset.operationalState.backupCovered,
+    backupState: asset.operationalState.backupState,
+  });
+  const backupTooltipParts: string[] = [];
+  if (asset.operationalState.backupLastResult)
+    backupTooltipParts.push(`Veeam: ${asset.operationalState.backupLastResult}`);
+  if (asset.latestBackupAt) backupTooltipParts.push(`最新：${formatDateTime(asset.latestBackupAt)}`);
+  if (typeof asset.latestBackupProcessedSize === 'number')
+    backupTooltipParts.push(`大小：${formatAssetFieldValue(asset.latestBackupProcessedSize, { formatHint: 'bytes' })}`);
+  const backupTooltip = backupTooltipParts.length > 0 ? backupTooltipParts.join(' · ') : undefined;
   const latestBackupSizeText =
     typeof asset.latestBackupProcessedSize === 'number'
       ? formatAssetFieldValue(asset.latestBackupProcessedSize, { formatHint: 'bytes' })
@@ -756,7 +768,7 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
           variant={activeTab === 'debug' ? 'secondary' : 'outline'}
           onClick={() => setActiveTabWithUrl('debug')}
         >
-          调试信息
+          数据追溯
         </Button>
       </div>
 
@@ -844,35 +856,6 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                           fallback={<span className="text-muted-foreground">-</span>}
                         />
                       </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">监控</TableCell>
-                      <TableCell>
-                        {monitorDisplay ? (
-                          <Badge variant={monitorDisplay.variant} title={monitorTooltip}>
-                            {monitorDisplay.labelZh}
-                          </Badge>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                      <TableCell>-</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">备份</TableCell>
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">最新时间：</span>
-                            <span className="font-mono text-xs">{formatDateTime(asset.latestBackupAt)}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">大小：</span>
-                            <span className="font-mono text-xs">{latestBackupSizeText}</span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>-</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">CPU</TableCell>
@@ -1068,6 +1051,65 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                     </div>
                   </details>
                 ) : null}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>信号字段</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="text-sm font-medium">监控</div>
+                    <div className="mt-2 space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">状态：</span>
+                        {monitorDisplay ? (
+                          <Badge variant={monitorDisplay.variant} title={monitorTooltip}>
+                            {monitorDisplay.labelZh}
+                          </Badge>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">时间：</span>
+                        <span className="font-mono text-xs">
+                          {formatDateTime(asset.operationalState.monitorUpdatedAt)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">大小：</span>
+                        <span className="font-mono text-xs">-</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="text-sm font-medium">备份</div>
+                    <div className="mt-2 space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">状态：</span>
+                        {backupDisplay ? (
+                          <Badge variant={backupDisplay.variant} title={backupTooltip}>
+                            {backupDisplay.labelZh}
+                          </Badge>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">时间：</span>
+                        <span className="font-mono text-xs">{formatDateTime(asset.latestBackupAt)}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">大小：</span>
+                        <span className="font-mono text-xs">{latestBackupSizeText}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -1558,95 +1600,100 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
           ) : null}
 
           {activeTab === 'debug' ? (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle>调试</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {!asset.latestSnapshot ? (
-                    <div className="text-sm text-muted-foreground">暂无 canonical 快照。</div>
-                  ) : (
-                    <>
-                      <div className="rounded-md border bg-muted/20 p-3">
-                        <div className="text-xs text-muted-foreground">Latest Snapshot</div>
-                        <div className="mt-1 space-y-1 text-xs">
-                          <div>
-                            runId: <IdText value={asset.latestSnapshot.runId} className="text-foreground" />
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>最新快照数据</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {!asset.latestSnapshot ? (
+                      <div className="text-sm text-muted-foreground">暂无最新快照（canonical）。</div>
+                    ) : (
+                      <>
+                        <div className="rounded-md border bg-muted/20 p-3">
+                          <div className="text-xs text-muted-foreground">最新快照</div>
+                          <div className="mt-1 space-y-1 text-xs">
+                            <div>
+                              Run ID (runId)： <IdText value={asset.latestSnapshot.runId} className="text-foreground" />
+                            </div>
+                            <div className="text-muted-foreground">
+                              快照时间 (createdAt)：{asset.latestSnapshot.createdAt}
+                            </div>
                           </div>
-                          <div className="text-muted-foreground">createdAt: {asset.latestSnapshot.createdAt}</div>
+                          <div className="mt-2">
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}>打开 Run</Link>
+                            </Button>
+                          </div>
                         </div>
-                        <div className="mt-2">
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/runs/${encodeURIComponent(asset.latestSnapshot.runId)}`}>打开 Run</Link>
-                          </Button>
-                        </div>
-                      </div>
 
-                      <details className="rounded-md border p-3">
-                        <summary className="cursor-pointer select-none text-sm font-medium">
-                          查看原始 canonical JSON
-                        </summary>
-                        <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">
-                          {canonicalSnapshotText}
-                        </pre>
-                      </details>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+                        <details className="rounded-md border p-3">
+                          <summary className="cursor-pointer select-none text-sm font-medium">
+                            查看原始快照（canonical）JSON
+                          </summary>
+                          <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">
+                            {canonicalSnapshotText}
+                          </pre>
+                        </details>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>调试：outgoing 关系表</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {relations.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">暂无 outgoing 关系。</div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>类型</TableHead>
-                          <TableHead>目标</TableHead>
-                          <TableHead>Last Seen</TableHead>
-                          <TableHead className="text-right">操作</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {relations.map((r) => (
-                          <TableRow key={r.relationId}>
-                            <TableCell>{r.relationType}</TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                {r.toDisplayName ?? <IdText value={r.toAssetUuid} className="text-foreground" />}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {r.toAssetType ? `${formatAssetType(r.toAssetType)} · ` : null}
-                                <IdText value={r.toAssetUuid} />
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{r.lastSeenAt}</TableCell>
-                            <TableCell className="text-right">
-                              <Button asChild size="sm" variant="outline">
-                                <Link href={`/assets/${r.toAssetUuid}`}>查看</Link>
-                              </Button>
-                            </TableCell>
+                <Card>
+                  <CardHeader className="space-y-1">
+                    <CardTitle>关系表</CardTitle>
+                    <div className="text-xs text-muted-foreground">仅展示 outgoing 关系。</div>
+                  </CardHeader>
+                  <CardContent>
+                    {relations.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">暂无 outgoing 关系。</div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>类型</TableHead>
+                            <TableHead>目标</TableHead>
+                            <TableHead>最近出现</TableHead>
+                            <TableHead className="text-right">操作</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
+                        </TableHeader>
+                        <TableBody>
+                          {relations.map((r) => (
+                            <TableRow key={r.relationId}>
+                              <TableCell>{r.relationType}</TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  {r.toDisplayName ?? <IdText value={r.toAssetUuid} className="text-foreground" />}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {r.toAssetType ? `${formatAssetType(r.toAssetType)} · ` : null}
+                                  <IdText value={r.toAssetUuid} />
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{r.lastSeenAt}</TableCell>
+                              <TableCell className="text-right">
+                                <Button asChild size="sm" variant="outline">
+                                  <Link href={`/assets/${r.toAssetUuid}`}>查看</Link>
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
               <Card>
                 <CardHeader className="flex flex-col gap-3 space-y-0 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-1">
-                    <CardTitle>来源明细</CardTitle>
+                    <CardTitle>历史来源数据</CardTitle>
                     <div className="text-xs text-muted-foreground">
-                      默认仅展示 <span className="font-mono">NEW/CHANGED</span>
-                      （按来源聚合，取最新一条记录与上一条对比）。
+                      默认仅展示“新增/变化”（<span className="font-mono">NEW/CHANGED</span>
+                      ）。按来源聚合：取最新一条与上一条对比。
                     </div>
                   </div>
                   {debugSourceLoaded ? (
@@ -1670,7 +1717,7 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {!debugSourceLoaded && debugSourceLoading ? (
-                    <div className="text-sm text-muted-foreground">来源明细加载中…</div>
+                    <div className="text-sm text-muted-foreground">历史来源数据加载中…</div>
                   ) : debugSourceError ? (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
                       <div className="text-sm text-destructive">加载失败：{debugSourceError}</div>
@@ -1684,12 +1731,12 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                       </Button>
                     </div>
                   ) : !debugSourceLoaded ? (
-                    <div className="text-sm text-muted-foreground">准备加载来源明细…</div>
+                    <div className="text-sm text-muted-foreground">准备加载历史来源数据…</div>
                   ) : sourceSummaries.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">暂无来源明细。</div>
+                    <div className="text-sm text-muted-foreground">暂无历史来源数据。</div>
                   ) : visibleSourceSummaries.length === 0 ? (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
-                      <div className="text-sm text-muted-foreground">暂无变化来源（全部来源均为 SAME）。</div>
+                      <div className="text-sm text-muted-foreground">暂无变化来源（全部来源均为相同）。</div>
                       <Button size="sm" variant="outline" onClick={() => setShowAllSources(true)}>
                         显示全部
                       </Button>
@@ -1700,15 +1747,16 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                         <TableRow>
                           <TableHead>来源</TableHead>
                           <TableHead className="w-[120px]">状态</TableHead>
-                          <TableHead>Collected At</TableHead>
-                          <TableHead>External</TableHead>
+                          <TableHead>采集时间 (collectedAt)</TableHead>
+                          <TableHead>外部标识 (external)</TableHead>
                           <TableHead>Run</TableHead>
                           <TableHead className="text-right">操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {visibleSourceSummaries.map((s) => {
-                          const tag = s.status === 'changed' ? 'CHANGED' : s.status === 'new' ? 'NEW' : 'SAME';
+                          const tagCode = s.status === 'changed' ? 'CHANGED' : s.status === 'new' ? 'NEW' : 'SAME';
+                          const tagZh = s.status === 'changed' ? '变化' : s.status === 'new' ? '新增' : '相同';
                           const variant =
                             s.status === 'changed' ? 'default' : s.status === 'new' ? 'secondary' : 'outline';
                           return (
@@ -1721,7 +1769,9 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <Badge variant={variant}>{tag}</Badge>
+                                <Badge variant={variant} title={tagCode}>
+                                  {tagZh}
+                                </Badge>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">{s.latest.collectedAt}</TableCell>
                               <TableCell>
@@ -1759,7 +1809,7 @@ export default function AssetDetailPage({ initialData }: { initialData: AssetDet
                   )}
                 </CardContent>
               </Card>
-            </>
+            </div>
           ) : null}
         </div>
       </div>
